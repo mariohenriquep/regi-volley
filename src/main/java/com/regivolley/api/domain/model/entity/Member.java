@@ -66,9 +66,10 @@ public final class Member implements AggregateRoot {
     private final List<LevelChange> levelChanges;
     private final Instant joinedAt;
     private final Instant anonymisedAt;
+    private final long version;
 
     private Member(MemberId id, AssociationId associationId, ContactDetails contact, GdprConsent consent, MemberStatus status, LevelId levelId, Set<MemberRole> roles,
-                   List<LevelChange> levelChanges, Instant joinedAt, Instant anonymisedAt) {
+                   List<LevelChange> levelChanges, Instant joinedAt, Instant anonymisedAt, long version) {
         this.id = id;
         this.associationId = associationId;
         this.contact = contact;
@@ -79,6 +80,7 @@ public final class Member implements AggregateRoot {
         this.levelChanges = levelChanges;
         this.joinedAt = joinedAt;
         this.anonymisedAt = anonymisedAt;
+        this.version = version;
     }
 
     /**
@@ -90,19 +92,29 @@ public final class Member implements AggregateRoot {
         Objects.requireNonNull(association, "association must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
         return reconstruct(MemberId.generate(), association.id(), contact, consent, MemberStatus.ACTIVE,
-                association.entryLevelId(), roles, List.of(), clock.instant(), null);
+                association.entryLevelId(), roles, List.of(), clock.instant(), null, 0L);
     }
 
-    /** Rebuilds a member from persisted data, re-checking its invariants. */
+    /**
+     * Rebuilds a member from persisted data, re-checking its invariants.
+     *
+     * @param version the optimistic-lock version it was loaded with (0 for a new member); every change
+     *                carries it over, so a stale copy cannot be saved over a newer one, an RGPD erasure
+     *                included (architecture.md section 10)
+     */
     public static Member reconstruct(MemberId id, AssociationId associationId, ContactDetails contact,
                                      GdprConsent consent, MemberStatus status, LevelId levelId, Set<MemberRole> roles,
-                                     List<LevelChange> levelChanges, Instant joinedAt, Instant anonymisedAt) {
+                                     List<LevelChange> levelChanges, Instant joinedAt, Instant anonymisedAt,
+                                     long version) {
         Objects.requireNonNull(contact, "contact must not be null");
         Objects.requireNonNull(status, "status must not be null");
         Objects.requireNonNull(levelId, "levelId must not be null");
         Objects.requireNonNull(roles, "roles must not be null");
         Objects.requireNonNull(levelChanges, "levelChanges must not be null");
         Objects.requireNonNull(joinedAt, "joinedAt must not be null");
+        if (version < 0) {
+            throw new InvalidMemberException("The version must not be negative");
+        }
         if (roles.isEmpty()) {
             throw new InvalidMemberException("A member needs at least one role");
         }
@@ -121,7 +133,7 @@ public final class Member implements AggregateRoot {
                 Objects.requireNonNull(associationId, "associationId must not be null"),
                 contact,
                 Objects.requireNonNull(consent, "consent must not be null"),
-                status, levelId, Set.copyOf(roles), List.copyOf(levelChanges), joinedAt, anonymisedAt
+                status, levelId, Set.copyOf(roles), List.copyOf(levelChanges), joinedAt, anonymisedAt, version
         );
     }
 
@@ -235,7 +247,7 @@ public final class Member implements AggregateRoot {
             return this;
         }
         return reconstruct(id, associationId, ContactDetails.anonymisedFor(id.value()), consent,
-                MemberStatus.INACTIVE, levelId, Set.of(MemberRole.MEMBER), levelChanges, joinedAt, clock.instant());
+                MemberStatus.INACTIVE, levelId, Set.of(MemberRole.MEMBER), levelChanges, joinedAt, clock.instant(), version);
     }
 
     private void requireNotAnonymised() {
@@ -247,7 +259,7 @@ public final class Member implements AggregateRoot {
     private Member copy(MemberStatus newStatus, LevelId newLevelId, Set<MemberRole> newRoles,
                         List<LevelChange> newHistory) {
         return reconstruct(id, associationId, contact, consent, newStatus, newLevelId, newRoles,
-                newHistory, joinedAt, anonymisedAt);
+                newHistory, joinedAt, anonymisedAt, version);
     }
 
     /**
@@ -325,6 +337,11 @@ public final class Member implements AggregateRoot {
 
     public Instant joinedAt() {
         return joinedAt;
+    }
+
+    /** Optimistic-lock version: a stale copy must never undo a newer change such as an RGPD erasure. */
+    public long version() {
+        return version;
     }
 
     public Optional<Instant> anonymisedAt() {

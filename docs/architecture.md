@@ -200,18 +200,28 @@ returned when querying as association B.
 
 ## 10. Concurrency
 
-The last seat must never go to two people (NFR "Concorrência"). Capacity is enforced with
-**optimistic locking on `Session`** (`@Version` on the JPA entity, mapped to a version field on
-the aggregate) plus database constraints as the backstop: a partial unique index
+The last seat must never go to two people, and the last credit must never be spent twice (NFR
+"Concorrência"). Every aggregate root has a `version` (domain field, `@Version` column) and every
+repository adapter saves through one path (`WriteSupport.write`):
+
+1. lock the root row (`SELECT ... FOR UPDATE`, no outer-join fetch) - writers queue on the root,
+   so child rows are always locked after it and two saves can't deadlock;
+2. compare the stored version with the aggregate's version - a stale copy is rejected;
+3. apply the domain state, flush;
+4. if only child rows changed (bookings, levels), force the version increment
+   (`PESSIMISTIC_FORCE_INCREMENT`), so every save moves the version by exactly one.
+
+Any lock or version failure is translated to the aggregate's typed
+`*ModifiedConcurrentlyException` (an `AggregateModifiedConcurrentlyException`). Use cases retry
+in a **new transaction** (re-read, then confirm, waitlist or reject) and keep working with the
+aggregate returned by `save`. Database constraints are the backstop: a partial unique index
 `(session_id, member_id) WHERE status <> 'CANCELLED'` on bookings (RN-07: one live booking per
-member per session; rebooking after a cancellation is allowed). Bookings live inside the
-`Session` aggregate and are persisted only through `SessionRepository.save(Session)` - there is
-no booking repository. Because inserting a booking row does not touch the session row, the
-adapter must force the session version increment (`OPTIMISTIC_FORCE_INCREMENT` or an explicit
-session update) on every save, otherwise two different members could both take the last seat.
-The waitlist is read in `requested_at, id` order (deterministic FIFO). A conflicting write surfaces as a domain-level conflict the use case retries
-or turns into a waitlist entry. The booking path has a Testcontainers test firing simultaneous
-bookings at the last seat.
+member per session; rebooking after a cancellation is allowed) and a unique
+`(association_id, training_group_id, starts_at)` on sessions. Bookings live inside the `Session`
+aggregate and are persisted only through `SessionRepository.save(Session)`; the waitlist is read in
+`requested_at, id` order (deterministic FIFO). Race tests with committed transactions cover the
+last seat (2 and 8 contenders), the last credit, cancel-and-promote against a capacity change,
+erasure against a stale edit, and approve against reject.
 
 ## 11. Identity and authentication
 

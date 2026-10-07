@@ -65,10 +65,11 @@ public final class Subscription implements AggregateRoot {
     private final LocalDate endDate;
     private final PaymentStatus paymentStatus;
     private final List<CreditUsage> usages;
+    private final long version;
 
     private Subscription(SubscriptionId id, AssociationId associationId, MemberId memberId, PlanId planId,
                          PlanTerms terms, LocalDate startDate, LocalDate endDate, PaymentStatus paymentStatus,
-                         List<CreditUsage> usages) {
+                         List<CreditUsage> usages, long version) {
         this.id = id;
         this.associationId = associationId;
         this.memberId = memberId;
@@ -78,6 +79,7 @@ public final class Subscription implements AggregateRoot {
         this.endDate = endDate;
         this.paymentStatus = paymentStatus;
         this.usages = usages;
+        this.version = version;
     }
 
     /**
@@ -110,7 +112,7 @@ public final class Subscription implements AggregateRoot {
                     throw new SubscriptionOverlapException(other.startDate, other.endDate);
                 });
         return reconstruct(SubscriptionId.generate(), plan.associationId(), memberId, plan.id(), plan.terms(),
-                startDate, endDate, PaymentStatus.PENDING, List.of());
+                startDate, endDate, PaymentStatus.PENDING, List.of(), 0L);
     }
 
     /**
@@ -124,10 +126,16 @@ public final class Subscription implements AggregateRoot {
         return create(plan, previous.memberId, previous.renewalStartDate(today), existing);
     }
 
-    /** Rebuilds a subscription from persisted data, re-checking its invariants. */
+    /**
+     * Rebuilds a subscription from persisted data, re-checking its invariants.
+     *
+     * @param version the optimistic-lock version it was loaded with (0 for a new subscription); every change
+     *                carries it over unchanged, so a stale copy is detected when it is saved. It is what stops two
+     *                concurrent bookings of one member from spending the same last credit (architecture.md section 10)
+     */
     public static Subscription reconstruct(SubscriptionId id, AssociationId associationId, MemberId memberId,
                                            PlanId planId, PlanTerms terms, LocalDate startDate, LocalDate endDate,
-                                           PaymentStatus paymentStatus, List<CreditUsage> usages) {
+                                           PaymentStatus paymentStatus, List<CreditUsage> usages, long version) {
         Objects.requireNonNull(terms, "terms must not be null");
         Objects.requireNonNull(startDate, "startDate must not be null");
         Objects.requireNonNull(endDate, "endDate must not be null");
@@ -136,13 +144,16 @@ public final class Subscription implements AggregateRoot {
         if (endDate.isBefore(startDate)) {
             throw new InvalidSubscriptionException("A subscription cannot end before it starts");
         }
+        if (version < 0) {
+            throw new InvalidSubscriptionException("The version must not be negative");
+        }
         requireConsistentUsages(terms, startDate, endDate, usages);
         return new Subscription(
                 Objects.requireNonNull(id, "id must not be null"),
                 Objects.requireNonNull(associationId, "associationId must not be null"),
                 Objects.requireNonNull(memberId, "memberId must not be null"),
                 Objects.requireNonNull(planId, "planId must not be null"),
-                terms, startDate, endDate, paymentStatus, List.copyOf(usages)
+                terms, startDate, endDate, paymentStatus, List.copyOf(usages), version
         );
     }
 
@@ -183,7 +194,7 @@ public final class Subscription implements AggregateRoot {
         if (!ALLOWED_TRANSITIONS.get(paymentStatus).contains(target)) {
             throw new InvalidPaymentStatusTransitionException(paymentStatus, target);
         }
-        return new Subscription(id, associationId, memberId, planId, terms, startDate, endDate, target, usages);
+        return new Subscription(id, associationId, memberId, planId, terms, startDate, endDate, target, usages, version);
     }
 
     // ------------------------------------------------------- balance (RN-06, RN-15)
@@ -363,7 +374,7 @@ public final class Subscription implements AggregateRoot {
 
     private Subscription withUsages(List<CreditUsage> newUsages) {
         return new Subscription(id, associationId, memberId, planId, terms, startDate, endDate, paymentStatus,
-                List.copyOf(newUsages));
+                List.copyOf(newUsages), version);
     }
 
     // ------------------------------------------------------------ period (RN-16)
@@ -446,6 +457,11 @@ public final class Subscription implements AggregateRoot {
     /** The bookings currently holding a place, in the order they were charged. */
     public List<CreditUsage> usages() {
         return usages;
+    }
+
+    /** Optimistic-lock version: concurrent changes of the balance must not be lost or spend one credit twice. */
+    public long version() {
+        return version;
     }
 
     /** Places currently used: for a pack, credits used; for a weekly plan, across all weeks. */

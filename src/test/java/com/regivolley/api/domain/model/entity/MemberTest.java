@@ -190,7 +190,48 @@ class MemberTest {
 
         private Member rebuild(MemberStatus status, LevelId level, List<LevelChange> changes, Instant anonymisedAt) {
             return Member.reconstruct(MemberId.generate(), ASSOCIATION.id(), CONTACT, CONSENT, status, level, Set.of(MemberRole.MEMBER), changes, JOINED,
-                    anonymisedAt);
+                    anonymisedAt, 0L);
+        }
+
+        @Test
+        void keepsTheVersionItWasLoadedWithThroughEveryChange() {
+            // Arrange
+            Member loaded = Member.reconstruct(MemberId.generate(), ASSOCIATION.id(), CONTACT, CONSENT,
+                    MemberStatus.ACTIVE, BEGINNER.id(), Set.of(MemberRole.MEMBER), List.of(), JOINED, null, 6L);
+
+            // Act
+            Member edited = loaded.grantRole(MemberRole.COACH).deactivate().reactivate();
+            Member erased = edited.anonymise(Clock.fixed(JOINED.plusSeconds(60), ZoneOffset.UTC));
+
+            // Assert
+            assertThat(loaded.version()).isEqualTo(6L);
+            assertThat(edited.version()).isEqualTo(6L);
+            assertThat(erased.version()).isEqualTo(6L);
+        }
+
+        @Test
+        void aNewMemberStartsAtVersionZero() {
+            // Arrange
+            // (default fixtures)
+
+            // Act
+            Member member = Member.create(ASSOCIATION, CONTACT, CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
+
+            // Assert
+            assertThat(member.version()).isZero();
+        }
+
+        @Test
+        void rejectsANegativeVersion() {
+            // Arrange
+            Executable act = () -> Member.reconstruct(MemberId.generate(), ASSOCIATION.id(), CONTACT, CONSENT,
+                    MemberStatus.ACTIVE, BEGINNER.id(), Set.of(MemberRole.MEMBER), List.of(), JOINED, null, -1L);
+
+            // Act
+            InvalidMemberException ex = assertThrows(InvalidMemberException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("version");
         }
 
         @Test
@@ -281,7 +322,7 @@ class MemberTest {
             // Arrange
             ContactDetails withoutPhone = ContactDetails.reconstruct("Ana", EmailAddress.of("ana@example.com"), null);
             Executable act = () -> Member.reconstruct(MemberId.generate(), ASSOCIATION.id(), withoutPhone, CONSENT,
-                    MemberStatus.ACTIVE, BEGINNER.id(), Set.of(MemberRole.MEMBER), List.of(), JOINED, null);
+                    MemberStatus.ACTIVE, BEGINNER.id(), Set.of(MemberRole.MEMBER), List.of(), JOINED, null, 0L);
 
             // Act
             InvalidMemberException ex = assertThrows(InvalidMemberException.class, act);
@@ -663,7 +704,7 @@ class MemberTest {
 
             // Act
             Member rebuilt = Member.reconstruct(erased.id(), erased.associationId(), erased.contact(), erased.consent(), erased.status(), erased.levelId(), erased.roles(),
-                    erased.levelChanges(), erased.joinedAt(), erased.anonymisedAt().orElseThrow());
+                    erased.levelChanges(), erased.joinedAt(), erased.anonymisedAt().orElseThrow(), erased.version());
 
             // Assert
             assertThat(rebuilt.isAnonymised()).isTrue();

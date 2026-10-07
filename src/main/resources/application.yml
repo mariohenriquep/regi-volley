@@ -3,7 +3,11 @@ spring:
     name: regi-volley
 
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:regi_volley}
+    # logServerErrorDetail=false: PostgreSQL's constraint-violation detail quotes the offending row
+    # ("Key (association_id, email)=(..., ana@example.com) already exists", "Failing row contains ..."),
+    # which would put personal data in exception messages and logs (NFR RGPD). The constraint name stays
+    # available, which is all the adapters need.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:regi_volley}?logServerErrorDetail=false
     username: ${DB_USER:regi_volley}
     password: ${DB_PASSWORD:regi_volley}
 
