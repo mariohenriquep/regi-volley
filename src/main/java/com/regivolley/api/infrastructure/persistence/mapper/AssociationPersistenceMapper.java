@@ -7,6 +7,7 @@ import com.regivolley.api.domain.model.valueobject.BookingPolicy;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.LevelId;
 import com.regivolley.api.domain.model.valueobject.Nif;
+import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.model.valueobject.SessionGenerationPolicy;
 import com.regivolley.api.domain.model.valueobject.ShortName;
 import com.regivolley.api.infrastructure.persistence.entity.AssociationJpaEntity;
@@ -38,6 +39,7 @@ public final class AssociationPersistenceMapper {
                 new EmailAddress(entity.getContactEmail()),
                 new BookingPolicy(entity.getBookingWindowDays(), entity.getFreeCancellationHours()),
                 new SessionGenerationPolicy(entity.getSessionGenerationWeeks()),
+                new NoShowPolicy(entity.getNoShowLimit()),
                 levels,
                 new LevelId(entity.getEntryLevelId()),
                 entity.getVersion() == null ? 0L : entity.getVersion());
@@ -58,6 +60,7 @@ public final class AssociationPersistenceMapper {
         entity.setBookingWindowDays(association.bookingPolicy().bookingWindowDays());
         entity.setFreeCancellationHours(association.bookingPolicy().freeCancellationHours());
         entity.setSessionGenerationWeeks(association.sessionGenerationPolicy().windowWeeks());
+        entity.setNoShowLimit(association.noShowPolicy().monthlyLimit());
         entity.setEntryLevelId(association.entryLevelId().value());
         syncLevels(association.levels(), entity);
     }

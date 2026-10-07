@@ -10,6 +10,7 @@ import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.LevelId;
 import com.regivolley.api.domain.model.valueobject.LevelRank;
 import com.regivolley.api.domain.model.valueobject.Nif;
+import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.model.valueobject.SessionGenerationPolicy;
 import com.regivolley.api.domain.model.valueobject.ShortName;
 import com.regivolley.api.domain.shared.AggregateRoot;
@@ -23,6 +24,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * The tenant (US-01, US-03): a volleyball association with its public identity, its default
@@ -57,14 +59,15 @@ public final class Association implements AggregateRoot {
     private final EmailAddress contactEmail;
     private final BookingPolicy bookingPolicy;
     private final SessionGenerationPolicy sessionGenerationPolicy;
+    private final NoShowPolicy noShowPolicy;
     private final List<Level> levels;
     private final LevelId entryLevelId;
     private final long version;
 
     private Association(AssociationId id, String name, ShortName shortName, Nif nif, String locality,
                         EmailAddress contactEmail, BookingPolicy bookingPolicy,
-                        SessionGenerationPolicy sessionGenerationPolicy, List<Level> levels,
-                        LevelId entryLevelId, long version) {
+                        SessionGenerationPolicy sessionGenerationPolicy, NoShowPolicy noShowPolicy,
+                        List<Level> levels, LevelId entryLevelId, long version) {
         this.id = id;
         this.name = name;
         this.shortName = shortName;
@@ -73,6 +76,7 @@ public final class Association implements AggregateRoot {
         this.contactEmail = contactEmail;
         this.bookingPolicy = bookingPolicy;
         this.sessionGenerationPolicy = sessionGenerationPolicy;
+        this.noShowPolicy = noShowPolicy;
         this.levels = levels;
         this.entryLevelId = entryLevelId;
         this.version = version;
@@ -98,7 +102,7 @@ public final class Association implements AggregateRoot {
         }
         return reconstruct(id, name, ShortName.of(shortName), optionalNif(nif), locality,
                 EmailAddress.of(contactEmail), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(),
-                levels, levels.get(0).id(), 0L);
+                NoShowPolicy.defaults(), levels, levels.get(0).id(), 0L);
     }
 
     /**
@@ -109,8 +113,8 @@ public final class Association implements AggregateRoot {
      */
     public static Association reconstruct(AssociationId id, String name, ShortName shortName, Nif nif,
                                           String locality, EmailAddress contactEmail, BookingPolicy bookingPolicy,
-                                          SessionGenerationPolicy sessionGenerationPolicy, List<Level> levels,
-                                          LevelId entryLevelId, long version) {
+                                          SessionGenerationPolicy sessionGenerationPolicy, NoShowPolicy noShowPolicy,
+                                          List<Level> levels, LevelId entryLevelId, long version) {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(levels, "levels must not be null");
         Objects.requireNonNull(entryLevelId, "entryLevelId must not be null");
@@ -128,6 +132,7 @@ public final class Association implements AggregateRoot {
                 Objects.requireNonNull(contactEmail, "contactEmail must not be null"),
                 Objects.requireNonNull(bookingPolicy, "bookingPolicy must not be null"),
                 Objects.requireNonNull(sessionGenerationPolicy, "sessionGenerationPolicy must not be null"),
+                Objects.requireNonNull(noShowPolicy, "noShowPolicy must not be null"),
                 ordered,
                 entryLevelId,
                 version
@@ -172,12 +177,19 @@ public final class Association implements AggregateRoot {
     /** Edits the details an administrator may change; the short name stays (it is the public URL). */
     public Association updateDetails(String newName, String newNif, String newLocality, String newContactEmail) {
         return reconstruct(id, newName, shortName, optionalNif(newNif), newLocality,
-                EmailAddress.of(newContactEmail), bookingPolicy, sessionGenerationPolicy, levels, entryLevelId, version);
+                EmailAddress.of(newContactEmail), bookingPolicy, sessionGenerationPolicy, noShowPolicy, levels, entryLevelId,
+                version);
     }
 
     public Association changeBookingPolicy(BookingPolicy newPolicy) {
-        return reconstruct(id, name, shortName, nif, locality, contactEmail, newPolicy, sessionGenerationPolicy, levels,
-                entryLevelId, version);
+        return reconstruct(id, name, shortName, nif, locality, contactEmail, newPolicy, sessionGenerationPolicy,
+                noShowPolicy, levels, entryLevelId, version);
+    }
+
+    /** RN-11: how many no-shows in a month trigger the warning to the member and the administrators. */
+    public Association changeNoShowPolicy(NoShowPolicy newPolicy) {
+        return reconstruct(id, name, shortName, nif, locality, contactEmail, bookingPolicy, sessionGenerationPolicy,
+                newPolicy, levels, entryLevelId, version);
     }
 
     /** Adds a level as the most advanced one; reorder afterwards to place it elsewhere. */
@@ -220,7 +232,7 @@ public final class Association implements AggregateRoot {
 
     private Association withLevels(List<Level> newLevels, LevelId newEntryLevelId) {
         return reconstruct(id, name, shortName, nif, locality, contactEmail, bookingPolicy, sessionGenerationPolicy,
-                newLevels, newEntryLevelId, version);
+                noShowPolicy, newLevels, newEntryLevelId, version);
     }
 
     private void requireLevel(LevelId levelId) {
@@ -251,6 +263,16 @@ public final class Association implements AggregateRoot {
     /** What booking eligibility needs of one level (RN-14, RN-21). */
     public LevelRank rankOf(LevelId levelId) {
         return level(levelId).toRank();
+    }
+
+    /** What booking eligibility needs of several levels, e.g. those a group accepts (RN-21). */
+    public Set<LevelRank> ranksOf(Set<LevelId> levelIds) {
+        return levelIds.stream().map(this::rankOf).collect(Collectors.toUnmodifiableSet());
+    }
+
+    /** Whether every one of these levels is one of this association's (a group may not accept another tenant's level). */
+    public boolean hasAllLevels(Set<LevelId> levelIds) {
+        return levelIds().containsAll(levelIds);
     }
 
     /** All levels, most basic first. */
@@ -294,6 +316,11 @@ public final class Association implements AggregateRoot {
      */
     public SessionGenerationPolicy sessionGenerationPolicy() {
         return sessionGenerationPolicy;
+    }
+
+    /** When reaching a monthly no-show count warns the member and administrators (RN-11); 3 unless changed. */
+    public NoShowPolicy noShowPolicy() {
+        return noShowPolicy;
     }
 
     public LevelId entryLevelId() {

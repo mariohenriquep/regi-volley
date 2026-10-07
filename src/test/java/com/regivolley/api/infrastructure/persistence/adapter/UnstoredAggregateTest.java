@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
+import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.exception.AssociationModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.JoinRequestModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.MemberModifiedConcurrentlyException;
@@ -124,7 +125,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association never = Fixtures.association();
         Association loaded = Association.reconstruct(never.id(), never.name(), never.shortName(), null, never.locality(),
-                never.contactEmail(), never.bookingPolicy(), never.sessionGenerationPolicy(), never.levels(),
+                never.contactEmail(), never.bookingPolicy(), never.sessionGenerationPolicy(), NoShowPolicy.defaults(), never.levels(),
                 never.entryLevelId(), 4L);
         Executable act = () -> associations.save(loaded);
 

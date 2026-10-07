@@ -7,6 +7,7 @@ import com.regivolley.api.domain.model.result.BookingCancellation;
 import com.regivolley.api.domain.model.result.BookingResult;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.BookingStatus;
+import com.regivolley.api.domain.model.valueobject.CancellationKind;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.model.valueobject.SessionStatus;
 import com.regivolley.api.domain.model.valueobject.TrainingGroupId;
@@ -126,6 +127,22 @@ class SessionRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
             assertThat(loaded).usingRecursiveComparison().isEqualTo(cancelled);
             assertThat(loaded.status()).isEqualTo(SessionStatus.CANCELLED);
             assertThat(loaded.cancellationReason()).contains("Venue closed for maintenance");
+        }
+
+        @Test
+        void aBookingCancelledByTheAssociationKeepsItsKind() {
+            // Arrange
+            AssociationId association = newAssociation();
+            MemberId member = MemberId.generate();
+            Session booked = book(session(association, SESSION_START, 12), member, 0);
+            Session cancelled = booked.cancelBookingByAssociation(bookingOf(booked, member).id(), CLOCK, who -> true).session();
+
+            // Act
+            Session loaded = saveAndReload(cancelled);
+
+            // Assert
+            assertThat(bookingOf(loaded, member).cancellationKind()).contains(CancellationKind.BY_ASSOCIATION);
+            assertThat(bookingOf(loaded, member).creditRefundable()).isTrue();
         }
 
         @Test

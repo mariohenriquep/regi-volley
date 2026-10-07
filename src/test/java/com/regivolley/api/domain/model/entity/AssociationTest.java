@@ -12,6 +12,7 @@ import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.LevelId;
 import com.regivolley.api.domain.model.valueobject.LevelRank;
 import com.regivolley.api.domain.model.valueobject.Nif;
+import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.model.valueobject.SessionGenerationPolicy;
 import com.regivolley.api.domain.model.valueobject.ShortName;
 import org.junit.jupiter.api.Nested;
@@ -23,6 +24,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -277,7 +279,7 @@ class AssociationTest {
 
         private Association rebuild(List<Level> levels, LevelId entry) {
             return Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
-                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(),
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(), NoShowPolicy.defaults(),
                     levels, entry, 0L);
         }
 
@@ -288,7 +290,7 @@ class AssociationTest {
 
             // Act
             Association association = Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
-                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), sixWeeks, List.of(beginner), beginner.id(), 7L);
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), sixWeeks, NoShowPolicy.defaults(), List.of(beginner), beginner.id(), 7L);
 
             // Assert
             assertThat(association.sessionGenerationPolicy()).isEqualTo(sixWeeks);
@@ -300,7 +302,7 @@ class AssociationTest {
             // Arrange
             SessionGenerationPolicy sixWeeks = new SessionGenerationPolicy(6);
             Association association = Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
-                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), sixWeeks, List.of(beginner), beginner.id(), 7L);
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), sixWeeks, NoShowPolicy.defaults(), List.of(beginner), beginner.id(), 7L);
 
             // Act
             Association edited = association.updateDetails("New name", null, "Porto", "x@y.co")
@@ -313,13 +315,59 @@ class AssociationTest {
         }
 
         @Test
+        void startsWithTheDefaultNoShowPolicyAndKeepsTheOneItWasGiven() {
+            // Arrange
+            NoShowPolicy five = new NoShowPolicy(5);
+
+            // Act
+            Association created = association();
+            Association custom = Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(), five,
+                    List.of(beginner), beginner.id(), 2L);
+
+            // Assert
+            assertThat(created.noShowPolicy()).isEqualTo(NoShowPolicy.defaults());
+            assertThat(custom.noShowPolicy()).isEqualTo(five);
+        }
+
+        @Test
+        void changesTheNoShowPolicyAndEveryOtherEditKeepsIt() {
+            // Arrange
+            Association association = association();
+            NoShowPolicy two = new NoShowPolicy(2);
+
+            // Act
+            Association changed = association.changeNoShowPolicy(two);
+            Association edited = changed.changeBookingPolicy(new BookingPolicy(3, 2)).addLevel("Pro");
+
+            // Assert
+            assertThat(changed.noShowPolicy()).isEqualTo(two);
+            assertThat(edited.noShowPolicy()).isEqualTo(two);
+            assertThat(association.noShowPolicy()).isEqualTo(NoShowPolicy.defaults());
+        }
+
+        @Test
+        void rejectsAMissingNoShowPolicy() {
+            // Arrange
+            Executable missing = () -> Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(), null,
+                    List.of(beginner), beginner.id(), 0L);
+
+            // Act
+            NullPointerException npe = assertThrows(NullPointerException.class, missing);
+
+            // Assert
+            assertThat(npe.getMessage()).contains("noShowPolicy");
+        }
+
+        @Test
         void rejectsANegativeVersionOrAMissingGenerationPolicy() {
             // Arrange
             Executable negative = () -> Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
-                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(),
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(), NoShowPolicy.defaults(),
                     List.of(beginner), beginner.id(), -1L);
             Executable missing = () -> Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
-                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), null, List.of(beginner), beginner.id(), 0L);
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), null, NoShowPolicy.defaults(), List.of(beginner), beginner.id(), 0L);
 
             // Act
             InvalidAssociationException ex = assertThrows(InvalidAssociationException.class, negative);
@@ -613,6 +661,49 @@ class AssociationTest {
             // Assert
             assertThat(rank).isEqualTo(new LevelRank(advanced, 2));
             assertThat(rank.isAtLeast(association.rankOf(association.entryLevelId()))).isTrue();
+        }
+
+        @Test
+        void exposesTheRanksOfSeveralLevelsAtOnce() {
+            // Arrange
+            Association association = association();
+            LevelId beginner = idOf(association, "Beginner");
+            LevelId advanced = idOf(association, "Advanced");
+
+            // Act
+            Set<LevelRank> ranks = association.ranksOf(Set.of(beginner, advanced));
+
+            // Assert
+            assertThat(ranks).containsExactlyInAnyOrder(new LevelRank(beginner, 0), new LevelRank(advanced, 2));
+        }
+
+        @Test
+        void ranksOfRejectsAnyLevelThatIsNotTheAssociations() {
+            // Arrange
+            Association association = association();
+            Executable act = () -> association.ranksOf(Set.of(idOf(association, "Beginner"), LevelId.generate()));
+
+            // Act
+            LevelNotFoundException ex = assertThrows(LevelNotFoundException.class, act);
+
+            // Assert
+            assertThat(ex).isNotNull();
+        }
+
+        @Test
+        void knowsWhetherItHasAllTheGivenLevels() {
+            // Arrange
+            Association association = association();
+            Set<LevelId> own = Set.of(idOf(association, "Beginner"), idOf(association, "Advanced"));
+            Set<LevelId> withForeign = Set.of(idOf(association, "Beginner"), LevelId.generate());
+
+            // Act
+            boolean ownLevels = association.hasAllLevels(own);
+            boolean foreign = association.hasAllLevels(withForeign);
+
+            // Assert
+            assertThat(ownLevels).isTrue();
+            assertThat(foreign).isFalse();
         }
 
         @Test

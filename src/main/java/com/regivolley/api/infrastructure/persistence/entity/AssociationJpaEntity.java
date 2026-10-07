@@ -50,6 +50,9 @@ public class AssociationJpaEntity {
     @Column(name = "session_generation_weeks", nullable = false)
     private int sessionGenerationWeeks;
 
+    @Column(name = "no_show_limit", nullable = false)
+    private int noShowLimit;
+
     @Column(name = "entry_level_id", nullable = false)
     private UUID entryLevelId;
 
@@ -126,6 +129,14 @@ public class AssociationJpaEntity {
 
     public void setFreeCancellationHours(int freeCancellationHours) {
         this.freeCancellationHours = freeCancellationHours;
+    }
+
+    public int getNoShowLimit() {
+        return noShowLimit;
+    }
+
+    public void setNoShowLimit(int noShowLimit) {
+        this.noShowLimit = noShowLimit;
     }
 
     public int getSessionGenerationWeeks() {

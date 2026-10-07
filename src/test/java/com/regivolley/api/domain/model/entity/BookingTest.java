@@ -358,7 +358,9 @@ class BookingTest {
                     Arguments.of(BookingStatus.CANCELLED, CONFIRMED_AT, CancellationKind.BY_SESSION, true, true, true),
                     Arguments.of(BookingStatus.CANCELLED, null, CancellationKind.FREE, false, false, false),
                     Arguments.of(BookingStatus.CANCELLED, null, CancellationKind.BY_SESSION, false, false, true),
-                    Arguments.of(BookingStatus.CANCELLED, null, CancellationKind.NOT_PROMOTED, false, false, false)
+                    Arguments.of(BookingStatus.CANCELLED, null, CancellationKind.NOT_PROMOTED, false, false, false),
+                    Arguments.of(BookingStatus.CANCELLED, CONFIRMED_AT, CancellationKind.BY_ASSOCIATION, true, true, false),
+                    Arguments.of(BookingStatus.CANCELLED, null, CancellationKind.BY_ASSOCIATION, false, false, false)
             );
         }
 

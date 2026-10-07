@@ -14,6 +14,14 @@ public interface MemberRepository {
 
     Optional<Member> findById(AssociationId associationId, MemberId id);
 
+    /**
+     * As {@link #findById}, but takes the member's row lock for the rest of the current transaction, so
+     * that two transactions working on the same member queue up instead of racing (RN-07: one member
+     * booking two overlapping sessions at once). Meant to be the first thing a transaction does; the
+     * lock is released at its commit or rollback. Must run inside a transaction.
+     */
+    Optional<Member> findByIdForUpdate(AssociationId associationId, MemberId id);
+
     /** The member of this association with that email; the same email in another association is another person. */
     Optional<Member> findByEmail(AssociationId associationId, EmailAddress email);
 

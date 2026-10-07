@@ -156,13 +156,14 @@ public final class Booking implements Entity {
 
     /**
      * Whether the credit consumed by this booking goes back to the member: it held a seat and was
-     * cancelled for free (RN-10) or by the session (RN-04). A LATE cancellation keeps it consumed.
+     * cancelled for free (RN-10), by the session (RN-04) or by the association (US-08). A LATE cancellation keeps it consumed.
      * Free cancellations are refunded when they happen, session cancellations through
      * {@link Session#bookingsToRefund()}.
      */
     public boolean creditRefundable() {
         return consumedCredit()
-                && (cancellationKind == CancellationKind.FREE || cancellationKind == CancellationKind.BY_SESSION);
+                && (cancellationKind == CancellationKind.FREE || cancellationKind == CancellationKind.BY_SESSION
+                        || cancellationKind == CancellationKind.BY_ASSOCIATION);
     }
 
     public BookingId id() {

@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Member;
@@ -56,7 +57,7 @@ class AggregateVersionMappingTest {
                 .renameLevel(association.levels().get(0).id(), "Newcomer").addLevel("Pro");
         Association withoutPro = Association.reconstruct(association.id(), association.name(), association.shortName(),
                 null, association.locality(), association.contactEmail(), association.bookingPolicy(),
-                association.sessionGenerationPolicy(), association.levels().subList(0, 2),
+                association.sessionGenerationPolicy(), NoShowPolicy.defaults(), association.levels().subList(0, 2),
                 association.levels().get(0).id(), 0L);
 
         // Act

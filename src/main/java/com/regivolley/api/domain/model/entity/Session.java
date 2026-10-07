@@ -2,6 +2,7 @@ package com.regivolley.api.domain.model.entity;
 
 import com.regivolley.api.domain.exception.AttendanceAlreadyMarkedException;
 import com.regivolley.api.domain.exception.BookingNotFoundException;
+import com.regivolley.api.domain.exception.BookingOverlapException;
 import com.regivolley.api.domain.exception.BookingWindowClosedException;
 import com.regivolley.api.domain.exception.CancellationClosedException;
 import com.regivolley.api.domain.exception.CancellationReasonRequiredException;
@@ -32,6 +33,7 @@ import com.regivolley.api.domain.shared.AggregateRoot;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -201,16 +203,44 @@ public final class Session implements AggregateRoot {
     public BookingCancellation cancelBooking(BookingId bookingId, BookingPolicy policy, Clock clock,
                                              Predicate<MemberId> eligibleForPromotion) {
         Objects.requireNonNull(eligibleForPromotion, "eligibleForPromotion must not be null");
-        requireScheduled();
+        requireCancellationsOpen(clock);
         Instant now = clock.instant();
-        if (!now.isBefore(startsAt)) {
-            throw new CancellationClosedException(startsAt);
-        }
-        Booking booking = findBooking(bookingId);
+        Booking booking = findExistingBooking(bookingId);
         boolean late = booking.status() == BookingStatus.CONFIRMED
                 && now.isAfter(policy.freeCancellationDeadline(startsAt));
-        Booking cancelled = booking.cancel(late ? CancellationKind.LATE : CancellationKind.FREE);
+        return cancelAndPromote(booking, late ? CancellationKind.LATE : CancellationKind.FREE, now, eligibleForPromotion);
+    }
 
+    /**
+     * Cancels a booking because the association decided so (deactivating the member, US-08), not the
+     * member: there is no late window, so the cancellation is {@link CancellationKind#BY_ASSOCIATION}
+     * whenever it is made and the credit of a booking that held a seat is refundable. The seat is freed
+     * and the waitlist promoted exactly as in {@link #cancelBooking}. Like it, rejected at or after the
+     * start and when the session is not SCHEDULED; the booking must still be WAITLISTED or CONFIRMED.
+     */
+    public BookingCancellation cancelBookingByAssociation(BookingId bookingId, Clock clock,
+                                                          Predicate<MemberId> eligibleForPromotion) {
+        Objects.requireNonNull(eligibleForPromotion, "eligibleForPromotion must not be null");
+        requireCancellationsOpen(clock);
+        return cancelAndPromote(findExistingBooking(bookingId), CancellationKind.BY_ASSOCIATION, clock.instant(),
+                eligibleForPromotion);
+    }
+
+    /** Whether bookings can still be cancelled: the session is SCHEDULED and has not started (RN-10). */
+    public boolean acceptsCancellations(Clock clock) {
+        return status == SessionStatus.SCHEDULED && clock.instant().isBefore(startsAt);
+    }
+
+    private void requireCancellationsOpen(Clock clock) {
+        requireScheduled();
+        if (!clock.instant().isBefore(startsAt)) {
+            throw new CancellationClosedException(startsAt);
+        }
+    }
+
+    private BookingCancellation cancelAndPromote(Booking booking, CancellationKind kind, Instant now,
+                                                 Predicate<MemberId> eligibleForPromotion) {
+        Booking cancelled = booking.cancel(kind);
         Promotion promotion = promote(replace(bookings, cancelled), capacity, eligibleForPromotion, now);
         return new BookingCancellation(withBookings(promotion.bookings()), cancelled, promotion.promoted());
     }
@@ -303,7 +333,7 @@ public final class Session implements AggregateRoot {
     /** Marks a CONFIRMED booking ATTENDED; only from the session start on (US-17). */
     public Session markAttended(BookingId bookingId, Clock clock) {
         requireStarted(clock);
-        Booking booking = findBooking(bookingId);
+        Booking booking = findExistingBooking(bookingId);
         return withBookings(replace(bookings, booking.markAttended()));
     }
 
@@ -313,7 +343,7 @@ public final class Session implements AggregateRoot {
      */
     public Session markNoShow(BookingId bookingId, Clock clock) {
         requireStarted(clock);
-        Booking booking = findBooking(bookingId);
+        Booking booking = findExistingBooking(bookingId);
         return withBookings(replace(bookings, booking.markNoShow()));
     }
 
@@ -359,6 +389,42 @@ public final class Session implements AggregateRoot {
         return bookingsCancelledBySession().stream().filter(Booking::consumedCredit).toList();
     }
 
+    /** The booking with this id in this session, whatever its status. */
+    public Optional<Booking> findBooking(BookingId bookingId) {
+        return bookings.stream().filter(b -> b.id().equals(bookingId)).findFirst();
+    }
+
+    /**
+     * RN-07: whether this session and {@code other} share any time. Back-to-back sessions (one ends
+     * exactly when the next starts) do not overlap. Says nothing about bookings or associations: the
+     * caller asks it about the sessions in which a member holds a live booking.
+     */
+    public boolean overlaps(Session other) {
+        return startsAt.isBefore(other.endsAt) && other.startsAt.isBefore(endsAt);
+    }
+
+    /**
+     * RN-07: rejects when any of {@code sessionsOfTheMember} - the sessions in which a member holds a
+     * live booking, as the repository narrowed them down - takes place at the same time as this one. This
+     * session itself and CANCELLED ones are ignored (a duplicate booking is {@link #book}'s rule).
+     *
+     * @throws BookingOverlapException naming the first overlapping session
+     */
+    public void requireNoOverlapWith(Collection<Session> sessionsOfTheMember) {
+        sessionsOfTheMember.stream()
+                .filter(other -> !other.id.equals(id) && other.status != SessionStatus.CANCELLED)
+                .filter(this::overlaps)
+                .findFirst()
+                .ifPresent(other -> {
+                    throw new BookingOverlapException(other.id, other.startsAt);
+                });
+    }
+
+    /** The member's WAITLISTED or CONFIRMED booking in this session, if they have one. */
+    public Optional<Booking> activeBookingOf(MemberId memberId) {
+        return bookings.stream().filter(b -> b.isActive() && b.memberId().equals(memberId)).findFirst();
+    }
+
     public Instant bookingOpensAt(BookingPolicy policy) {
         return policy.bookingOpensAt(startsAt);
     }
@@ -371,11 +437,8 @@ public final class Session implements AggregateRoot {
                 .anyMatch(b -> b.status() != BookingStatus.CANCELLED && b.memberId().equals(memberId));
     }
 
-    private Booking findBooking(BookingId bookingId) {
-        return bookings.stream()
-                .filter(b -> b.id().equals(bookingId))
-                .findFirst()
-                .orElseThrow(() -> new BookingNotFoundException(bookingId));
+    private Booking findExistingBooking(BookingId bookingId) {
+        return findBooking(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
     }
 
     private void requireScheduled() {

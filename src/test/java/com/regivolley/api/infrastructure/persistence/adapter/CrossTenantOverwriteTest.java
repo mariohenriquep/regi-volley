@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
+import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Level;
@@ -176,7 +177,7 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
         twoAssociations();
         Level stolen = Level.reconstruct(a.entryLevelId(), b.id(), "Stolen", 0);
         Association hijack = Association.reconstruct(b.id(), b.name(), b.shortName(), null, b.locality(),
-                b.contactEmail(), b.bookingPolicy(), b.sessionGenerationPolicy(), List.of(stolen), stolen.id(),
+                b.contactEmail(), b.bookingPolicy(), b.sessionGenerationPolicy(), NoShowPolicy.defaults(), List.of(stolen), stolen.id(),
                 b.version());
         Executable act = () -> associations.save(hijack);
 

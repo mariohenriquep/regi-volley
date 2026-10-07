@@ -2,6 +2,7 @@ package com.regivolley.api.domain.model.entity;
 
 import com.regivolley.api.domain.exception.AttendanceAlreadyMarkedException;
 import com.regivolley.api.domain.exception.BookingNotFoundException;
+import com.regivolley.api.domain.exception.BookingOverlapException;
 import com.regivolley.api.domain.exception.BookingWindowClosedException;
 import com.regivolley.api.domain.exception.CancellationClosedException;
 import com.regivolley.api.domain.exception.CancellationReasonRequiredException;
@@ -1043,6 +1044,354 @@ class SessionTest {
 
             // Assert
             assertThat(ex.getMessage()).contains("eligibleForPromotion");
+        }
+    }
+
+    @Nested
+    class CancelBookingByAssociation {
+
+        @Test
+        void cancelsAConfirmedBookingAsByAssociationAndFreesTheSeatForTheWaitlist() {
+            // Arrange
+            List<MemberId> people = members(3);
+            Session session = bookedBy(1, people);
+            BookingId id = bookingOf(session, people.get(0)).id();
+
+            // Act
+            BookingCancellation result = session.cancelBookingByAssociation(id, at(OPENS_AT.plusSeconds(100)), EVERYONE);
+
+            // Assert
+            assertThat(result.cancelled().cancellationKind()).contains(CancellationKind.BY_ASSOCIATION);
+            assertThat(result.cancelled().creditRefundable()).isTrue();
+            assertThat(result.isLate()).isFalse();
+            assertThat(result.promoted()).extracting(Booking::memberId).containsExactly(people.get(1));
+            assertThat(result.session().waitlist()).extracting(Booking::memberId).containsExactly(people.get(2));
+        }
+
+        @Test
+        void isNeverLateEvenInsideTheLateWindow() {
+            // Arrange
+            List<MemberId> people = members(1);
+            Session session = bookedBy(2, people);
+            BookingId id = bookingOf(session, people.get(0)).id();
+
+            // Act
+            BookingCancellation result = session.cancelBookingByAssociation(id,
+                    at(FREE_CANCELLATION_DEADLINE.plusSeconds(1)), EVERYONE);
+
+            // Assert
+            assertThat(result.cancelled().cancellationKind()).contains(CancellationKind.BY_ASSOCIATION);
+            assertThat(result.cancelled().creditRefundable()).isTrue();
+        }
+
+        @Test
+        void isAllowedOneSecondBeforeTheStart() {
+            // Arrange
+            List<MemberId> people = members(1);
+            Session session = bookedBy(2, people);
+            BookingId id = bookingOf(session, people.get(0)).id();
+
+            // Act
+            BookingCancellation result = session.cancelBookingByAssociation(id, at(START.minusSeconds(1)), EVERYONE);
+
+            // Assert
+            assertThat(result.cancelled().status()).isEqualTo(BookingStatus.CANCELLED);
+        }
+
+        @ParameterizedTest
+        @ValueSource(longs = {0, 1, 3600})
+        void isRejectedAtOrAfterTheStart(long secondsAfterStart) {
+            // Arrange
+            List<MemberId> people = members(1);
+            Session session = bookedBy(2, people);
+            BookingId id = bookingOf(session, people.get(0)).id();
+            Executable act = () -> session.cancelBookingByAssociation(id, at(START.plusSeconds(secondsAfterStart)), EVERYONE);
+
+            // Act
+            CancellationClosedException ex = assertThrows(CancellationClosedException.class, act);
+
+            // Assert
+            assertThat(ex.startsAt()).isEqualTo(START);
+        }
+
+        @Test
+        void aWaitlistedBookingIsCancelledWithoutAnythingToRefund() {
+            // Arrange
+            List<MemberId> people = members(2);
+            Session session = bookedBy(1, people);
+            BookingId waitlisted = bookingOf(session, people.get(1)).id();
+
+            // Act
+            BookingCancellation result = session.cancelBookingByAssociation(waitlisted, at(OPENS_AT.plusSeconds(100)), EVERYONE);
+
+            // Assert
+            assertThat(result.cancelled().cancellationKind()).contains(CancellationKind.BY_ASSOCIATION);
+            assertThat(result.cancelled().creditRefundable()).isFalse();
+            assertThat(result.promoted()).isEmpty();
+        }
+
+        @Test
+        void skipsIneligibleWaitlistedMembersLikeAnyCancellation() {
+            // Arrange
+            List<MemberId> people = members(3);
+            Session session = bookedBy(1, people);
+            BookingId id = bookingOf(session, people.get(0)).id();
+
+            // Act
+            BookingCancellation result = session.cancelBookingByAssociation(id, at(OPENS_AT.plusSeconds(100)),
+                    member -> !member.equals(people.get(1)));
+
+            // Assert
+            assertThat(result.promoted()).extracting(Booking::memberId).containsExactly(people.get(2));
+        }
+
+        @Test
+        void rejectsAnAttendedBooking() {
+            // Arrange
+            List<MemberId> people = members(1);
+            Session session = bookedBy(2, people);
+            Session marked = session.markAttended(bookingOf(session, people.get(0)).id(), at(START));
+            BookingId id = bookingOf(marked, people.get(0)).id();
+            Executable act = () -> marked.cancelBookingByAssociation(id, at(START.minusSeconds(1)), EVERYONE);
+
+            // Act
+            InvalidBookingStatusTransitionException ex = assertThrows(InvalidBookingStatusTransitionException.class, act);
+
+            // Assert
+            assertThat(ex).isNotNull();
+        }
+
+        @Test
+        void rejectsASessionThatIsNotScheduledAnUnknownBookingAndANullPredicate() {
+            // Arrange
+            List<MemberId> people = members(1);
+            Session session = bookedBy(2, people);
+            BookingId id = bookingOf(session, people.get(0)).id();
+            Session cancelledSession = session.cancel("Reason");
+            Executable notScheduled = () -> cancelledSession.cancelBookingByAssociation(id, at(OPENS_AT), EVERYONE);
+            Executable unknown = () -> session.cancelBookingByAssociation(BookingId.generate(), at(OPENS_AT), EVERYONE);
+            Executable nullPredicate = () -> session.cancelBookingByAssociation(id, at(OPENS_AT), null);
+
+            // Act
+            SessionNotScheduledException first = assertThrows(SessionNotScheduledException.class, notScheduled);
+            BookingNotFoundException second = assertThrows(BookingNotFoundException.class, unknown);
+            NullPointerException third = assertThrows(NullPointerException.class, nullPredicate);
+
+            // Assert
+            assertThat(first).isNotNull();
+            assertThat(second).isNotNull();
+            assertThat(third.getMessage()).contains("eligibleForPromotion");
+        }
+    }
+
+    @Nested
+    class AcceptsCancellations {
+
+        @Test
+        void isTrueWhileScheduledAndBeforeTheStart() {
+            // Arrange
+            Session session = newSession(2);
+
+            // Act
+            boolean wellBefore = session.acceptsCancellations(at(OPENS_AT));
+            boolean lastSecond = session.acceptsCancellations(at(START.minusSeconds(1)));
+
+            // Assert
+            assertThat(wellBefore).isTrue();
+            assertThat(lastSecond).isTrue();
+        }
+
+        @ParameterizedTest
+        @ValueSource(longs = {0, 1})
+        void isFalseAtAndAfterTheStart(long secondsAfterStart) {
+            // Arrange
+            Session session = newSession(2);
+
+            // Act
+            boolean accepts = session.acceptsCancellations(at(START.plusSeconds(secondsAfterStart)));
+
+            // Assert
+            assertThat(accepts).isFalse();
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = SessionStatus.class, names = {"COMPLETED", "CANCELLED"})
+        void isFalseOnceTheSessionIsNoLongerScheduled(SessionStatus status) {
+            // Arrange
+            Session session = sessionIn(status);
+
+            // Act
+            boolean accepts = session.acceptsCancellations(at(OPENS_AT));
+
+            // Assert
+            assertThat(accepts).isFalse();
+        }
+    }
+
+    @Nested
+    class Overlap {
+
+        @Test
+        void overlapsWhenTheIntervalsShareTime() {
+            // Arrange
+            Session session = newSession(2);
+            Session later = Session.create(ASSOCIATION, GROUP, COACH, START.plus(Duration.ofMinutes(30)),
+                    END.plus(Duration.ofMinutes(30)), 2);
+
+            // Act
+            boolean forward = session.overlaps(later);
+            boolean backward = later.overlaps(session);
+
+            // Assert
+            assertThat(forward).isTrue();
+            assertThat(backward).isTrue();
+        }
+
+        @Test
+        void backToBackSessionsDoNotOverlap() {
+            // Arrange
+            Session session = newSession(2);
+            Session next = Session.create(ASSOCIATION, GROUP, COACH, END, END.plus(Duration.ofMinutes(90)), 2);
+
+            // Act
+            boolean overlaps = session.overlaps(next);
+
+            // Assert
+            assertThat(overlaps).isFalse();
+        }
+
+        @Test
+        void aSessionAlwaysOverlapsItselfAndASeparateOneDoesNot() {
+            // Arrange
+            Session session = newSession(2);
+            Session dayAfter = Session.create(ASSOCIATION, GROUP, COACH, START.plus(Duration.ofDays(1)),
+                    END.plus(Duration.ofDays(1)), 2);
+
+            // Act
+            boolean itself = session.overlaps(session);
+            boolean apart = session.overlaps(dayAfter);
+
+            // Assert
+            assertThat(itself).isTrue();
+            assertThat(apart).isFalse();
+        }
+    }
+
+    @Nested
+    class NoOverlapRule {
+
+        private Session other(Instant start, Instant end) {
+            return Session.create(ASSOCIATION, GROUP, COACH, start, end, 2);
+        }
+
+        @Test
+        void rejectsWhenAnotherSessionOfTheMemberOverlaps() {
+            // Arrange
+            Session session = newSession(2);
+            Session clash = other(START.plus(Duration.ofMinutes(30)), END.plus(Duration.ofMinutes(30)));
+            Executable act = () -> session.requireNoOverlapWith(List.of(clash));
+
+            // Act
+            BookingOverlapException ex = assertThrows(BookingOverlapException.class, act);
+
+            // Assert
+            assertThat(ex.overlappingSessionId()).isEqualTo(clash.id());
+            assertThat(ex.getMessage()).contains("20/10/2026 20:30");
+        }
+
+        @Test
+        void ignoresTheSessionItselfBackToBackAndDistantSessions() {
+            // Arrange
+            Session session = newSession(2);
+            Session before = other(START.minus(Duration.ofMinutes(90)), START);
+            Session after = other(END, END.plus(Duration.ofMinutes(90)));
+            Session nextWeek = other(START.plus(Duration.ofDays(7)), END.plus(Duration.ofDays(7)));
+
+            // Act
+            Executable act = () -> session.requireNoOverlapWith(List.of(session, before, after, nextWeek));
+
+            // Assert
+            assertDoesNotThrow(act);
+        }
+
+        @Test
+        void aCancelledSessionNeverBlocks() {
+            // Arrange
+            Session session = newSession(2);
+            Session cancelled = other(START, END).cancel("Venue closed");
+
+            // Act
+            Executable act = () -> session.requireNoOverlapWith(List.of(cancelled));
+
+            // Assert
+            assertDoesNotThrow(act);
+        }
+
+        @Test
+        void nothingToCompareAgainstIsFine() {
+            // Arrange
+            Session session = newSession(2);
+
+            // Act
+            Executable act = () -> session.requireNoOverlapWith(List.of());
+
+            // Assert
+            assertDoesNotThrow(act);
+        }
+    }
+
+    @Nested
+    class FindBooking {
+
+        @Test
+        void findsABookingByIdOrReturnsEmpty() {
+            // Arrange
+            List<MemberId> people = members(1);
+            Session session = bookedBy(2, people);
+            Booking booking = bookingOf(session, people.get(0));
+
+            // Act
+            var found = session.findBooking(booking.id());
+            var missing = session.findBooking(BookingId.generate());
+
+            // Assert
+            assertThat(found).contains(booking);
+            assertThat(missing).isEmpty();
+        }
+
+        @Test
+        void activeBookingOfIsTheMembersWaitlistedOrConfirmedBookingOnly() {
+            // Arrange
+            List<MemberId> people = members(3);
+            Session session = bookedBy(1, people);
+            Session withCancelled = session.cancelBooking(bookingOf(session, people.get(1)).id(), POLICY,
+                    at(OPENS_AT.plusSeconds(100)), member -> false).session();
+
+            // Act
+            var confirmed = withCancelled.activeBookingOf(people.get(0));
+            var waitlisted = withCancelled.activeBookingOf(people.get(2));
+            var cancelled = withCancelled.activeBookingOf(people.get(1));
+            var stranger = withCancelled.activeBookingOf(MemberId.generate());
+
+            // Assert
+            assertThat(confirmed).hasValueSatisfying(b -> assertThat(b.status()).isEqualTo(BookingStatus.CONFIRMED));
+            assertThat(waitlisted).hasValueSatisfying(b -> assertThat(b.status()).isEqualTo(BookingStatus.WAITLISTED));
+            assertThat(cancelled).isEmpty();
+            assertThat(stranger).isEmpty();
+        }
+
+        @Test
+        void activeBookingOfIgnoresAttendedAndNoShowBookings() {
+            // Arrange
+            List<MemberId> people = members(1);
+            Session session = bookedBy(2, people);
+            Session attended = session.markAttended(bookingOf(session, people.get(0)).id(), at(START));
+
+            // Act
+            var active = attended.activeBookingOf(people.get(0));
+
+            // Assert
+            assertThat(active).isEmpty();
         }
     }
 

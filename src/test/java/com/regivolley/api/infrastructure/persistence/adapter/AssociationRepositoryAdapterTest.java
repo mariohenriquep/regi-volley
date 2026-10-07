@@ -4,8 +4,10 @@ import com.regivolley.api.domain.exception.AggregateModifiedConcurrentlyExceptio
 import com.regivolley.api.domain.exception.ShortNameAlreadyTakenException;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Level;
+import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.BookingPolicy;
 import com.regivolley.api.domain.model.valueobject.LevelId;
+import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.model.valueobject.SessionGenerationPolicy;
 import com.regivolley.api.domain.model.valueobject.ShortName;
 import com.regivolley.api.domain.repository.AssociationRepository;
@@ -63,6 +65,7 @@ class AssociationRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         assertThat(loaded).usingRecursiveComparison().isEqualTo(association);
         assertThat(loaded.version()).isZero();
         assertThat(loaded.sessionGenerationPolicy()).isEqualTo(SessionGenerationPolicy.defaults());
+        assertThat(loaded.noShowPolicy()).isEqualTo(NoShowPolicy.defaults());
         assertThat(loaded.levels()).extracting(Level::name).containsExactly("Beginner", "Intermediate", "Advanced");
     }
 
@@ -72,7 +75,7 @@ class AssociationRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         Association base = Association.create("Club Sem Nif", "sem-nif", null, "Porto", "a@b.co",
                 List.of("Beginner", "Advanced"));
         Association custom = Association.reconstruct(base.id(), base.name(), base.shortName(), null, base.locality(),
-                base.contactEmail(), new BookingPolicy(3, 12), new SessionGenerationPolicy(6), base.levels(),
+                base.contactEmail(), new BookingPolicy(3, 12), new SessionGenerationPolicy(6), new NoShowPolicy(5), base.levels(),
                 levelNamed(base, "Advanced"), 0L);
 
         // Act
@@ -83,7 +86,22 @@ class AssociationRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         assertThat(loaded.nif()).isEmpty();
         assertThat(loaded.bookingPolicy()).isEqualTo(new BookingPolicy(3, 12));
         assertThat(loaded.sessionGenerationPolicy().windowWeeks()).isEqualTo(6);
+        assertThat(loaded.noShowPolicy()).isEqualTo(new NoShowPolicy(5));
         assertThat(loaded.entryLevel().name()).isEqualTo("Advanced");
+    }
+
+    @Test
+    void listsTheIdsOfEveryStoredAssociation() {
+        // Arrange
+        Association first = associations.save(association());
+        Association second = associations.save(association());
+        flushAndClear();
+
+        // Act
+        List<AssociationId> ids = associations.findAllIds();
+
+        // Assert
+        assertThat(ids).contains(first.id(), second.id());
     }
 
     @Test
