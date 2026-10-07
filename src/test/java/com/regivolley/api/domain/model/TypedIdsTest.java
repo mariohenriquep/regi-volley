@@ -58,10 +58,19 @@ class TypedIdsTest {
         // Act
         BookingId booking = BookingId.of(uuid);
         TrainingGroupId group = TrainingGroupId.of(uuid);
+        PlanId plan = PlanId.of(uuid);
+        SubscriptionId subscription = SubscriptionId.of(uuid);
+        LevelId level = LevelId.of(uuid);
 
         // Assert
         assertThat(booking.value()).isEqualTo(uuid);
         assertThat(group.value()).isEqualTo(uuid);
+        assertThat(plan.value()).isEqualTo(uuid);
+        assertThat(subscription.value()).isEqualTo(uuid);
+        assertThat(level.value()).isEqualTo(uuid);
+        assertThat(PlanId.generate()).isNotNull();
+        assertThat(SubscriptionId.generate()).isNotNull();
+        assertThat(LevelId.generate()).isNotNull();
         assertThat(BookingId.generate()).isNotNull();
         assertThat(TrainingGroupId.generate()).isNotNull();
         assertThat(AssociationId.generate()).isNotNull();
