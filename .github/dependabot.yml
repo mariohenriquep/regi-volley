@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # Application and test dependencies (Spring Boot, Testcontainers, JaCoCo, ...).
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    # Wait 7 days after a new version is published before proposing it - a newly published
+    # package is more likely to be malicious (not yet caught) or simply unstable.
+    cooldown:
+      default-days: 7
+
+  # Actions used in .github/workflows/ci.yml (checkout, setup-java, gitleaks-action, ...).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    cooldown:
+      default-days: 7

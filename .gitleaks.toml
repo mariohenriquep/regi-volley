@@ -1,0 +1,15 @@
+title = "regi-volley gitleaks config"
+
+# Extend the default ruleset rather than replacing it.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known-safe placeholders, not real secrets"
+regexes = [
+  # src/main/resources/application.yml: local-dev-only default credentials for the
+  # docker-compose Postgres instance, matching its POSTGRES_USER/POSTGRES_PASSWORD. Low-entropy,
+  # identical to the username, never used outside a developer's own machine - overridden by real
+  # env vars (DB_USER/DB_PASSWORD) in any other environment.
+  '''\$\{DB_PASSWORD:regi_volley\}''',
+]
