@@ -160,8 +160,14 @@ returned when querying as association B.
 
 The last seat must never go to two people (NFR "Concorrência"). Capacity is enforced with
 **optimistic locking on `Session`** (`@Version` on the JPA entity, mapped to a version field on
-the aggregate) plus database constraints as the backstop: a unique `(session_id, member_id)` on
-bookings (RN-07). A conflicting write surfaces as a domain-level conflict the use case retries
+the aggregate) plus database constraints as the backstop: a partial unique index
+`(session_id, member_id) WHERE status <> 'CANCELLED'` on bookings (RN-07: one live booking per
+member per session; rebooking after a cancellation is allowed). Bookings live inside the
+`Session` aggregate and are persisted only through `SessionRepository.save(Session)` - there is
+no booking repository. Because inserting a booking row does not touch the session row, the
+adapter must force the session version increment (`OPTIMISTIC_FORCE_INCREMENT` or an explicit
+session update) on every save, otherwise two different members could both take the last seat.
+The waitlist is read in `requested_at, id` order (deterministic FIFO). A conflicting write surfaces as a domain-level conflict the use case retries
 or turns into a waitlist entry. The booking path has a Testcontainers test firing simultaneous
 bookings at the last seat.
 
@@ -171,3 +177,12 @@ Users, credentials and roles are infrastructure (`infrastructure.security`). The
 sees `MemberId` and `AssociationId`; roles are checked server-side on every request before the
 use case is called. Personal data (name, email, phone) is never written to logs (NFR
 "Operação"/RGPD).
+
+## 12. Domain exceptions and messages
+
+Rule violations a user can trigger (booking window closed, session full, duplicate booking, ...)
+are domain exceptions extending a common `BusinessRuleException`, carrying structured data
+(ids, instants) plus an English message that the web layer may show as-is; times in those messages
+are formatted in `Europe/Lisbon` as `dd/MM/yyyy HH:mm`, never raw UTC. Invariant and programming errors (invalid
+reconstruct data, null arguments) use English messages and are never shown to users - they map
+to a generic error.

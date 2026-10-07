@@ -79,6 +79,38 @@ mesmo tempo.
 O núcleo é a **Reserva**: liga um Membro a uma Sessão e gasta saldo de uma Subscrição. Tudo o
 resto existe para decidir se essa reserva é permitida.
 
+```mermaid
+flowchart TB
+    subgraph A["Associação (tenant): todas as entidades têm association_id"]
+        Pavilhao["Pavilhão<br/><small>nome, morada<br/>n.º de campos</small>"]
+        Nivel["Nível<br/><small>nome e ordem<br/>um é o nível de entrada</small>"]
+        Plano["Plano<br/><small>tipo, preço, n.º sessões<br/>validade, níveis aceites</small>"]
+        Turma["Turma<br/><small>níveis, horário recorrente<br/>lotação, treinador</small>"]
+        Membro["Membro<br/><small>contacto, nível, estado<br/>consentimento RGPD</small>"]
+        Subscricao["Subscrição<br/><small>início, fim, saldo<br/>paga, pendente ou atraso</small>"]
+        Sessao["Sessão<br/><small>data, hora, lotação<br/>estado (RN-05)</small>"]
+        Reserva["<b>Reserva</b><br/><small>confirmada ou em espera<br/>presença ou falta (RN-12)</small>"]
+        Pagamento["Pagamento<br/><small>valor, data, método<br/>estorno em vez de apagar</small>"]
+        Evento["Evento<br/><small>torneio interno ou convívio<br/>página pública (E6)</small>"]
+
+        Turma -- decorre em --> Pavilhao
+        Turma -- aceita --> Nivel
+        Turma -- gera --> Sessao
+        Membro -- tem nível --> Nivel
+        Membro -- faz --> Reserva
+        Membro -- tem --> Subscricao
+        Reserva -- para --> Sessao
+        Reserva -. usa senha .-> Subscricao
+        Subscricao -- de --> Plano
+        Pagamento -- paga --> Subscricao
+    end
+
+    style Reserva stroke-width:3px
+```
+
+Cada seta lê-se como frase: *Turma decorre em Pavilhão*. A seta tracejada indica que a
+reserva gasta saldo da subscrição.
+
 Cada entidade tem três modelos, como no task-manager-api: domínio, entidade JPA e DTO web.
 Utilizadores e autenticação ficam fora do domínio, na infraestrutura; o domínio recebe apenas o
 `memberId` e o `associationId`.
@@ -94,7 +126,8 @@ definidos por associação; entre parênteses fica o valor por omissão.
 - **RN-01** As sessões são geradas a partir do horário recorrente da turma, com uma janela
   configurável (4 semanas).
 - **RN-02** A lotação é herdada da turma e pode ser alterada numa sessão concreta. Recomenda-se
-  um múltiplo de 6 (12 = 2 equipas num campo); não é obrigatório.
+  um múltiplo de 6 (12 = 2 equipas num campo); não é obrigatório. O treinador da sessão não
+  conta para a lotação, mesmo quando joga (decidido a 7/10/2026).
 - **RN-03** As reservas abrem um número configurável de dias antes (7) e fecham no início da
   sessão.
 - **RN-04** Cancelar uma sessão cancela todas as reservas, devolve a senha consumida e notifica
@@ -107,14 +140,21 @@ definidos por associação; entre parênteses fica o valor por omissão.
 - **RN-06** Só reserva um membro ativo, com nível permitido na turma e com plano válido e saldo
   na data da sessão.
 - **RN-07** Um membro tem no máximo uma reserva por sessão, e não pode ter duas sessões
-  sobrepostas no tempo.
+  sobrepostas no tempo. *Uma reserva ativa por sessão: depois de cancelar, o membro pode voltar a
+  reservar e entra no fim da fila.*
 - **RN-08** Sessão cheia → o pedido entra na lista de espera, por ordem de chegada.
 - **RN-09** Quando alguém cancela, o primeiro da lista de espera passa a confirmado
   automaticamente e é notificado, desde que ainda tenha saldo. Se não tiver, passa ao seguinte.
+  *Se todos os membros em espera estiverem sem saldo, um lugar livre pode ser ocupado por um novo
+  pedido; a lista de espera é reavaliada quando um membro em espera volta a ter saldo.*
 - **RN-10** O cancelamento é gratuito até um prazo configurável (6 h antes). Depois do prazo, a
-  reserva conta como usada e o lugar é libertado para a lista de espera.
+  reserva conta como usada e o lugar é libertado para a lista de espera. *A partir do início da
+  sessão já não é possível cancelar a reserva (as presenças passam a ser marcadas pelo
+  treinador). Cancelar uma reserva em espera é sempre gratuito.*
 - **RN-11** Reservado e não presente = falta. Ao fim de um número configurável de faltas num mês
   (3), o membro fica impedido de reservar durante um período configurável (7 dias).
+  **Decisão 7/10/2026:** por agora não há bloqueio — ao atingir o limite, o membro e o
+  administrador recebem apenas um aviso. O bloqueio fica para uma fase seguinte.
 - **RN-12** Estados da reserva: Em espera → Confirmada → Presente | Falta, e
   Em espera | Confirmada → Cancelada.
 
@@ -133,7 +173,8 @@ definidos por associação; entre parênteses fica o valor por omissão.
 - **RN-17** O administrador regista um pagamento com valor, data, método (numerário,
   transferência, MB WAY) e a subscrição a que diz respeito.
 - **RN-18** Uma subscrição pode estar Paga, Pendente ou Em atraso. A associação decide se um
-  membro em atraso pode reservar (pode, por omissão, com aviso ao administrador).
+  membro em atraso pode reservar. **Decisão 7/10/2026:** por agora um membro com a subscrição
+  Em atraso **não pode reservar**; a reserva é recusada com o motivo.
 - **RN-19** Um pagamento registado não se apaga: corrige-se com um estorno, para manter o
   histórico.
 
@@ -217,7 +258,7 @@ associações são requisitos do MVP, não melhorias futuras.
 | Autenticação | Email + palavra-passe ou link mágico; sessões com JWT ou cookie seguro; papéis verificados no servidor em cada pedido |
 | Concorrência | A última vaga não pode ser atribuída a duas pessoas: bloqueio otimista ou restrição na base de dados, com teste de reservas simultâneas |
 | Desempenho | A lista de sessões da semana responde em menos de 500 ms (p95) para uma associação com 300 membros |
-| Usabilidade | Web app mobile-first (PWA); reservar em 2 toques a partir do ecrã inicial; PT-PT por omissão, preparada para tradução |
+| Usabilidade | Web app mobile-first (PWA); reservar em 2 toques a partir do ecrã inicial; inglês por omissão (decidido a 7/10/2026), preparada para tradução |
 | Fuso horário | Datas guardadas em UTC, mostradas em Europe/Lisbon (incluindo mudanças de hora) |
 | Qualidade | Mesma base do task-manager-api: Java 21, Spring Boot, onion architecture validada por JUnit 5, TDD, Testcontainers com PostgreSQL, JaCoCo ≥ 85% |
 | Operação | Deploy em contentor; backups diários da base de dados; logs sem dados pessoais |
@@ -227,15 +268,39 @@ associações são requisitos do MVP, não melhorias futuras.
 O MVP fica completo na Fase 2. A Fase 3 só começa depois de uma associação piloto usar a
 plataforma durante uma época. As fases ainda não têm datas.
 
+```mermaid
+flowchart LR
+    F0["<b>Fase 0 · Fundações</b><br/>repositório e CI<br/>auth e multi-tenant<br/>testes de isolamento"]
+    F1["<b>Fase 1 · Núcleo de reservas</b><br/>E1 Associação<br/>E2 Membros<br/>E3 Turmas e sessões<br/>E4 Reservas"]
+    F2["<b>Fase 2 · MVP completo</b><br/>E5 Planos e quotas<br/>E6 Divulgação<br/>avisos por email"]
+    G{{"Portão: piloto numa associação,<br/>uma época sem inscrições no WhatsApp"}}
+    F3["<b>Fase 3 · Depois do piloto</b><br/>pagamentos MB WAY<br/>notificações push<br/>formar equipas<br/>torneios com grupos"]
+
+    F0 --> F1 --> F2 --> G --> F3
+
+    style F1 stroke-width:3px
+```
+
 A Fase 1 é a prioridade: sem reservas fiáveis, nada mais tem valor.
+
+> **Nota (7/10/2026):** a Fase 1 inclui também o modelo de Plano/Subscrição (issue #13),
+> necessário para a regra de saldo das reservas (RN-06, RN-15). Autenticação (Fase 0) fica
+> para depois da Fase 1.
 
 ### Questões em aberto
 
 - [ ] Qual é a associação piloto, e quantos membros e turmas tem?
 - [ ] Uma pessoa pode pertencer a várias associações com a mesma conta já no MVP?
-- [ ] O bloqueio por faltas (RN-11) é desejado, ou basta um aviso?
-- [ ] Membros com pagamento em atraso podem reservar (RN-18)?
-- [ ] O treinador conta para a lotação quando também joga?
+- [x] O bloqueio por faltas (RN-11) é desejado, ou basta um aviso? **Por agora, só aviso** (7/10/2026).
+- [x] Membros com pagamento em atraso podem reservar (RN-18)? **Não, por agora** (7/10/2026).
+- [x] O treinador conta para a lotação quando também joga? **Não** — ver RN-02 (7/10/2026).
 - [ ] Haverá uma sessão experimental gratuita para visitantes?
 - [ ] Frontend: PWA em React/Next.js ou renderizado no servidor (Thymeleaf + HTMX)?
 - [ ] Modelo de negócio: gratuito, mensalidade por associação ou valor por membro?
+- [ ] Um membro promovido da lista de espera depois do prazo de cancelamento gratuito (RN-10)
+  pode cancelar sem custo? *Por agora: não — conta como tardio.*
+- [ ] Se uma sessão for cancelada (RN-04), uma reserva já cancelada tardiamente recebe a senha de
+  volta? *Por agora: não.*
+- [ ] Pode cancelar-se uma sessão depois de marcadas presenças? *Por agora: não.*
+- [ ] Reservas confirmadas sem presença marcada passam a Falta quando a sessão é dada como
+  realizada? *Por agora: não, ficam por marcar.*

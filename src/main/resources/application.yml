@@ -14,7 +14,7 @@ spring:
     properties:
       hibernate:
         # Instants are stored and read in UTC; conversion to Europe/Lisbon happens only at the
-        # edge (NFR "Fuso horário").
+        # edge (NFR "time zone").
         jdbc:
           time_zone: UTC
 
