@@ -6,7 +6,6 @@ import com.regivolley.api.domain.exception.InvalidSubscriptionException;
 import com.regivolley.api.domain.exception.SubscriptionOverlapException;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.BookingId;
-import com.regivolley.api.domain.model.valueobject.BookingPolicy;
 import com.regivolley.api.domain.model.valueobject.BookingRejectionReason;
 import com.regivolley.api.domain.model.valueobject.BookingStatus;
 import com.regivolley.api.domain.model.valueobject.CancellationKind;
@@ -18,6 +17,7 @@ import com.regivolley.api.domain.model.valueobject.PaymentStatus;
 import com.regivolley.api.domain.model.valueobject.PlanId;
 import com.regivolley.api.domain.model.valueobject.PlanTerms;
 import com.regivolley.api.domain.model.valueobject.PlanType;
+import com.regivolley.api.domain.model.valueobject.ScheduleZone;
 import com.regivolley.api.domain.model.valueobject.SessionId;
 import com.regivolley.api.domain.model.valueobject.SubscriptionId;
 import org.junit.jupiter.api.Nested;
@@ -74,7 +74,7 @@ class SubscriptionTest {
 
     /** Europe/Lisbon wall-clock time, e.g. {@code "2026-10-14T20:00"}. */
     private static Instant lisbon(String localDateTime) {
-        return LocalDateTime.parse(localDateTime).atZone(BookingPolicy.SCHEDULE_ZONE).toInstant();
+        return LocalDateTime.parse(localDateTime).atZone(ScheduleZone.LISBON.zoneId()).toInstant();
     }
 
     private static Subscription inStatus(Subscription base, PaymentStatus status) {
@@ -400,7 +400,7 @@ class SubscriptionTest {
             Instant mondayMidnightLisbon = Instant.parse("2026-03-29T23:30:00Z");
 
             // Act
-            DayOfWeek lisbonDay = mondayMidnightLisbon.atZone(BookingPolicy.SCHEDULE_ZONE).getDayOfWeek();
+            DayOfWeek lisbonDay = mondayMidnightLisbon.atZone(ScheduleZone.LISBON.zoneId()).getDayOfWeek();
             DayOfWeek utcDay = mondayMidnightLisbon.atZone(ZoneOffset.UTC).getDayOfWeek();
 
             // Assert

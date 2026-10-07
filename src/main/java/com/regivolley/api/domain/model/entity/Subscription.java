@@ -6,7 +6,6 @@ import com.regivolley.api.domain.exception.InvalidSubscriptionException;
 import com.regivolley.api.domain.exception.SubscriptionOverlapException;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.BookingId;
-import com.regivolley.api.domain.model.valueobject.BookingPolicy;
 import com.regivolley.api.domain.model.valueobject.BookingRejectionReason;
 import com.regivolley.api.domain.model.valueobject.CreditUsage;
 import com.regivolley.api.domain.model.valueobject.LevelId;
@@ -15,6 +14,7 @@ import com.regivolley.api.domain.model.valueobject.PaymentStatus;
 import com.regivolley.api.domain.model.valueobject.PlanId;
 import com.regivolley.api.domain.model.valueobject.PlanTerms;
 import com.regivolley.api.domain.model.valueobject.PlanType;
+import com.regivolley.api.domain.model.valueobject.ScheduleZone;
 import com.regivolley.api.domain.model.valueobject.SubscriptionId;
 import com.regivolley.api.domain.shared.AggregateRoot;
 
@@ -358,7 +358,7 @@ public final class Subscription implements AggregateRoot {
     /** The session's calendar date in Europe/Lisbon (architecture.md section 9). */
     private static LocalDate sessionDateOf(Instant sessionStart) {
         Objects.requireNonNull(sessionStart, "sessionStart must not be null");
-        return sessionStart.atZone(BookingPolicy.SCHEDULE_ZONE).toLocalDate();
+        return sessionStart.atZone(ScheduleZone.LISBON.zoneId()).toLocalDate();
     }
 
     private Subscription withUsages(List<CreditUsage> newUsages) {
