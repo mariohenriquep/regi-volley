@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /**
  * The facts about one member that booking eligibility needs, loaded by the use case: status and
- * level (from the Member aggregate, issue #17) and all the member's subscriptions. Every
+ * level (see {@link Member#bookingProfile}) and all the member's subscriptions. Every
  * subscription must belong to this member and to this association (architecture.md section 8).
  */
 public record MemberBookingProfile(AssociationId associationId, MemberId memberId, MemberStatus status,
