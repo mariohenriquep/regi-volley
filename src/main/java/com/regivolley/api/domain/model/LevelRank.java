@@ -6,8 +6,7 @@ import java.util.Objects;
 /**
  * A level's position in the association's ordered levels (US-03): a higher rank is a more
  * advanced level. This is the minimal level abstraction booking eligibility needs (RN-14,
- * RN-21); the full Level model (name, entry level, ordering management) is issue #17, whose
- * {@code Level} aggregate only has to expose its {@code LevelRank} for eligibility to plug in.
+ * RN-21); {@link Level#toRank()} and {@link Association#rankOf} produce it from the full model.
  */
 public record LevelRank(LevelId levelId, int rank) {
 
