@@ -2,6 +2,7 @@ package com.regivolley.api.domain.model.entity;
 
 import com.regivolley.api.domain.exception.AtLeastOneAcceptedLevelRequiredException;
 import com.regivolley.api.domain.exception.InvalidCapacityException;
+import com.regivolley.api.domain.exception.InvalidTrainingGroupException;
 import com.regivolley.api.domain.exception.TrainingGroupArchivedException;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.LevelId;
@@ -56,10 +57,11 @@ public final class TrainingGroup implements AggregateRoot {
     private final int defaultCapacity;
     private final MemberId coachId;
     private final TrainingGroupStatus status;
+    private final long version;
 
     private TrainingGroup(TrainingGroupId id, AssociationId associationId, String name, Set<LevelId> acceptedLevels,
                           VenueId venueId, WeeklySchedule schedule, int defaultCapacity, MemberId coachId,
-                          TrainingGroupStatus status) {
+                          TrainingGroupStatus status, long version) {
         this.id = id;
         this.associationId = associationId;
         this.name = name;
@@ -69,6 +71,7 @@ public final class TrainingGroup implements AggregateRoot {
         this.defaultCapacity = defaultCapacity;
         this.coachId = coachId;
         this.status = status;
+        this.version = version;
     }
 
     /** Creates a new ACTIVE group. */
@@ -76,13 +79,19 @@ public final class TrainingGroup implements AggregateRoot {
                                        VenueId venueId, WeeklySchedule schedule, int defaultCapacity,
                                        MemberId coachId) {
         return reconstruct(TrainingGroupId.generate(), associationId, name, acceptedLevels, venueId, schedule,
-                defaultCapacity, coachId, TrainingGroupStatus.ACTIVE);
+                defaultCapacity, coachId, TrainingGroupStatus.ACTIVE, 0L);
     }
 
-    /** Rebuilds a group from persisted data, re-checking its invariants. */
+    /**
+     * Rebuilds a group from persisted data, re-checking its invariants.
+     *
+     * @param version the optimistic-lock version it was loaded with (0 for a new group); edits carry it over
+     *                unchanged, so a stale copy is detected when it is saved (architecture.md section 10)
+     */
     public static TrainingGroup reconstruct(TrainingGroupId id, AssociationId associationId, String name,
                                             Set<LevelId> acceptedLevels, VenueId venueId, WeeklySchedule schedule,
-                                            int defaultCapacity, MemberId coachId, TrainingGroupStatus status) {
+                                            int defaultCapacity, MemberId coachId, TrainingGroupStatus status,
+                                            long version) {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(associationId, "associationId must not be null");
         Objects.requireNonNull(venueId, "venueId must not be null");
@@ -90,42 +99,45 @@ public final class TrainingGroup implements AggregateRoot {
         Objects.requireNonNull(coachId, "coachId must not be null");
         Objects.requireNonNull(status, "status must not be null");
         requirePositiveCapacity(defaultCapacity);
+        if (version < 0) {
+            throw new InvalidTrainingGroupException("The version must not be negative");
+        }
         return new TrainingGroup(id, associationId, FieldRules.requiredText("group name", name, MAX_NAME_LENGTH),
-                requireLevels(acceptedLevels), venueId, schedule, defaultCapacity, coachId, status);
+                requireLevels(acceptedLevels), venueId, schedule, defaultCapacity, coachId, status, version);
     }
 
     // ------------------------------------------------------------------ edits
 
     public TrainingGroup rename(String newName) {
         requireActive();
-        return reconstruct(id, associationId, newName, acceptedLevels, venueId, schedule, defaultCapacity, coachId, status);
+        return reconstruct(id, associationId, newName, acceptedLevels, venueId, schedule, defaultCapacity, coachId, status, version);
     }
 
     public TrainingGroup changeAcceptedLevels(Set<LevelId> newLevels) {
         requireActive();
-        return reconstruct(id, associationId, name, newLevels, venueId, schedule, defaultCapacity, coachId, status);
+        return reconstruct(id, associationId, name, newLevels, venueId, schedule, defaultCapacity, coachId, status, version);
     }
 
     public TrainingGroup changeCapacity(int newCapacity) {
         requireActive();
-        return reconstruct(id, associationId, name, acceptedLevels, venueId, schedule, newCapacity, coachId, status);
+        return reconstruct(id, associationId, name, acceptedLevels, venueId, schedule, newCapacity, coachId, status, version);
     }
 
     public TrainingGroup changeCoach(MemberId newCoachId) {
         requireActive();
-        return reconstruct(id, associationId, name, acceptedLevels, venueId, schedule, defaultCapacity, newCoachId, status);
+        return reconstruct(id, associationId, name, acceptedLevels, venueId, schedule, defaultCapacity, newCoachId, status, version);
     }
 
     public TrainingGroup changeSchedule(WeeklySchedule newSchedule) {
         requireActive();
-        return reconstruct(id, associationId, name, acceptedLevels, venueId, newSchedule, defaultCapacity, coachId, status);
+        return reconstruct(id, associationId, name, acceptedLevels, venueId, newSchedule, defaultCapacity, coachId, status, version);
     }
 
     /** Retires the group: it stops generating sessions. Existing sessions are untouched. */
     public TrainingGroup archive() {
         requireActive();
         return reconstruct(id, associationId, name, acceptedLevels, venueId, schedule, defaultCapacity, coachId,
-                TrainingGroupStatus.ARCHIVED);
+                TrainingGroupStatus.ARCHIVED, version);
     }
 
     // ------------------------------------------------------------- generation
@@ -232,6 +244,11 @@ public final class TrainingGroup implements AggregateRoot {
 
     public TrainingGroupStatus status() {
         return status;
+    }
+
+    /** Optimistic-lock version: concurrent edits, or an archive racing a generation run, must not be lost. */
+    public long version() {
+        return version;
     }
 
     public boolean isActive() {

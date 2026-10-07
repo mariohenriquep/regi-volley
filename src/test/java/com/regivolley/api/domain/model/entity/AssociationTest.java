@@ -12,6 +12,7 @@ import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.LevelId;
 import com.regivolley.api.domain.model.valueobject.LevelRank;
 import com.regivolley.api.domain.model.valueobject.Nif;
+import com.regivolley.api.domain.model.valueobject.SessionGenerationPolicy;
 import com.regivolley.api.domain.model.valueobject.ShortName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -62,6 +63,9 @@ class AssociationTest {
             assertThat(association.locality()).isEqualTo("Porto");
             assertThat(association.contactEmail()).isEqualTo(EmailAddress.of("info@portovolley.example"));
             assertThat(association.bookingPolicy()).isEqualTo(BookingPolicy.defaults());
+            assertThat(association.sessionGenerationPolicy()).isEqualTo(SessionGenerationPolicy.defaults());
+            assertThat(association.sessionGenerationPolicy().windowWeeks()).isEqualTo(4);
+            assertThat(association.version()).isZero();
             assertThat(names(association)).containsExactlyElementsOf(LEVELS);
             assertThat(association.levels()).extracting(Level::rank).containsExactly(0, 1, 2);
             assertThat(association.levels()).allMatch(level -> level.associationId().equals(association.id()));
@@ -273,7 +277,57 @@ class AssociationTest {
 
         private Association rebuild(List<Level> levels, LevelId entry) {
             return Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
-                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), levels, entry);
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(),
+                    levels, entry, 0L);
+        }
+
+        @Test
+        void keepsTheSessionGenerationPolicyAndVersionItWasGiven() {
+            // Arrange
+            SessionGenerationPolicy sixWeeks = new SessionGenerationPolicy(6);
+
+            // Act
+            Association association = Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), sixWeeks, List.of(beginner), beginner.id(), 7L);
+
+            // Assert
+            assertThat(association.sessionGenerationPolicy()).isEqualTo(sixWeeks);
+            assertThat(association.version()).isEqualTo(7L);
+        }
+
+        @Test
+        void editsKeepTheSessionGenerationPolicyAndVersion() {
+            // Arrange
+            SessionGenerationPolicy sixWeeks = new SessionGenerationPolicy(6);
+            Association association = Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), sixWeeks, List.of(beginner), beginner.id(), 7L);
+
+            // Act
+            Association edited = association.updateDetails("New name", null, "Porto", "x@y.co")
+                    .changeBookingPolicy(new BookingPolicy(3, 2))
+                    .addLevel("Advanced");
+
+            // Assert
+            assertThat(edited.sessionGenerationPolicy()).isEqualTo(sixWeeks);
+            assertThat(edited.version()).isEqualTo(7L);
+        }
+
+        @Test
+        void rejectsANegativeVersionOrAMissingGenerationPolicy() {
+            // Arrange
+            Executable negative = () -> Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(),
+                    List.of(beginner), beginner.id(), -1L);
+            Executable missing = () -> Association.reconstruct(id, "Club", ShortName.of("club"), null, "Lisbon",
+                    EmailAddress.of("a@b.co"), BookingPolicy.defaults(), null, List.of(beginner), beginner.id(), 0L);
+
+            // Act
+            InvalidAssociationException ex = assertThrows(InvalidAssociationException.class, negative);
+            NullPointerException npe = assertThrows(NullPointerException.class, missing);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("version");
+            assertThat(npe.getMessage()).contains("sessionGenerationPolicy");
         }
 
         @Test

@@ -10,6 +10,7 @@ import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.LevelId;
 import com.regivolley.api.domain.model.valueobject.LevelRank;
 import com.regivolley.api.domain.model.valueobject.Nif;
+import com.regivolley.api.domain.model.valueobject.SessionGenerationPolicy;
 import com.regivolley.api.domain.model.valueobject.ShortName;
 import com.regivolley.api.domain.shared.AggregateRoot;
 import com.regivolley.api.domain.shared.FieldRules;
@@ -55,12 +56,15 @@ public final class Association implements AggregateRoot {
     private final String locality;
     private final EmailAddress contactEmail;
     private final BookingPolicy bookingPolicy;
+    private final SessionGenerationPolicy sessionGenerationPolicy;
     private final List<Level> levels;
     private final LevelId entryLevelId;
+    private final long version;
 
     private Association(AssociationId id, String name, ShortName shortName, Nif nif, String locality,
-                        EmailAddress contactEmail, BookingPolicy bookingPolicy, List<Level> levels,
-                        LevelId entryLevelId) {
+                        EmailAddress contactEmail, BookingPolicy bookingPolicy,
+                        SessionGenerationPolicy sessionGenerationPolicy, List<Level> levels,
+                        LevelId entryLevelId, long version) {
         this.id = id;
         this.name = name;
         this.shortName = shortName;
@@ -68,8 +72,10 @@ public final class Association implements AggregateRoot {
         this.locality = locality;
         this.contactEmail = contactEmail;
         this.bookingPolicy = bookingPolicy;
+        this.sessionGenerationPolicy = sessionGenerationPolicy;
         this.levels = levels;
         this.entryLevelId = entryLevelId;
+        this.version = version;
     }
 
     /**
@@ -91,16 +97,26 @@ public final class Association implements AggregateRoot {
             throw new AtLeastOneLevelRequiredException();
         }
         return reconstruct(id, name, ShortName.of(shortName), optionalNif(nif), locality,
-                EmailAddress.of(contactEmail), BookingPolicy.defaults(), levels, levels.get(0).id());
+                EmailAddress.of(contactEmail), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(),
+                levels, levels.get(0).id(), 0L);
     }
 
-    /** Rebuilds an association from persisted data, re-checking its invariants. Levels may arrive in any order. */
+    /**
+     * Rebuilds an association from persisted data, re-checking its invariants. Levels may arrive in any order.
+     *
+     * @param version the optimistic-lock version it was loaded with (0 for a new association); edits carry it
+     *                over unchanged, so a stale copy is detected when it is saved (architecture.md section 10)
+     */
     public static Association reconstruct(AssociationId id, String name, ShortName shortName, Nif nif,
                                           String locality, EmailAddress contactEmail, BookingPolicy bookingPolicy,
-                                          List<Level> levels, LevelId entryLevelId) {
+                                          SessionGenerationPolicy sessionGenerationPolicy, List<Level> levels,
+                                          LevelId entryLevelId, long version) {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(levels, "levels must not be null");
         Objects.requireNonNull(entryLevelId, "entryLevelId must not be null");
+        if (version < 0) {
+            throw new InvalidAssociationException("The version must not be negative");
+        }
         List<Level> ordered = levels.stream().sorted(Comparator.comparingInt(Level::rank)).toList();
         requireValidLevels(id, ordered, entryLevelId);
         return new Association(
@@ -111,8 +127,10 @@ public final class Association implements AggregateRoot {
                 FieldRules.requiredText("locality", locality, MAX_LOCALITY_LENGTH),
                 Objects.requireNonNull(contactEmail, "contactEmail must not be null"),
                 Objects.requireNonNull(bookingPolicy, "bookingPolicy must not be null"),
+                Objects.requireNonNull(sessionGenerationPolicy, "sessionGenerationPolicy must not be null"),
                 ordered,
-                entryLevelId
+                entryLevelId,
+                version
         );
     }
 
@@ -154,11 +172,12 @@ public final class Association implements AggregateRoot {
     /** Edits the details an administrator may change; the short name stays (it is the public URL). */
     public Association updateDetails(String newName, String newNif, String newLocality, String newContactEmail) {
         return reconstruct(id, newName, shortName, optionalNif(newNif), newLocality,
-                EmailAddress.of(newContactEmail), bookingPolicy, levels, entryLevelId);
+                EmailAddress.of(newContactEmail), bookingPolicy, sessionGenerationPolicy, levels, entryLevelId, version);
     }
 
     public Association changeBookingPolicy(BookingPolicy newPolicy) {
-        return reconstruct(id, name, shortName, nif, locality, contactEmail, newPolicy, levels, entryLevelId);
+        return reconstruct(id, name, shortName, nif, locality, contactEmail, newPolicy, sessionGenerationPolicy, levels,
+                entryLevelId, version);
     }
 
     /** Adds a level as the most advanced one; reorder afterwards to place it elsewhere. */
@@ -200,7 +219,8 @@ public final class Association implements AggregateRoot {
     }
 
     private Association withLevels(List<Level> newLevels, LevelId newEntryLevelId) {
-        return reconstruct(id, name, shortName, nif, locality, contactEmail, bookingPolicy, newLevels, newEntryLevelId);
+        return reconstruct(id, name, shortName, nif, locality, contactEmail, bookingPolicy, sessionGenerationPolicy,
+                newLevels, newEntryLevelId, version);
     }
 
     private void requireLevel(LevelId levelId) {
@@ -267,8 +287,22 @@ public final class Association implements AggregateRoot {
         return bookingPolicy;
     }
 
+    /**
+     * How far ahead this association's sessions are generated (RN-01); 4 weeks unless changed. Not
+     * editable yet: when it becomes so, an out-of-range value must be a BusinessRuleException
+     * (architecture.md section 12), not the IllegalArgumentException the value object throws today.
+     */
+    public SessionGenerationPolicy sessionGenerationPolicy() {
+        return sessionGenerationPolicy;
+    }
+
     public LevelId entryLevelId() {
         return entryLevelId;
+    }
+
+    /** Optimistic-lock version: concurrent edits of the association (details, policy, levels) must not be lost. */
+    public long version() {
+        return version;
     }
 
     @Override

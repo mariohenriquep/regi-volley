@@ -365,9 +365,43 @@ class JoinRequestTest {
     @Nested
     class Reconstruction {
 
+        @Test
+        void keepsTheVersionItWasLoadedWithThroughEveryDecisionAndErasure() {
+            // Arrange
+            JoinRequest loaded = JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(), CONTACT,
+                    new GdprConsent(REQUESTED, "2026-10"), JoinRequestStatus.PENDING, REQUESTED, null, null, null, null, 9L);
+            Clock clock = DECISION_CLOCK;
+
+            // Act
+            JoinRequest rejected = loaded.reject(ADMIN, "Full", clock);
+            JoinRequest approved = loaded.approve(ASSOCIATION, ADMIN, clock).request();
+            JoinRequest erased = loaded.anonymise(clock);
+
+            // Assert
+            assertThat(loaded.version()).isEqualTo(9L);
+            assertThat(rejected.version()).isEqualTo(9L);
+            assertThat(approved.version()).isEqualTo(9L);
+            assertThat(erased.version()).isEqualTo(9L);
+        }
+
+        @Test
+        void aNewRequestStartsAtVersionZeroAndANegativeVersionIsRejected() {
+            // Arrange
+            Executable negative = () -> JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(), CONTACT,
+                    new GdprConsent(REQUESTED, "2026-10"), JoinRequestStatus.PENDING, REQUESTED, null, null, null, null, -1L);
+
+            // Act
+            JoinRequest created = JoinRequest.create(ASSOCIATION.id(), CONTACT, true, "2026-10", REQUEST_CLOCK);
+            InvalidJoinRequestException ex = assertThrows(InvalidJoinRequestException.class, negative);
+
+            // Assert
+            assertThat(created.version()).isZero();
+            assertThat(ex.getMessage()).contains("version");
+        }
+
         private JoinRequest rebuild(JoinRequestStatus status, Instant decidedAt, MemberId decidedBy, String reason) {
             return JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(), CONTACT,
-                    new GdprConsent(REQUESTED, "2026-10"), status, REQUESTED, decidedAt, decidedBy, reason, null);
+                    new GdprConsent(REQUESTED, "2026-10"), status, REQUESTED, decidedAt, decidedBy, reason, null, 0L);
         }
 
         @Test
@@ -409,7 +443,7 @@ class JoinRequestTest {
             // Act
             JoinRequest withdrawn = JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(),
                     ContactDetails.anonymisedFor(UUID.randomUUID()), new GdprConsent(REQUESTED, "2026-10"),
-                    JoinRequestStatus.REJECTED, REQUESTED, DECIDED, null, JoinRequest.WITHDRAWN_REASON, DECIDED);
+                    JoinRequestStatus.REJECTED, REQUESTED, DECIDED, null, JoinRequest.WITHDRAWN_REASON, DECIDED, 0L);
 
             // Assert
             assertThat(withdrawn.decidedBy()).isEmpty();
@@ -421,7 +455,7 @@ class JoinRequestTest {
             // Arrange
             Executable act = () -> JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(),
                     ContactDetails.anonymisedFor(UUID.randomUUID()), new GdprConsent(REQUESTED, "2026-10"),
-                    JoinRequestStatus.PENDING, REQUESTED, null, null, null, DECIDED);
+                    JoinRequestStatus.PENDING, REQUESTED, null, null, null, DECIDED, 0L);
 
             // Act
             InvalidJoinRequestException ex = assertThrows(InvalidJoinRequestException.class, act);
@@ -435,7 +469,7 @@ class JoinRequestTest {
             // Arrange
             Executable act = () -> JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(),
                     ContactDetails.anonymisedFor(UUID.randomUUID()), new GdprConsent(REQUESTED, "2026-10"),
-                    JoinRequestStatus.REJECTED, REQUESTED, DECIDED, null, null, REQUESTED.minusSeconds(1));
+                    JoinRequestStatus.REJECTED, REQUESTED, DECIDED, null, null, REQUESTED.minusSeconds(1), 0L);
 
             // Act
             InvalidJoinRequestException ex = assertThrows(InvalidJoinRequestException.class, act);
@@ -449,7 +483,7 @@ class JoinRequestTest {
             // Arrange
             ContactDetails withoutPhone = ContactDetails.reconstruct("Ana", EmailAddress.of("ana@example.com"), null);
             Executable act = () -> JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(), withoutPhone,
-                    new GdprConsent(REQUESTED, "2026-10"), JoinRequestStatus.PENDING, REQUESTED, null, null, null, null);
+                    new GdprConsent(REQUESTED, "2026-10"), JoinRequestStatus.PENDING, REQUESTED, null, null, null, null, 0L);
 
             // Act
             InvalidJoinRequestException ex = assertThrows(InvalidJoinRequestException.class, act);

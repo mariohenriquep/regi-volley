@@ -30,15 +30,17 @@ public final class Plan implements AggregateRoot {
     private final PlanTerms terms;
     private final Money price;
     private final Integer validityDays;
+    private final long version;
 
     private Plan(PlanId id, AssociationId associationId, String name, PlanTerms terms, Money price,
-                 Integer validityDays) {
+                 Integer validityDays, long version) {
         this.id = id;
         this.associationId = associationId;
         this.name = name;
         this.terms = terms;
         this.price = price;
         this.validityDays = validityDays;
+        this.version = version;
     }
 
     /**
@@ -46,13 +48,21 @@ public final class Plan implements AggregateRoot {
      */
     public static Plan create(AssociationId associationId, String name, PlanTerms terms, Money price,
                               Integer validityDays) {
-        return reconstruct(PlanId.generate(), associationId, name, terms, price, validityDays);
+        return reconstruct(PlanId.generate(), associationId, name, terms, price, validityDays, 0L);
     }
 
-    /** Rebuilds a plan from persisted data, re-checking its invariants. */
+    /**
+     * Rebuilds a plan from persisted data, re-checking its invariants.
+     *
+     * @param version the optimistic-lock version it was loaded with (0 for a new plan); a stale copy is
+     *                detected when it is saved (architecture.md section 10)
+     */
     public static Plan reconstruct(PlanId id, AssociationId associationId, String name, PlanTerms terms,
-                                   Money price, Integer validityDays) {
+                                   Money price, Integer validityDays, long version) {
         Objects.requireNonNull(terms, "terms must not be null");
+        if (version < 0) {
+            throw new InvalidPlanException("The version must not be negative");
+        }
         if (name == null || name.isBlank()) {
             throw new InvalidPlanException("A plan needs a name");
         }
@@ -68,7 +78,7 @@ public final class Plan implements AggregateRoot {
                 Objects.requireNonNull(associationId, "associationId must not be null"),
                 name.trim(), terms,
                 Objects.requireNonNull(price, "price must not be null"),
-                validityDays
+                validityDays, version
         );
     }
 
@@ -118,6 +128,11 @@ public final class Plan implements AggregateRoot {
 
     public Set<LevelId> allowedLevels() {
         return terms.allowedLevels();
+    }
+
+    /** Optimistic-lock version: concurrent edits of the plan must not be lost. */
+    public long version() {
+        return version;
     }
 
     /** Empty for monthly plans, whose validity is one calendar month. */

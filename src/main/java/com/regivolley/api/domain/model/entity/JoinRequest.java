@@ -63,10 +63,11 @@ public final class JoinRequest implements AggregateRoot {
     private final MemberId decidedBy;
     private final String rejectionReason;
     private final Instant anonymisedAt;
+    private final long version;
 
     private JoinRequest(JoinRequestId id, AssociationId associationId, ContactDetails contact, GdprConsent consent,
                         JoinRequestStatus status, Instant requestedAt, Instant decidedAt, MemberId decidedBy,
-                        String rejectionReason, Instant anonymisedAt) {
+                        String rejectionReason, Instant anonymisedAt, long version) {
         this.id = id;
         this.associationId = associationId;
         this.contact = contact;
@@ -77,6 +78,7 @@ public final class JoinRequest implements AggregateRoot {
         this.decidedBy = decidedBy;
         this.rejectionReason = rejectionReason;
         this.anonymisedAt = anonymisedAt;
+        this.version = version;
     }
 
     /**
@@ -92,20 +94,27 @@ public final class JoinRequest implements AggregateRoot {
         Instant now = clock.instant();
         GdprConsent consent = GdprConsent.record(consentAccepted, policyVersion, now);
         return reconstruct(JoinRequestId.generate(), associationId, contact, consent,
-                JoinRequestStatus.PENDING, now, null, null, null, null);
+                JoinRequestStatus.PENDING, now, null, null, null, null, 0L);
     }
 
     /**
      * Rebuilds a request from persisted data, re-checking its invariants. A decider is required
      * for every decision except the withdrawal of an erased request (REJECTED and anonymised).
+     *
+     * @param version the optimistic-lock version it was loaded with (0 for a new request); decisions and
+     *                erasure carry it over, so approving and rejecting at once cannot both be stored
+     *                (architecture.md section 10)
      */
     public static JoinRequest reconstruct(JoinRequestId id, AssociationId associationId, ContactDetails contact,
                                           GdprConsent consent, JoinRequestStatus status, Instant requestedAt,
                                           Instant decidedAt, MemberId decidedBy, String rejectionReason,
-                                          Instant anonymisedAt) {
+                                          Instant anonymisedAt, long version) {
         Objects.requireNonNull(contact, "contact must not be null");
         Objects.requireNonNull(status, "status must not be null");
         Objects.requireNonNull(requestedAt, "requestedAt must not be null");
+        if (version < 0) {
+            throw new InvalidJoinRequestException("The version must not be negative");
+        }
         boolean decided = status != JoinRequestStatus.PENDING;
         boolean withdrawnOnErasure = status == JoinRequestStatus.REJECTED && anonymisedAt != null;
         if (decided != (decidedAt != null) || (!decided && decidedBy != null)
@@ -132,7 +141,7 @@ public final class JoinRequest implements AggregateRoot {
                 Objects.requireNonNull(associationId, "associationId must not be null"),
                 contact,
                 Objects.requireNonNull(consent, "consent must not be null"),
-                status, requestedAt, decidedAt, decidedBy, normaliseReason(rejectionReason), anonymisedAt
+                status, requestedAt, decidedAt, decidedBy, normaliseReason(rejectionReason), anonymisedAt, version
         );
     }
 
@@ -181,7 +190,7 @@ public final class JoinRequest implements AggregateRoot {
             throw new InvalidJoinRequestStatusTransitionException(status, target);
         }
         return reconstruct(id, associationId, contact, consent, target, requestedAt, clock.instant(),
-                decider, reason, anonymisedAt);
+                decider, reason, anonymisedAt, version);
     }
 
     /**
@@ -199,10 +208,15 @@ public final class JoinRequest implements AggregateRoot {
         ContactDetails erased = ContactDetails.anonymisedFor(id.value());
         if (isPending()) {
             return reconstruct(id, associationId, erased, consent, JoinRequestStatus.REJECTED, requestedAt, now,
-                    null, WITHDRAWN_REASON, now);
+                    null, WITHDRAWN_REASON, now, version);
         }
         return reconstruct(id, associationId, erased, consent, status, requestedAt, decidedAt, decidedBy,
-                null, now);
+                null, now, version);
+    }
+
+    /** Optimistic-lock version: two decisions made at once on the same request cannot both be stored. */
+    public long version() {
+        return version;
     }
 
     public boolean isAnonymised() {

@@ -3,6 +3,7 @@ package com.regivolley.api.domain.model.entity;
 import com.regivolley.api.domain.exception.AtLeastOneAcceptedLevelRequiredException;
 import com.regivolley.api.domain.exception.InvalidCapacityException;
 import com.regivolley.api.domain.exception.InvalidFieldException;
+import com.regivolley.api.domain.exception.InvalidTrainingGroupException;
 import com.regivolley.api.domain.exception.TrainingGroupArchivedException;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.LevelId;
@@ -75,6 +76,7 @@ class TrainingGroupTest {
             assertThat(group.coachId()).isEqualTo(COACH);
             assertThat(group.status()).isEqualTo(TrainingGroupStatus.ACTIVE);
             assertThat(group.isActive()).isTrue();
+            assertThat(group.version()).isZero();
         }
 
         @ParameterizedTest
@@ -184,12 +186,42 @@ class TrainingGroupTest {
 
             // Act
             TrainingGroup group = TrainingGroup.reconstruct(id, ASSOCIATION, "Old", Set.of(INTERMEDIATE), VENUE,
-                    WeeklySchedule.of(MONDAY_8PM), 10, COACH, TrainingGroupStatus.ARCHIVED);
+                    WeeklySchedule.of(MONDAY_8PM), 10, COACH, TrainingGroupStatus.ARCHIVED, 5L);
 
             // Assert
             assertThat(group.id()).isEqualTo(id);
+            assertThat(group.version()).isEqualTo(5L);
             assertThat(group.status()).isEqualTo(TrainingGroupStatus.ARCHIVED);
             assertThat(group.isActive()).isFalse();
+        }
+
+        @Test
+        void editsKeepTheVersionTheGroupWasLoadedWith() {
+            // Arrange
+            TrainingGroup loaded = TrainingGroup.reconstruct(TrainingGroupId.generate(), ASSOCIATION, "Old",
+                    Set.of(INTERMEDIATE), VENUE, WeeklySchedule.of(MONDAY_8PM), 10, COACH, TrainingGroupStatus.ACTIVE, 3L);
+
+            // Act
+            TrainingGroup edited = loaded.rename("New").changeCapacity(8).changeSchedule(WeeklySchedule.of(WEDNESDAY_9PM))
+                    .changeAcceptedLevels(Set.of(ADVANCED)).changeCoach(MemberId.generate());
+            TrainingGroup archived = edited.archive();
+
+            // Assert
+            assertThat(edited.version()).isEqualTo(3L);
+            assertThat(archived.version()).isEqualTo(3L);
+        }
+
+        @Test
+        void rejectsANegativeVersion() {
+            // Arrange
+            Executable act = () -> TrainingGroup.reconstruct(TrainingGroupId.generate(), ASSOCIATION, "Old",
+                    Set.of(INTERMEDIATE), VENUE, WeeklySchedule.of(MONDAY_8PM), 10, COACH, TrainingGroupStatus.ACTIVE, -1L);
+
+            // Act
+            InvalidTrainingGroupException ex = assertThrows(InvalidTrainingGroupException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("version");
         }
 
         @Test

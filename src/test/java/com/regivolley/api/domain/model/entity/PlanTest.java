@@ -32,6 +32,37 @@ class PlanTest {
     private static final LevelId ADVANCED = LevelId.generate();
 
     @Nested
+    class Versioning {
+
+        @Test
+        void aNewPlanStartsAtVersionZeroAndReconstructKeepsTheGivenOne() {
+            // Arrange
+            PlanTerms terms = PlanTerms.monthlyUnlimited(Set.of());
+
+            // Act
+            Plan created = Plan.create(ASSOCIATION, "Plan", terms, PRICE, null);
+            Plan loaded = Plan.reconstruct(created.id(), ASSOCIATION, "Plan", terms, PRICE, null, 3L);
+
+            // Assert
+            assertThat(created.version()).isZero();
+            assertThat(loaded.version()).isEqualTo(3L);
+        }
+
+        @Test
+        void rejectsANegativeVersion() {
+            // Arrange
+            Executable act = () -> Plan.reconstruct(PlanId.generate(), ASSOCIATION, "Plan",
+                    PlanTerms.monthlyUnlimited(Set.of()), PRICE, null, -1L);
+
+            // Act
+            InvalidPlanException ex = assertThrows(InvalidPlanException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("version");
+        }
+    }
+
+    @Nested
     class Creation {
 
         @Test
@@ -141,7 +172,7 @@ class PlanTest {
             PlanTerms terms = PlanTerms.monthlyUnlimited(Set.of());
             Executable noTerms = () -> Plan.create(ASSOCIATION, "Plan", null, PRICE, null);
             Executable noAssociation = () -> Plan.create(null, "Plan", terms, PRICE, null);
-            Executable noId = () -> Plan.reconstruct(null, ASSOCIATION, "Plan", terms, PRICE, null);
+            Executable noId = () -> Plan.reconstruct(null, ASSOCIATION, "Plan", terms, PRICE, null, 0L);
 
             // Act
             NullPointerException termsEx = assertThrows(NullPointerException.class, noTerms);
@@ -316,8 +347,8 @@ class PlanTest {
         // Arrange
         PlanId id = PlanId.generate();
         PlanTerms terms = PlanTerms.monthlyUnlimited(Set.of());
-        Plan first = Plan.reconstruct(id, ASSOCIATION, "A", terms, PRICE, null);
-        Plan sameId = Plan.reconstruct(id, ASSOCIATION, "B", terms, PRICE, null);
+        Plan first = Plan.reconstruct(id, ASSOCIATION, "A", terms, PRICE, null, 0L);
+        Plan sameId = Plan.reconstruct(id, ASSOCIATION, "B", terms, PRICE, null, 0L);
         Plan other = Plan.create(ASSOCIATION, "A", terms, PRICE, null);
 
         // Act
