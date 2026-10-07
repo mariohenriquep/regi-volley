@@ -24,6 +24,15 @@
              task-manager-api (NFR "Qualidade"); raise it as the TDD suite grows, don't lower it
              to make a red build pass. -->
         <jacoco.coverage.minimum>0.85</jacoco.coverage.minimum>
+
+        <!-- Security overrides of versions managed by spring-boot-starter-parent 4.1.0, which
+             ships with fixable CRITICAL/HIGH CVEs found by a Trivy scan (tomcat-embed-core,
+             spring-webmvc, jackson-core/databind, postgresql). Remove each override once the Boot
+             parent manages a version at least this high - don't let them pin us to old versions. -->
+        <tomcat.version>11.0.25</tomcat.version>
+        <spring-framework.version>7.0.9</spring-framework.version>
+        <jackson-bom.version>3.1.7</jackson-bom.version>
+        <postgresql.version>42.7.12</postgresql.version>
     </properties>
 
     <dependencies>
