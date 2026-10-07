@@ -159,4 +159,138 @@ class JavaSourceFileTest {
             assertThat(found).isEmpty();
         }
     }
+
+    @Nested
+    class TypeShape {
+
+        @Test
+        void detectsARecordAndItsInterfaces() {
+            // Arrange
+            String content = """
+                    package com.regivolley.api.domain.model.valueobject;
+                    import com.regivolley.api.domain.shared.ValueObject;
+                    public record Money(long cents) implements ValueObject, Comparable<Money> {}
+                    """;
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("Money.java", content);
+
+            // Assert
+            assertThat(source.kind()).isEqualTo(JavaSourceFile.TypeKind.RECORD);
+            assertThat(source.typeName()).isEqualTo("Money");
+            assertThat(source.implementedInterfaces()).containsExactlyInAnyOrder("ValueObject", "Comparable");
+            assertThat(source.implementsAnyOf(Set.of("ValueObject"))).isTrue();
+        }
+
+        @Test
+        void detectsARecordWhoseComponentsSpanLinesAndCarryAnnotations() {
+            // Arrange
+            String content = """
+                    package a;
+                    public record Target(
+                            @Deprecated(since = "1") String a,
+                            Set<String> b) implements com.regivolley.api.domain.shared.ValueObject {}
+                    """;
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("Target.java", content);
+
+            // Assert
+            assertThat(source.kind()).isEqualTo(JavaSourceFile.TypeKind.RECORD);
+            assertThat(source.implementedInterfaces()).containsExactly("ValueObject");
+        }
+
+        @Test
+        void detectsAnEnum() {
+            // Arrange
+            String content = "package a;\npublic enum Status implements ValueObject { ACTIVE, INACTIVE }\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("Status.java", content);
+
+            // Assert
+            assertThat(source.kind()).isEqualTo(JavaSourceFile.TypeKind.ENUM);
+            assertThat(source.implementedInterfaces()).containsExactly("ValueObject");
+        }
+
+        @Test
+        void detectsAFinalClassWithSuperclassAndInterfaces() {
+            // Arrange
+            String content = """
+                    package a;
+                    @SuppressWarnings("all")
+                    public final class Session extends Base<String>
+                            implements AggregateRoot, java.io.Serializable {
+                        static class Nested implements Entity {}
+                    }
+                    """;
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("Session.java", content);
+
+            // Assert
+            assertThat(source.kind()).isEqualTo(JavaSourceFile.TypeKind.CLASS);
+            assertThat(source.typeName()).isEqualTo("Session");
+            assertThat(source.isFinal()).isTrue();
+            assertThat(source.implementedInterfaces()).containsExactlyInAnyOrder("AggregateRoot", "Serializable");
+        }
+
+        @Test
+        void aNonFinalClassIsNotFinal() {
+            // Arrange
+            String content = "package a;\npublic class Open {}\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("Open.java", content);
+
+            // Assert
+            assertThat(source.isFinal()).isFalse();
+            assertThat(source.implementedInterfaces()).isEmpty();
+        }
+
+        @Test
+        void detectsAnInterfaceAndItsExtendedInterfaces() {
+            // Arrange
+            String content = "package a;\npublic interface UseCase<IN, OUT> extends Marker<IN>, Other {}\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("UseCase.java", content);
+
+            // Assert
+            assertThat(source.kind()).isEqualTo(JavaSourceFile.TypeKind.INTERFACE);
+            assertThat(source.implementedInterfaces()).containsExactlyInAnyOrder("Marker", "Other");
+        }
+
+        @Test
+        void ignoresKeywordsInCommentsAndStringsBeforeTheDeclaration() {
+            // Arrange
+            String content = """
+                    package a;
+                    /** A class implements Entity when ... */
+                    // record Fake implements Entity
+                    public record Real(int x) {}
+                    """;
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("Real.java", content);
+
+            // Assert
+            assertThat(source.typeName()).isEqualTo("Real");
+            assertThat(source.kind()).isEqualTo(JavaSourceFile.TypeKind.RECORD);
+            assertThat(source.implementedInterfaces()).isEmpty();
+        }
+
+        @Test
+        void aFileWithoutATypeHasNoKind() {
+            // Arrange
+            String content = "package a;\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("package-info.java", content);
+
+            // Assert
+            assertThat(source.kind()).isEqualTo(JavaSourceFile.TypeKind.NONE);
+            assertThat(source.typeName()).isEmpty();
+        }
+    }
 }

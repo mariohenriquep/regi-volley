@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.exception;
 
-import com.regivolley.api.domain.model.MemberStatus;
+import com.regivolley.api.domain.model.valueobject.MemberStatus;
 
 /** Thrown when a {@code Member} is asked to move to a status not reachable from its current one (US-08). */
 public class InvalidMemberStatusTransitionException extends BusinessRuleException {

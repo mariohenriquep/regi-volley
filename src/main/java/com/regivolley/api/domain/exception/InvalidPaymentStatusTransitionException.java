@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.exception;
 
-import com.regivolley.api.domain.model.PaymentStatus;
+import com.regivolley.api.domain.model.valueobject.PaymentStatus;
 
 /** Thrown when a {@code Subscription} is asked to move to a payment status not reachable from its current one (RN-18). */
 public class InvalidPaymentStatusTransitionException extends BusinessRuleException {

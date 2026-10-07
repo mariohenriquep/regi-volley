@@ -32,10 +32,16 @@ Testcontainers (`AbstractPostgresIntegrationTest`, `postgres:16-alpine`) needs D
 
 Onion architecture, `infrastructure → application → domain`, enforced by plain JUnit 5 tests
 (`OnionArchitectureTest` - no ArchUnit). `domain` is
-pure Java: immutable aggregates (`Session`, `Booking`, `Subscription`, ...) own their state
-machines and business rules; ports live in `domain.repository`/`domain.port`. `application` has
-one `UseCase<IN, OUT>` class per operation. `infrastructure` holds web, persistence, security and
-notification adapters. Three models per concept (domain / JPA entity / web DTO), translated only
+pure Java and split by DDD building block: aggregate roots and their internal entities in
+`domain.model.entity` (`Session` + `Booking`, `Association` + `Level`, `Subscription`, ... implement the
+`AggregateRoot`/`Entity` markers from `domain.shared`), value objects (records/enums implementing
+`ValueObject`, never depending on entities) in `domain.model.valueobject`, operation outcomes in
+`domain.model.result`, domain services (`BookingEligibility`) in `domain.service`. Immutable
+aggregates own their state machines and business rules; ports live in
+`domain.repository`/`domain.port`. `application` has
+one `UseCase<IN, OUT>` class per operation. `infrastructure` holds web (`controller`/`dto`/`mapper`/`exception`), persistence
+(`entity`/`mapper`/`adapter`), security and notification adapters; the architecture test pins which
+class kind lives in which package (§4 of architecture.md). Three models per concept (domain / JPA entity / web DTO), translated only
 in mappers. Non-negotiables specific to this project: every business table and every repository
 read is scoped by `association_id` (§8), times are UTC in storage and `Europe/Lisbon` for
 schedules (§9, always via an injected `Clock`), and the last seat is protected by optimistic

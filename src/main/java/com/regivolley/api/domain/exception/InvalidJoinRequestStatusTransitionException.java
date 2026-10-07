@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.exception;
 
-import com.regivolley.api.domain.model.JoinRequestStatus;
+import com.regivolley.api.domain.model.valueobject.JoinRequestStatus;
 
 /** Thrown when a {@code JoinRequest} is asked to move to a status not reachable from its current one (US-06). */
 public class InvalidJoinRequestStatusTransitionException extends BusinessRuleException {

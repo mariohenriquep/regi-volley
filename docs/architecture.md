@@ -14,8 +14,8 @@ Three concentric layers, dependencies only ever point **inward**:
 infrastructure  →  application  →  domain
 ```
 
-- **`domain`** (`com.regivolley.api.domain`) — aggregates, value objects, domain exceptions and
-  port interfaces (repositories, notifier). Nothing outside this package may be imported here.
+- **`domain`** (`com.regivolley.api.domain`) — aggregates, entities, value objects, domain
+  services, domain exceptions and port interfaces (repositories, notifier). Nothing outside this package may be imported here.
 - **`application`** (`com.regivolley.api.application`) — one use case per operation, plus
   command records. Depends only on `domain`.
 - **`infrastructure`** (`com.regivolley.api.infrastructure`) — everything that talks to the
@@ -28,7 +28,9 @@ architecture library (NFR "Qualidade"). It scans `src/main/java` with `JavaSourc
 resolves each file's package and every package-qualified reference (imports, static and wildcard
 imports, inline fully qualified names; comments and strings ignored). `JavaSourceFileTest` proves
 the scanner itself detects violations, so a rule can't pass vacuously. A new rule is a new `@Test`
-in `OnionArchitectureTest`.
+in `OnionArchitectureTest`. `JavaSourceFile` also reports the top-level type's name, kind
+(class/record/enum/interface), modifiers and implemented interfaces, which the building-block
+rules in §4 use.
 
 ## 2. Domain purity
 
@@ -51,27 +53,64 @@ never appears in `domain/`.
 
 | What | Package |
 |---|---|
-| Aggregates, value objects, enums | `domain.model` |
+| Aggregate roots (`Session`, `Plan`, `Subscription`, `Association`, `Member`, `JoinRequest`) and the entities inside them (`Booking`, `Level`) | `domain.model.entity` |
+| Value objects: ids, `Money`, `BookingPolicy`, `ContactDetails`, status/type/role enums, ... | `domain.model.valueobject` |
+| Outcomes returned by aggregates that contain entities (`BookingResult`, `CapacityChange`, ...) | `domain.model.result` |
+| Domain services and their inputs/outputs (`BookingEligibility`, `BookingTarget`, ...) | `domain.service` |
+| `AggregateRoot` / `Entity` / `ValueObject` markers, shared validation (`FieldRules`) | `domain.shared` |
 | Domain exceptions | `domain.exception` |
-| Repository ports (interfaces only) | `domain.repository` |
+| Repository ports (interfaces only, one per aggregate root) | `domain.repository` |
 | Other outbound ports (e.g. `Notifier`) | `domain.port` |
 | Use case interface + implementation | `application.usecase` |
 | Use case input records | `application.command` |
+| Use case output records | `application.result` |
 | REST controllers | `infrastructure.web.controller` |
 | Request/response DTOs, error shape | `infrastructure.web.dto` |
 | `@RestControllerAdvice` exception mapping | `infrastructure.web.exception` |
-| Domain ↔ DTO translation | `infrastructure.web.mapper` |
-| JPA entities | `infrastructure.persistence.entity` |
-| Spring Data repository interfaces | `infrastructure.persistence` (package-private) |
-| Repository port implementations (adapters) | `infrastructure.persistence` |
-| Entity ↔ domain translation | `infrastructure.persistence.mapper` |
+| Domain ↔ DTO translation (`*WebMapper`) | `infrastructure.web.mapper` |
+| JPA entities (`*JpaEntity`) | `infrastructure.persistence.entity` |
+| Spring Data repository interfaces (`*JpaRepository`, package-private) and repository port implementations (adapters) | `infrastructure.persistence.adapter` |
+| Entity ↔ domain translation (`*PersistenceMapper`) | `infrastructure.persistence.mapper` |
 | Users, credentials, JWT/cookies, role checks | `infrastructure.security` |
 | Email sending (adapter for `Notifier`) | `infrastructure.notification` |
 | Spring `@Configuration` beans | `infrastructure.config` |
 
 A class that doesn't fit one of these rows is a signal to reconsider the design — flag it rather
-than inventing a package ad hoc. If `domain.model` grows unwieldy, splitting it per aggregate
-(`domain.model.booking`, ...) is a deliberate change to this table, not a drive-by.
+than inventing a package ad hoc. If `domain.model.entity` grows unwieldy, splitting it per
+aggregate (`domain.model.entity.booking`, ...) is a deliberate change to this table, not a
+drive-by.
+
+### DDD building blocks
+
+The packages are the DDD building blocks, and `OnionArchitectureTest` enforces them (§1):
+
+- **Aggregate root** (`implements AggregateRoot`) - owns a consistency boundary and its
+  invariants and state machine; the only thing a repository loads or saves, and the only thing
+  other aggregates may point to (by id). Lives in `domain.model.entity`.
+- **Internal entity** (`implements Entity`) - has an identity but exists inside one aggregate
+  (`Booking` in `Session`, `Level` in `Association`). It sits in the same package as its root, so
+  its creation and transition methods stay package-private and reachable only through the root.
+  No repository of its own.
+- **Value object** (`implements ValueObject`) - immutable, defined by its values, validates
+  itself. A record or an enum (a final immutable class only when an accessor must differ from
+  the component, e.g. `ContactDetails.phone()` is an `Optional`). Never depends on entities,
+  results or domain services. Lives in `domain.model.valueobject`.
+- **Result** - the record an aggregate method returns when one operation changes the root and
+  its inner entities together (`BookingResult`, `CapacityChange`, ...). `domain.model.result`.
+- **Domain service** - stateless domain logic that spans aggregates and fits none of them
+  (`BookingEligibility`); it takes plain facts, no ports. Types named `*Service`,
+  `*Eligibility`, `*Calculator`, `*Evaluator` or `*Specification` live only in `domain.service`,
+  and nothing there is an entity or value object.
+- **Repository** - one port per aggregate root in `domain.repository`; adapters in
+  `infrastructure.persistence.adapter`.
+- **Shared kernel** - `domain.shared` holds the three markers and the validation helper
+  `FieldRules`; it depends on nothing in the project except `domain.exception`.
+
+The same test also pins the infrastructure naming: `*Request`/`*Response`/`*Dto` only in
+`infrastructure.web.dto`, `*WebMapper` in `infrastructure.web.mapper`, `*PersistenceMapper` in
+`infrastructure.persistence.mapper`, `*JpaEntity` in `infrastructure.persistence.entity`,
+`*JpaRepository` in `infrastructure.persistence.adapter`; and every domain type must sit in one
+of the domain packages above.
 
 ### Domain vocabulary (code is in English)
 
@@ -97,7 +136,7 @@ than inventing a package ad hoc. If `domain.model` grows unwieldy, splitting it 
 ## 5. Patterns in use
 
 - **Repository (port/adapter)** — ports in `domain.repository`, adapters in
-  `infrastructure.persistence`. Application code never touches Spring Data or JPA.
+  `infrastructure.persistence.adapter`. Application code never touches Spring Data or JPA.
 - **Command pattern for use cases** — `UseCase<IN, OUT>`, one class per operation.
 - **Immutable aggregates with self-validating transitions** — state machines (RN-05 for
   `Session`, RN-12 for `Booking`, RN-18 for `Subscription`) live in the aggregate as an

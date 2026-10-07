@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.exception;
 
-import com.regivolley.api.domain.model.BookingRejectionReason;
+import com.regivolley.api.domain.model.valueobject.BookingRejectionReason;
 
 /** Thrown when a member may not book (RN-06, RN-14, RN-18, RN-21); carries the structured reason. */
 public class BookingNotAllowedException extends BusinessRuleException {

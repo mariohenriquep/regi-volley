@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.exception;
 
-import com.regivolley.api.domain.model.ShortName;
+import com.regivolley.api.domain.model.valueobject.ShortName;
 
 /**
  * Thrown by the registration use case when another association already uses the short name

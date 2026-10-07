@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.exception;
 
-import com.regivolley.api.domain.model.BookingId;
+import com.regivolley.api.domain.model.valueobject.BookingId;
 
 /** Thrown when a booking id doesn't belong to the session it is addressed to (not a user rule: maps to "not found"). */
 public class BookingNotFoundException extends RuntimeException {
