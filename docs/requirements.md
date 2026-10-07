@@ -167,6 +167,10 @@ definidos por associação; entre parênteses fica o valor por omissão.
   do prazo ou num cancelamento da sessão.
 - **RN-16** Um membro tem no máximo uma subscrição ativa por período. Uma renovação começa quando
   a anterior acaba.
+  *Decisão 7/10/2026: um pack (ou sessão avulsa) sem senhas disponíveis deixa de estar ativo, por
+  isso o membro pode comprar um novo pack de imediato. O limite "N por semana" conta por membro
+  (todas as subscrições), não por subscrição: uma renovação a meio da semana não duplica o limite.
+  Um pagamento pago (Paga) só volta atrás através de um estorno (RN-19), numa fase seguinte.*
 
 ### Pagamentos (manuais)
 
