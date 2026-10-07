@@ -90,6 +90,9 @@ than inventing a package ad hoc. If `domain.model` grows unwieldy, splitting it 
 | Pagamento / Estorno | `Payment` / `Refund` |
 | Falta | `NO_SHOW` |
 | Evento | `Event` |
+| Pedido de adesão | `JoinRequest` |
+| Nome curto (URL) | `ShortName` |
+| Consentimento RGPD | `GdprConsent` |
 
 ## 5. Patterns in use
 
@@ -173,10 +176,19 @@ bookings at the last seat.
 
 ## 11. Identity and authentication
 
-Users, credentials and roles are infrastructure (`infrastructure.security`). The domain only
-sees `MemberId` and `AssociationId`; roles are checked server-side on every request before the
-use case is called. Personal data (name, email, phone) is never written to logs (NFR
-"Operação"/RGPD).
+- **Infrastructure** (`infrastructure.security`): users, credentials, login, sessions/JWT, and
+  the mapping from a user to their `Member` in each association (`user_id` exists only there).
+  It resolves the principal to `(AssociationId, MemberId, roles)` through a port and checks roles
+  server-side on every request, before the use case is called.
+- **Domain**: a person's role *within an association* (`MEMBER`, `COACH`, `ADMIN`) is tenant
+  business data recorded on `Member` - a person can hold several, the founder becomes admin
+  (US-01). The domain records roles but never authorises with them.
+- Rules about the actor's relationship to the data ("coach of this group", "owner of this
+  booking") are decided by the domain or use case from the actor's `MemberId`.
+
+Personal data (name, email, phone) is never written to logs or `toString` (NFR "Operação"/RGPD).
+Erasure on request anonymises every aggregate holding it (`Member`, `JoinRequest`) while keeping
+ids and history.
 
 ## 12. Domain exceptions and messages
 
