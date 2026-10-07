@@ -53,7 +53,7 @@ never appears in `domain/`.
 
 | What | Package |
 |---|---|
-| Aggregate roots (`Session`, `Plan`, `Subscription`, `Association`, `Member`, `JoinRequest`) and the entities inside them (`Booking`, `Level`) | `domain.model.entity` |
+| Aggregate roots (`Session`, `Plan`, `Subscription`, `Association`, `Member`, `JoinRequest`, `TrainingGroup`) and the entities inside them (`Booking`, `Level`) | `domain.model.entity` |
 | Value objects: ids, `Money`, `BookingPolicy`, `ContactDetails`, status/type/role enums, ... | `domain.model.valueobject` |
 | Outcomes returned by aggregates that contain entities (`BookingResult`, `CapacityChange`, ...) | `domain.model.result` |
 | Domain services and their inputs/outputs (`BookingEligibility`, `BookingTarget`, ...) | `domain.service` |
