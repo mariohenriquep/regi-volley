@@ -56,7 +56,7 @@ a defect, not a shortcut.
 - **One use case per operation**, implementing `UseCase<IN, OUT>`, constructor-injected with the
   ports it needs.
 - **Place every new class** in the package `docs/architecture.md` §4 says it belongs in, named
-  with the vocabulary there. Code and identifiers in English; user-facing messages in PT-PT.
+  with the vocabulary there. Code, identifiers and all user-facing messages in English.
 - **No personal data in logs** (names, emails, phone numbers) — log ids only.
 
 ## Testability is your responsibility, exhaustive coverage is not

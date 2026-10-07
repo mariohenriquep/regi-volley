@@ -258,7 +258,7 @@ associações são requisitos do MVP, não melhorias futuras.
 | Autenticação | Email + palavra-passe ou link mágico; sessões com JWT ou cookie seguro; papéis verificados no servidor em cada pedido |
 | Concorrência | A última vaga não pode ser atribuída a duas pessoas: bloqueio otimista ou restrição na base de dados, com teste de reservas simultâneas |
 | Desempenho | A lista de sessões da semana responde em menos de 500 ms (p95) para uma associação com 300 membros |
-| Usabilidade | Web app mobile-first (PWA); reservar em 2 toques a partir do ecrã inicial; PT-PT por omissão, preparada para tradução |
+| Usabilidade | Web app mobile-first (PWA); reservar em 2 toques a partir do ecrã inicial; inglês por omissão (decidido a 7/10/2026), preparada para tradução |
 | Fuso horário | Datas guardadas em UTC, mostradas em Europe/Lisbon (incluindo mudanças de hora) |
 | Qualidade | Mesma base do task-manager-api: Java 21, Spring Boot, onion architecture validada por JUnit 5, TDD, Testcontainers com PostgreSQL, JaCoCo ≥ 85% |
 | Operação | Deploy em contentor; backups diários da base de dados; logs sem dados pessoais |

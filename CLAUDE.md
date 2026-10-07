@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 RegiVolley: session-by-session booking for amateur indoor volleyball associations. Product scope,
 user stories (`US-xx`) and business rules (`RN-xx`) are in `docs/requirements.md` (PT-PT);
 structural rules are in `docs/architecture.md`. Read both before a structural change. Code,
-identifiers and technical docs are in English; user-facing text is PT-PT.
+identifiers, technical docs **and all user-facing text** (messages, errors, emails) are in English
+- the product docs in `docs/requirements.md` stay in PT-PT.
 
 This project follows the conventions of `../../TaskManager/task-manager-api` (same stack, same
 layering, same test style). When in doubt about an idiom, look there.

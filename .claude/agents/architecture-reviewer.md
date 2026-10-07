@@ -34,7 +34,7 @@ is findings, not fixes.
    - **Invariants** — do new domain types enforce their own validity (validation in factory and
      transition methods, never trusting a caller), immutable, returning new instances?
    - **Error handling** — are failure paths handled deliberately (a new domain exception mapped
-     in the global exception handler to the right HTTP status, with a clear PT-PT reason for the
+     in the global exception handler to the right HTTP status, with a clear English reason for the
      member where US-14 asks for one), not swallowed or left to bubble as a 500?
    - **Test adequacy** — is new logic covered with branches and boundary values exercised (the
      exact cancellation deadline, the last seat, the Nth no-show)? If JaCoCo's 85% floor would

@@ -182,7 +182,7 @@ use case is called. Personal data (name, email, phone) is never written to logs 
 
 Rule violations a user can trigger (booking window closed, session full, duplicate booking, ...)
 are domain exceptions extending a common `BusinessRuleException`, carrying structured data
-(ids, instants) plus a PT-PT message that the web layer may show as-is; times in those messages
-are formatted in `Europe/Lisbon`, never raw UTC. Invariant and programming errors (invalid
+(ids, instants) plus an English message that the web layer may show as-is; times in those messages
+are formatted in `Europe/Lisbon` as `dd/MM/yyyy HH:mm`, never raw UTC. Invariant and programming errors (invalid
 reconstruct data, null arguments) use English messages and are never shown to users - they map
 to a generic error.
