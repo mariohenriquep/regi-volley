@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.exception;
 
-import com.regivolley.api.domain.model.SessionStatus;
+import com.regivolley.api.domain.model.valueobject.SessionStatus;
 
 /** Thrown when an operation needs a SCHEDULED session (book, cancel a booking, change capacity, promote). */
 public class SessionNotScheduledException extends BusinessRuleException {

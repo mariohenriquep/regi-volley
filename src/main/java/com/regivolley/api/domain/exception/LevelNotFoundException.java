@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.exception;
 
-import com.regivolley.api.domain.model.LevelId;
+import com.regivolley.api.domain.model.valueobject.LevelId;
 
 /** Thrown when a level id doesn't belong to the association it is addressed to (maps to "not found"). */
 public class LevelNotFoundException extends RuntimeException {

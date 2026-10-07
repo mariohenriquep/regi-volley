@@ -14,7 +14,7 @@ percentage with assertion-free tests that execute a line without checking behavi
 
 ## Test at the layer the logic belongs to (docs/architecture.md §7)
 
-- **Domain** (`domain.model`, `domain.exception`) — plain JUnit 5, **no Spring context**. Fast,
+- **Domain** (`domain.model.entity`, `domain.model.valueobject`, `domain.model.result`, `domain.service`, `domain.exception`) — plain JUnit 5, **no Spring context**. Fast,
   isolated, tests the aggregate's own rules directly (`SessionTest`, `BookingTest`,
   `SubscriptionTest`).
 - **Application** (`application.usecase`) — JUnit 5 + Mockito, ports mocked. No Spring context

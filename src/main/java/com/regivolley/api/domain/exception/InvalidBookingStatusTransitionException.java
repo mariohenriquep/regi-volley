@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.exception;
 
-import com.regivolley.api.domain.model.BookingStatus;
+import com.regivolley.api.domain.model.valueobject.BookingStatus;
 
 /** Thrown when a {@code Booking} is asked to move to a status not reachable from its current one (RN-12). */
 public class InvalidBookingStatusTransitionException extends BusinessRuleException {
