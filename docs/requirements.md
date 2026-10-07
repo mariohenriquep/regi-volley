@@ -94,7 +94,8 @@ definidos por associação; entre parênteses fica o valor por omissão.
 - **RN-01** As sessões são geradas a partir do horário recorrente da turma, com uma janela
   configurável (4 semanas).
 - **RN-02** A lotação é herdada da turma e pode ser alterada numa sessão concreta. Recomenda-se
-  um múltiplo de 6 (12 = 2 equipas num campo); não é obrigatório.
+  um múltiplo de 6 (12 = 2 equipas num campo); não é obrigatório. O treinador da sessão não
+  conta para a lotação, mesmo quando joga (decidido a 7/10/2026).
 - **RN-03** As reservas abrem um número configurável de dias antes (7) e fecham no início da
   sessão.
 - **RN-04** Cancelar uma sessão cancela todas as reservas, devolve a senha consumida e notifica
@@ -115,6 +116,8 @@ definidos por associação; entre parênteses fica o valor por omissão.
   reserva conta como usada e o lugar é libertado para a lista de espera.
 - **RN-11** Reservado e não presente = falta. Ao fim de um número configurável de faltas num mês
   (3), o membro fica impedido de reservar durante um período configurável (7 dias).
+  **Decisão 7/10/2026:** por agora não há bloqueio — ao atingir o limite, o membro e o
+  administrador recebem apenas um aviso. O bloqueio fica para uma fase seguinte.
 - **RN-12** Estados da reserva: Em espera → Confirmada → Presente | Falta, e
   Em espera | Confirmada → Cancelada.
 
@@ -133,7 +136,8 @@ definidos por associação; entre parênteses fica o valor por omissão.
 - **RN-17** O administrador regista um pagamento com valor, data, método (numerário,
   transferência, MB WAY) e a subscrição a que diz respeito.
 - **RN-18** Uma subscrição pode estar Paga, Pendente ou Em atraso. A associação decide se um
-  membro em atraso pode reservar (pode, por omissão, com aviso ao administrador).
+  membro em atraso pode reservar. **Decisão 7/10/2026:** por agora um membro com a subscrição
+  Em atraso **não pode reservar**; a reserva é recusada com o motivo.
 - **RN-19** Um pagamento registado não se apaga: corrige-se com um estorno, para manter o
   histórico.
 
@@ -233,9 +237,9 @@ A Fase 1 é a prioridade: sem reservas fiáveis, nada mais tem valor.
 
 - [ ] Qual é a associação piloto, e quantos membros e turmas tem?
 - [ ] Uma pessoa pode pertencer a várias associações com a mesma conta já no MVP?
-- [ ] O bloqueio por faltas (RN-11) é desejado, ou basta um aviso?
-- [ ] Membros com pagamento em atraso podem reservar (RN-18)?
-- [ ] O treinador conta para a lotação quando também joga?
+- [x] O bloqueio por faltas (RN-11) é desejado, ou basta um aviso? **Por agora, só aviso** (7/10/2026).
+- [x] Membros com pagamento em atraso podem reservar (RN-18)? **Não, por agora** (7/10/2026).
+- [x] O treinador conta para a lotação quando também joga? **Não** — ver RN-02 (7/10/2026).
 - [ ] Haverá uma sessão experimental gratuita para visitantes?
 - [ ] Frontend: PWA em React/Next.js ou renderizado no servidor (Thymeleaf + HTMX)?
 - [ ] Modelo de negócio: gratuito, mensalidade por associação ou valor por membro?
