@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least privilege: every job gets a read-only token unless it widens this below, per job.
+permissions:
+  contents: read
+
+# One run per ref. A new push to a PR branch cancels the superseded run; runs on `main` are never
+# cancelled mid-flight (they queue).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # ---- Test: unit + integration + architecture + JaCoCo gate (85% line/branch) ----------------
+  build-and-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        id: setup-java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # The build enforces JDK 21 via Maven Toolchains (see docs/toolchains.sample.xml) so it
+      # can't silently run with the wrong JDK - CI needs its own toolchains.xml pointing at the
+      # JDK setup-java just installed, same as the one-time per-machine setup a human does.
+      - name: Register JDK 21 toolchain
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/toolchains.xml <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <toolchains>
+              <toolchain>
+                  <type>jdk</type>
+                  <provides>
+                      <version>21</version>
+                  </provides>
+                  <configuration>
+                      <jdkHome>${JAVA_HOME}</jdkHome>
+                  </configuration>
+              </toolchain>
+          </toolchains>
+          EOF
+
+      # Testcontainers (persistence tests + the full-context smoke test) needs Docker, which is
+      # preinstalled and running on GitHub-hosted ubuntu runners - no extra setup required.
+      - name: Build and verify (tests + JaCoCo coverage gate)
+        run: ./mvnw --batch-mode clean verify
+
+      - name: Upload JaCoCo report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          retention-days: 14
+
+      # Release stage: CycloneDX SBOM of the runtime dependency tree. Not bound to the Maven
+      # lifecycle (see pom.xml), so local `./mvnw verify` stays fast; generated here only.
+      - name: Generate SBOM (CycloneDX)
+        run: ./mvnw --batch-mode cyclonedx:makeBom
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-cyclonedx
+          path: target/regi-volley-sbom.json
+          retention-days: 90
+          if-no-files-found: error
+
+  # ---- Code: secret detection ------------------------------------------------------------------
+  secret-scan:
+    name: Secret scan (Gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read # gitleaks-action lists the PR's commits to scan only that range
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---- Build: SAST ----------------------------------------------------------------------------
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep:1.160.0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: semgrep scan --config=p/java --config=p/owasp-top-ten --config=p/secrets --error
