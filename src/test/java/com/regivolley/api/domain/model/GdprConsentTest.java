@@ -34,6 +34,42 @@ class GdprConsentTest {
     }
 
     @Test
+    void acceptsAPolicyVersionOfTheMaximumLength() {
+        // Arrange
+        String version = "v".repeat(GdprConsent.MAX_POLICY_VERSION_LENGTH);
+
+        // Act
+        GdprConsent consent = GdprConsent.record(true, version, CLOCK);
+
+        // Assert
+        assertThat(consent.policyVersion()).hasSize(GdprConsent.MAX_POLICY_VERSION_LENGTH);
+    }
+
+    @Test
+    void recordsAnAcceptanceAtAGivenInstant() {
+        // Arrange
+        Instant at = Instant.parse("2026-01-01T00:00:00Z");
+
+        // Act
+        GdprConsent consent = GdprConsent.record(true, "2026-10", at);
+
+        // Assert
+        assertThat(consent.givenAt()).isEqualTo(at);
+    }
+
+    @Test
+    void theInstantVariantAlsoRequiresAcceptance() {
+        // Arrange
+        Executable act = () -> GdprConsent.record(false, "2026-10", NOW);
+
+        // Act
+        ConsentRequiredException ex = assertThrows(ConsentRequiredException.class, act);
+
+        // Assert
+        assertThat(ex.getMessage()).contains("consent");
+    }
+
+    @Test
     void refusesWhenNotAccepted() {
         // Arrange
         Executable act = () -> GdprConsent.record(false, "2026-10", CLOCK);

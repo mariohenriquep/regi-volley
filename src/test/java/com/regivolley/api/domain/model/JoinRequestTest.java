@@ -32,9 +32,37 @@ class JoinRequestTest {
             List.of("Beginner", "Intermediate"));
     private static final MemberId ADMIN = MemberId.generate();
 
+    private static final ContactDetails CONTACT = ContactDetails.of("Ana Silva", EmailAddress.of("ana@example.com"),
+            PhoneNumber.of("912345678"));
+
+    /** A clock whose every reading is one second later than the previous one. */
+    private static final class TickingClock extends Clock {
+        private Instant next;
+
+        TickingClock(Instant start) {
+            this.next = start;
+        }
+
+        @Override
+        public ZoneOffset getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            Instant current = next;
+            next = next.plusSeconds(1);
+            return current;
+        }
+    }
+
     private static JoinRequest pending() {
-        return JoinRequest.create(ASSOCIATION.id(), "  Ana Silva ", EmailAddress.of("ana@example.com"),
-                PhoneNumber.of("912345678"), true, "2026-10", REQUEST_CLOCK);
+        return JoinRequest.create(ASSOCIATION.id(), ContactDetails.of("  Ana Silva ", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, "2026-10", REQUEST_CLOCK);
     }
 
     @Nested
@@ -53,7 +81,9 @@ class JoinRequestTest {
             assertThat(request.associationId()).isEqualTo(ASSOCIATION.id());
             assertThat(request.name()).isEqualTo("Ana Silva");
             assertThat(request.email()).isEqualTo(EmailAddress.of("ana@example.com"));
-            assertThat(request.phone()).isEqualTo(PhoneNumber.of("912345678"));
+            assertThat(request.phone()).contains(PhoneNumber.of("912345678"));
+            assertThat(request.isAnonymised()).isFalse();
+            assertThat(request.anonymisedAt()).isEmpty();
             assertThat(request.status()).isEqualTo(JoinRequestStatus.PENDING);
             assertThat(request.isPending()).isTrue();
             assertThat(request.requestedAt()).isEqualTo(REQUESTED);
@@ -66,8 +96,7 @@ class JoinRequestTest {
         @Test
         void requiresTheRgpdConsent() {
             // Arrange
-            Executable act = () -> JoinRequest.create(ASSOCIATION.id(), "Ana", EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), false, "2026-10", REQUEST_CLOCK);
+            Executable act = () -> JoinRequest.create(ASSOCIATION.id(), ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), false, "2026-10", REQUEST_CLOCK);
 
             // Act
             ConsentRequiredException ex = assertThrows(ConsentRequiredException.class, act);
@@ -79,8 +108,7 @@ class JoinRequestTest {
         @Test
         void requiresThePolicyVersionTheConsentRefersTo() {
             // Arrange
-            Executable act = () -> JoinRequest.create(ASSOCIATION.id(), "Ana", EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), true, " ", REQUEST_CLOCK);
+            Executable act = () -> JoinRequest.create(ASSOCIATION.id(), ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, " ", REQUEST_CLOCK);
 
             // Act
             InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
@@ -94,8 +122,7 @@ class JoinRequestTest {
         @ValueSource(strings = {"  "})
         void requiresAName(String name) {
             // Arrange
-            Executable act = () -> JoinRequest.create(ASSOCIATION.id(), name, EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), true, "2026-10", REQUEST_CLOCK);
+            Executable act = () -> JoinRequest.create(ASSOCIATION.id(), ContactDetails.of(name, EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, "2026-10", REQUEST_CLOCK);
 
             // Act
             InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
@@ -105,20 +132,17 @@ class JoinRequestTest {
         }
 
         @Test
-        void requiresEmailAndPhone() {
+        void readsTheClockOnceSoTheConsentAndTheRequestShareAnInstant() {
             // Arrange
-            Executable noEmail = () -> JoinRequest.create(ASSOCIATION.id(), "Ana", null, PhoneNumber.of("912345678"),
-                    true, "2026-10", REQUEST_CLOCK);
-            Executable noPhone = () -> JoinRequest.create(ASSOCIATION.id(), "Ana", EmailAddress.of("ana@example.com"),
-                    null, true, "2026-10", REQUEST_CLOCK);
+            Clock ticking = new TickingClock(REQUESTED);
 
             // Act
-            NullPointerException email = assertThrows(NullPointerException.class, noEmail);
-            NullPointerException phone = assertThrows(NullPointerException.class, noPhone);
+            JoinRequest request = JoinRequest.create(ASSOCIATION.id(),
+                    ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")),
+                    true, "2026-10", ticking);
 
             // Assert
-            assertThat(email.getMessage()).contains("email");
-            assertThat(phone.getMessage()).contains("phone");
+            assertThat(request.consent().givenAt()).isEqualTo(request.requestedAt());
         }
 
         @Test
@@ -166,10 +190,21 @@ class JoinRequestTest {
             Member member = request.approve(ASSOCIATION, ADMIN, DECISION_CLOCK).member();
 
             // Assert
-            assertThat(member.name()).isEqualTo(request.name());
-            assertThat(member.email()).isEqualTo(request.email());
-            assertThat(member.phone()).isEqualTo(request.phone());
+            assertThat(member.contact()).isEqualTo(request.contact());
             assertThat(member.consent()).isEqualTo(request.consent());
+        }
+
+        @Test
+        void readsTheClockOnceSoTheDecisionAndTheMembershipShareAnInstant() {
+            // Arrange
+            JoinRequest request = pending();
+            Clock ticking = new TickingClock(DECIDED);
+
+            // Act
+            JoinRequestApproval approval = request.approve(ASSOCIATION, ADMIN, ticking);
+
+            // Assert
+            assertThat(approval.member().joinedAt()).isEqualTo(approval.request().decidedAt().orElseThrow());
         }
 
         @Test
@@ -271,6 +306,19 @@ class JoinRequestTest {
         }
 
         @Test
+        void acceptsAReasonOfTheMaximumLength() {
+            // Arrange
+            JoinRequest request = pending();
+            String atMax = "x".repeat(JoinRequest.MAX_REASON_LENGTH);
+
+            // Act
+            JoinRequest rejected = request.reject(ADMIN, atMax, DECISION_CLOCK);
+
+            // Assert
+            assertThat(rejected.rejectionReason().orElseThrow()).hasSize(JoinRequest.MAX_REASON_LENGTH);
+        }
+
+        @Test
         void rejectsAReasonThatIsTooLong() {
             // Arrange
             JoinRequest request = pending();
@@ -308,9 +356,8 @@ class JoinRequestTest {
     class Reconstruction {
 
         private JoinRequest rebuild(JoinRequestStatus status, Instant decidedAt, MemberId decidedBy, String reason) {
-            return JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(), "Ana",
-                    EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678"),
-                    new GdprConsent(REQUESTED, "2026-10"), status, REQUESTED, decidedAt, decidedBy, reason);
+            return JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(), CONTACT,
+                    new GdprConsent(REQUESTED, "2026-10"), status, REQUESTED, decidedAt, decidedBy, reason, null);
         }
 
         @Test
@@ -342,6 +389,63 @@ class JoinRequestTest {
             // Assert
             assertThat(time.getMessage()).contains("exactly when");
             assertThat(decider.getMessage()).contains("exactly when");
+        }
+
+        @Test
+        void aWithdrawnRequestMayHaveNoDecider() {
+            // Arrange
+            // (rejected on erasure: nobody decided)
+
+            // Act
+            JoinRequest withdrawn = JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(),
+                    ContactDetails.anonymisedFor(UUID.randomUUID()), new GdprConsent(REQUESTED, "2026-10"),
+                    JoinRequestStatus.REJECTED, REQUESTED, DECIDED, null, JoinRequest.WITHDRAWN_REASON, DECIDED);
+
+            // Assert
+            assertThat(withdrawn.decidedBy()).isEmpty();
+            assertThat(withdrawn.isAnonymised()).isTrue();
+        }
+
+        @Test
+        void anAnonymisedRequestCannotBePending() {
+            // Arrange
+            Executable act = () -> JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(),
+                    ContactDetails.anonymisedFor(UUID.randomUUID()), new GdprConsent(REQUESTED, "2026-10"),
+                    JoinRequestStatus.PENDING, REQUESTED, null, null, null, DECIDED);
+
+            // Act
+            InvalidJoinRequestException ex = assertThrows(InvalidJoinRequestException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("pending");
+        }
+
+        @Test
+        void anErasureCannotPredateTheRequest() {
+            // Arrange
+            Executable act = () -> JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(),
+                    ContactDetails.anonymisedFor(UUID.randomUUID()), new GdprConsent(REQUESTED, "2026-10"),
+                    JoinRequestStatus.REJECTED, REQUESTED, DECIDED, null, null, REQUESTED.minusSeconds(1));
+
+            // Act
+            InvalidJoinRequestException ex = assertThrows(InvalidJoinRequestException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("before it was made");
+        }
+
+        @Test
+        void aPhoneIsOnlyMissingOnAnErasedRequest() {
+            // Arrange
+            ContactDetails withoutPhone = ContactDetails.reconstruct("Ana", EmailAddress.of("ana@example.com"), null);
+            Executable act = () -> JoinRequest.reconstruct(JoinRequestId.generate(), ASSOCIATION.id(), withoutPhone,
+                    new GdprConsent(REQUESTED, "2026-10"), JoinRequestStatus.PENDING, REQUESTED, null, null, null, null);
+
+            // Act
+            InvalidJoinRequestException ex = assertThrows(InvalidJoinRequestException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("phone");
         }
 
         @Test
@@ -381,6 +485,112 @@ class JoinRequestTest {
 
             // Assert
             assertThat(ex.getMessage()).contains("rejected");
+        }
+    }
+
+    @Nested
+    class Anonymisation {
+
+        private static final Instant ERASED = Instant.parse("2026-11-01T12:00:00Z");
+        private final Clock erasureClock = Clock.fixed(ERASED, ZoneOffset.UTC);
+
+        @Test
+        void aPendingRequestIsWithdrawnAndLosesItsPersonalData() {
+            // Arrange
+            JoinRequest request = pending();
+
+            // Act
+            JoinRequest erased = request.anonymise(erasureClock);
+
+            // Assert
+            assertThat(erased.id()).isEqualTo(request.id());
+            assertThat(erased.associationId()).isEqualTo(request.associationId());
+            assertThat(erased.name()).isEqualTo(ContactDetails.ANONYMISED_NAME);
+            assertThat(erased.email().value()).isEqualTo("anonymised-" + request.id() + "@anonymised.invalid");
+            assertThat(erased.phone()).isEmpty();
+            assertThat(erased.consent()).isEqualTo(request.consent());
+            assertThat(erased.requestedAt()).isEqualTo(REQUESTED);
+            assertThat(erased.status()).isEqualTo(JoinRequestStatus.REJECTED);
+            assertThat(erased.rejectionReason()).contains("Withdrawn on erasure request");
+            assertThat(erased.decidedAt()).contains(ERASED);
+            assertThat(erased.decidedBy()).isEmpty();
+            assertThat(erased.anonymisedAt()).contains(ERASED);
+            assertThat(erased.isAnonymised()).isTrue();
+            assertThat(request.isPending()).isTrue();
+        }
+
+        @Test
+        void anApprovedRequestKeepsItsStatusAndDecisionAudit() {
+            // Arrange
+            JoinRequest approved = pending().approve(ASSOCIATION, ADMIN, DECISION_CLOCK).request();
+
+            // Act
+            JoinRequest erased = approved.anonymise(erasureClock);
+
+            // Assert
+            assertThat(erased.status()).isEqualTo(JoinRequestStatus.APPROVED);
+            assertThat(erased.decidedBy()).contains(ADMIN);
+            assertThat(erased.decidedAt()).contains(DECIDED);
+            assertThat(erased.name()).isEqualTo(ContactDetails.ANONYMISED_NAME);
+            assertThat(erased.anonymisedAt()).contains(ERASED);
+        }
+
+        @Test
+        void aRejectedRequestKeepsItsDecisionButDropsTheFreeTextReason() {
+            // Arrange
+            JoinRequest rejected = pending().reject(ADMIN, "Ana's number is wrong", DECISION_CLOCK);
+
+            // Act
+            JoinRequest erased = rejected.anonymise(erasureClock);
+
+            // Assert
+            assertThat(erased.status()).isEqualTo(JoinRequestStatus.REJECTED);
+            assertThat(erased.decidedBy()).contains(ADMIN);
+            assertThat(erased.decidedAt()).contains(DECIDED);
+            assertThat(erased.rejectionReason()).isEmpty();
+        }
+
+        @Test
+        void isIdempotent() {
+            // Arrange
+            JoinRequest erased = pending().anonymise(DECISION_CLOCK);
+
+            // Act
+            JoinRequest again = erased.anonymise(erasureClock);
+
+            // Assert
+            assertThat(again).isSameAs(erased);
+            assertThat(again.anonymisedAt()).contains(DECIDED);
+        }
+
+        @Test
+        void anErasedRequestCanNoLongerBeDecided() {
+            // Arrange
+            JoinRequest erased = pending().anonymise(erasureClock);
+            Executable approve = () -> erased.approve(ASSOCIATION, ADMIN, DECISION_CLOCK);
+            Executable reject = () -> erased.reject(ADMIN, null, DECISION_CLOCK);
+
+            // Act
+            InvalidJoinRequestStatusTransitionException approveEx =
+                    assertThrows(InvalidJoinRequestStatusTransitionException.class, approve);
+            InvalidJoinRequestStatusTransitionException rejectEx =
+                    assertThrows(InvalidJoinRequestStatusTransitionException.class, reject);
+
+            // Assert
+            assertThat(approveEx.from()).isEqualTo(JoinRequestStatus.REJECTED);
+            assertThat(rejectEx.from()).isEqualTo(JoinRequestStatus.REJECTED);
+        }
+
+        @Test
+        void toStringOfAnErasedRequestStillHasNoPersonalData() {
+            // Arrange
+            JoinRequest erased = pending().anonymise(erasureClock);
+
+            // Act
+            String text = erased.toString();
+
+            // Assert
+            assertThat(text).contains(erased.id().toString()).doesNotContain("Ana").doesNotContain("ana@example.com");
         }
     }
 

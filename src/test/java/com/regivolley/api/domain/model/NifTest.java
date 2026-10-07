@@ -41,7 +41,8 @@ class NifTest {
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"123456780", "123456788", "100000071", "12345678", "1234567890", "12345678a", "abcdefghi", "123-456-789"})
+    // 000000000 and 012345679 have a right check digit but start with 0; 412345676 starts with 4
+    @ValueSource(strings = {"000000000", "012345679", "412345676", "123456780", "123456788", "100000071", "12345678", "1234567890", "12345678a", "abcdefghi", "123-456-789"})
     void rejectsAWrongCheckDigitLengthOrCharacters(String raw) {
         // Arrange
         Executable act = () -> Nif.of(raw);

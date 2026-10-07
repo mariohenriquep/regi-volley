@@ -21,11 +21,19 @@ import java.util.Set;
  * the approved request in a {@link JoinRequestApproval}; sending the email is the use case's job.
  * Rejecting may carry a reason.
  *
+ * <p><b>Anonymisation (RGPD erasure)</b> replaces the contact details with placeholders and keeps
+ * the id, status, decision audit (who and when) and consent record. A request still PENDING is
+ * treated as withdrawn: it becomes REJECTED with the reason {@link #WITHDRAWN_REASON}, decided at
+ * the erasure time by nobody (no decider), so a request that can never be answered does not stay
+ * open. The free-text rejection reason of an already rejected request is dropped, since an
+ * administrator may have typed personal data into it. Irreversible and idempotent.
+ *
  * <p>{@link #toString()} prints ids only.
  */
 public final class JoinRequest {
 
     public static final int MAX_REASON_LENGTH = 500;
+    public static final String WITHDRAWN_REASON = "Withdrawn on erasure request";
 
     private static final Map<JoinRequestStatus, Set<JoinRequestStatus>> ALLOWED_TRANSITIONS = Map.of(
             JoinRequestStatus.PENDING, EnumSet.of(JoinRequestStatus.APPROVED, JoinRequestStatus.REJECTED),
@@ -35,30 +43,28 @@ public final class JoinRequest {
 
     private final JoinRequestId id;
     private final AssociationId associationId;
-    private final String name;
-    private final EmailAddress email;
-    private final PhoneNumber phone;
+    private final ContactDetails contact;
     private final GdprConsent consent;
     private final JoinRequestStatus status;
     private final Instant requestedAt;
     private final Instant decidedAt;
     private final MemberId decidedBy;
     private final String rejectionReason;
+    private final Instant anonymisedAt;
 
-    private JoinRequest(JoinRequestId id, AssociationId associationId, String name, EmailAddress email,
-                        PhoneNumber phone, GdprConsent consent, JoinRequestStatus status, Instant requestedAt,
-                        Instant decidedAt, MemberId decidedBy, String rejectionReason) {
+    private JoinRequest(JoinRequestId id, AssociationId associationId, ContactDetails contact, GdprConsent consent,
+                        JoinRequestStatus status, Instant requestedAt, Instant decidedAt, MemberId decidedBy,
+                        String rejectionReason, Instant anonymisedAt) {
         this.id = id;
         this.associationId = associationId;
-        this.name = name;
-        this.email = email;
-        this.phone = phone;
+        this.contact = contact;
         this.consent = consent;
         this.status = status;
         this.requestedAt = requestedAt;
         this.decidedAt = decidedAt;
         this.decidedBy = decidedBy;
         this.rejectionReason = rejectionReason;
+        this.anonymisedAt = anonymisedAt;
     }
 
     /**
@@ -68,23 +74,30 @@ public final class JoinRequest {
      * @param policyVersion   the version of the privacy policy they were shown
      * @throws com.regivolley.api.domain.exception.ConsentRequiredException if the consent was not accepted
      */
-    public static JoinRequest create(AssociationId associationId, String name, EmailAddress email, PhoneNumber phone,
-                                     boolean consentAccepted, String policyVersion, Clock clock) {
+    public static JoinRequest create(AssociationId associationId, ContactDetails contact, boolean consentAccepted,
+                                     String policyVersion, Clock clock) {
         Objects.requireNonNull(clock, "clock must not be null");
-        GdprConsent consent = GdprConsent.record(consentAccepted, policyVersion, clock);
-        return reconstruct(JoinRequestId.generate(), associationId, name, email, phone, consent,
-                JoinRequestStatus.PENDING, clock.instant(), null, null, null);
+        Instant now = clock.instant();
+        GdprConsent consent = GdprConsent.record(consentAccepted, policyVersion, now);
+        return reconstruct(JoinRequestId.generate(), associationId, contact, consent,
+                JoinRequestStatus.PENDING, now, null, null, null, null);
     }
 
-    /** Rebuilds a request from persisted data, re-checking its invariants. */
-    public static JoinRequest reconstruct(JoinRequestId id, AssociationId associationId, String name,
-                                          EmailAddress email, PhoneNumber phone, GdprConsent consent,
-                                          JoinRequestStatus status, Instant requestedAt, Instant decidedAt,
-                                          MemberId decidedBy, String rejectionReason) {
+    /**
+     * Rebuilds a request from persisted data, re-checking its invariants. A decider is required
+     * for every decision except the withdrawal of an erased request (REJECTED and anonymised).
+     */
+    public static JoinRequest reconstruct(JoinRequestId id, AssociationId associationId, ContactDetails contact,
+                                          GdprConsent consent, JoinRequestStatus status, Instant requestedAt,
+                                          Instant decidedAt, MemberId decidedBy, String rejectionReason,
+                                          Instant anonymisedAt) {
+        Objects.requireNonNull(contact, "contact must not be null");
         Objects.requireNonNull(status, "status must not be null");
         Objects.requireNonNull(requestedAt, "requestedAt must not be null");
         boolean decided = status != JoinRequestStatus.PENDING;
-        if (decided != (decidedAt != null) || decided != (decidedBy != null)) {
+        boolean withdrawnOnErasure = status == JoinRequestStatus.REJECTED && anonymisedAt != null;
+        if (decided != (decidedAt != null) || (!decided && decidedBy != null)
+                || (decided && decidedBy == null && !withdrawnOnErasure)) {
             throw new InvalidJoinRequestException("A decision time and decider are required exactly when the request is decided");
         }
         if (decidedAt != null && decidedAt.isBefore(requestedAt)) {
@@ -93,14 +106,21 @@ public final class JoinRequest {
         if (rejectionReason != null && status != JoinRequestStatus.REJECTED) {
             throw new InvalidJoinRequestException("Only a rejected request can have a rejection reason");
         }
+        if (anonymisedAt == null && contact.phone().isEmpty()) {
+            throw new InvalidJoinRequestException("A request that is not anonymised needs a phone number");
+        }
+        if (anonymisedAt != null && status == JoinRequestStatus.PENDING) {
+            throw new InvalidJoinRequestException("An anonymised request cannot be pending");
+        }
+        if (anonymisedAt != null && anonymisedAt.isBefore(requestedAt)) {
+            throw new InvalidJoinRequestException("A request cannot be anonymised before it was made");
+        }
         return new JoinRequest(
                 Objects.requireNonNull(id, "id must not be null"),
                 Objects.requireNonNull(associationId, "associationId must not be null"),
-                FieldRules.requiredText("name", name, Member.MAX_NAME_LENGTH),
-                Objects.requireNonNull(email, "email must not be null"),
-                Objects.requireNonNull(phone, "phone must not be null"),
+                contact,
                 Objects.requireNonNull(consent, "consent must not be null"),
-                status, requestedAt, decidedAt, decidedBy, normaliseReason(rejectionReason)
+                status, requestedAt, decidedAt, decidedBy, normaliseReason(rejectionReason), anonymisedAt
         );
     }
 
@@ -127,8 +147,9 @@ public final class JoinRequest {
         if (!association.id().equals(associationId)) {
             throw new IllegalArgumentException("The join request belongs to another association");
         }
-        JoinRequest approved = decide(JoinRequestStatus.APPROVED, decidedBy, null, clock);
-        Member member = Member.create(association, name, email, phone, consent, Set.of(MemberRole.MEMBER), clock);
+        Clock decisionTime = Clock.fixed(clock.instant(), clock.getZone());
+        JoinRequest approved = decide(JoinRequestStatus.APPROVED, decidedBy, null, decisionTime);
+        Member member = Member.create(association, contact, consent, Set.of(MemberRole.MEMBER), decisionTime);
         return new JoinRequestApproval(approved, member);
     }
 
@@ -147,8 +168,33 @@ public final class JoinRequest {
         if (!ALLOWED_TRANSITIONS.get(status).contains(target)) {
             throw new InvalidJoinRequestStatusTransitionException(status, target);
         }
-        return reconstruct(id, associationId, name, email, phone, consent, target, requestedAt, clock.instant(),
-                decider, reason);
+        return reconstruct(id, associationId, contact, consent, target, requestedAt, clock.instant(),
+                decider, reason, anonymisedAt);
+    }
+
+    /**
+     * RGPD erasure of this request: replaces the contact details with placeholders, keeping the
+     * id, status, decision audit and consent record. A PENDING request becomes REJECTED with
+     * {@link #WITHDRAWN_REASON} and no decider; an already rejected one loses its free-text
+     * reason. Idempotent: an already anonymised request is returned as is.
+     */
+    public JoinRequest anonymise(Clock clock) {
+        Objects.requireNonNull(clock, "clock must not be null");
+        if (isAnonymised()) {
+            return this;
+        }
+        Instant now = clock.instant();
+        ContactDetails erased = ContactDetails.anonymisedFor(id.value());
+        if (isPending()) {
+            return reconstruct(id, associationId, erased, consent, JoinRequestStatus.REJECTED, requestedAt, now,
+                    null, WITHDRAWN_REASON, now);
+        }
+        return reconstruct(id, associationId, erased, consent, status, requestedAt, decidedAt, decidedBy,
+                null, now);
+    }
+
+    public boolean isAnonymised() {
+        return anonymisedAt != null;
     }
 
     public boolean isPending() {
@@ -163,16 +209,21 @@ public final class JoinRequest {
         return associationId;
     }
 
+    public ContactDetails contact() {
+        return contact;
+    }
+
     public String name() {
-        return name;
+        return contact.name();
     }
 
     public EmailAddress email() {
-        return email;
+        return contact.email();
     }
 
-    public PhoneNumber phone() {
-        return phone;
+    /** Empty only once the request is anonymised. */
+    public Optional<PhoneNumber> phone() {
+        return contact.phone();
     }
 
     public GdprConsent consent() {
@@ -192,7 +243,12 @@ public final class JoinRequest {
         return Optional.ofNullable(decidedAt);
     }
 
-    /** The administrator who decided; present once the request is APPROVED or REJECTED. */
+    /** When the request was anonymised, if it was. */
+    public Optional<Instant> anonymisedAt() {
+        return Optional.ofNullable(anonymisedAt);
+    }
+
+    /** The administrator who decided; present once the request is APPROVED or REJECTED, except when withdrawn on erasure. */
     public Optional<MemberId> decidedBy() {
         return Optional.ofNullable(decidedBy);
     }

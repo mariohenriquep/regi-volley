@@ -1,5 +1,6 @@
 package com.regivolley.api.domain.model;
 
+import com.regivolley.api.domain.exception.AtLeastOneLevelRequiredException;
 import com.regivolley.api.domain.exception.DuplicateLevelNameException;
 import com.regivolley.api.domain.exception.InvalidAssociationException;
 import com.regivolley.api.domain.exception.InvalidFieldException;
@@ -118,10 +119,26 @@ class AssociationTest {
             Executable act = () -> Association.create("Club", "club", null, "Lisbon", "a@b.co", List.of());
 
             // Act
-            InvalidAssociationException ex = assertThrows(InvalidAssociationException.class, act);
+            AtLeastOneLevelRequiredException ex = assertThrows(AtLeastOneLevelRequiredException.class, act);
 
             // Assert
             assertThat(ex.getMessage()).contains("at least one level");
+        }
+
+        @Test
+        void acceptsNamesAndLocalityOfTheMaximumLength() {
+            // Arrange
+            String name = "n".repeat(Association.MAX_NAME_LENGTH);
+            String locality = "l".repeat(Association.MAX_LOCALITY_LENGTH);
+            String levelName = "v".repeat(Level.MAX_NAME_LENGTH);
+
+            // Act
+            Association association = Association.create(name, "club", null, locality, "a@b.co", List.of(levelName));
+
+            // Assert
+            assertThat(association.name()).hasSize(Association.MAX_NAME_LENGTH);
+            assertThat(association.locality()).hasSize(Association.MAX_LOCALITY_LENGTH);
+            assertThat(association.entryLevel().name()).hasSize(Level.MAX_NAME_LENGTH);
         }
 
         @Test

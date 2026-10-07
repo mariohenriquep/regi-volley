@@ -1,5 +1,6 @@
 package com.regivolley.api.domain.model;
 
+import com.regivolley.api.domain.exception.AtLeastOneLevelRequiredException;
 import com.regivolley.api.domain.exception.DuplicateLevelNameException;
 import com.regivolley.api.domain.exception.InvalidAssociationException;
 import com.regivolley.api.domain.exception.LevelNotFoundException;
@@ -78,7 +79,7 @@ public final class Association {
             levels.add(Level.create(id, levelName, levels.size()));
         }
         if (levels.isEmpty()) {
-            throw new InvalidAssociationException("An association needs at least one level");
+            throw new AtLeastOneLevelRequiredException();
         }
         return reconstruct(id, name, ShortName.of(shortName), optionalNif(nif), locality,
                 EmailAddress.of(contactEmail), BookingPolicy.defaults(), levels, levels.get(0).id());

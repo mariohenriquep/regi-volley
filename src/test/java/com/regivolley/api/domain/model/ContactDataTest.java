@@ -8,6 +8,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -71,6 +73,18 @@ class ContactDataTest {
         }
 
         @Test
+        void acceptsTheMaximumLength() {
+            // Arrange
+            String atMax = "a".repeat(EmailAddress.MAX_LENGTH - "@b.co".length()) + "@b.co";
+
+            // Act
+            EmailAddress email = EmailAddress.of(atMax);
+
+            // Assert
+            assertThat(email.value()).hasSize(EmailAddress.MAX_LENGTH);
+        }
+
+        @Test
         void toStringDoesNotRevealTheAddress() {
             // Arrange
             EmailAddress email = EmailAddress.of("ana@example.com");
@@ -85,8 +99,8 @@ class ContactDataTest {
         @Test
         void theErasedPlaceholderIsValidAndUniquePerMember() {
             // Arrange
-            MemberId first = MemberId.generate();
-            MemberId second = MemberId.generate();
+            UUID first = UUID.randomUUID();
+            UUID second = UUID.randomUUID();
 
             // Act
             EmailAddress firstEmail = EmailAddress.anonymisedFor(first);
@@ -118,6 +132,31 @@ class ContactDataTest {
         @NullAndEmptySource
         @ValueSource(strings = {"  ", "12345678", "1234567890123456", "91234567a", "++351912345678", "351+912345678", "(351)912345678"})
         void rejectsAMalformedNumber(String raw) {
+            // Arrange
+            Executable act = () -> PhoneNumber.of(raw);
+
+            // Act
+            InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
+
+            // Assert
+            assertThat(ex.field()).isEqualTo("phone");
+        }
+
+        @Test
+        void acceptsTheMaximumOfFifteenDigits() {
+            // Arrange
+            String atMax = "+" + "1".repeat(15);
+
+            // Act
+            PhoneNumber phone = PhoneNumber.of(atMax);
+
+            // Assert
+            assertThat(phone.value()).isEqualTo(atMax);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"000000000", "+000000000000", "0000 0000 0"})
+        void rejectsAnAllZeroNumber(String raw) {
             // Arrange
             Executable act = () -> PhoneNumber.of(raw);
 

@@ -2,6 +2,9 @@ package com.regivolley.api.domain.model;
 
 import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.InvalidMemberException;
+import com.regivolley.api.domain.exception.LastRoleCannotBeRevokedException;
+import com.regivolley.api.domain.exception.LevelNotFoundException;
+import com.regivolley.api.domain.exception.MemberAnonymisedException;
 import com.regivolley.api.domain.exception.InvalidMemberStatusTransitionException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -34,9 +37,11 @@ class MemberTest {
     private static final Level ADVANCED = ASSOCIATION.levels().get(2);
     private static final MemberId COACH = MemberId.generate();
 
+    private static final ContactDetails CONTACT = ContactDetails.of("Ana Silva", EmailAddress.of("ana@example.com"),
+            PhoneNumber.of("912345678"));
+
     private static Member member() {
-        return Member.create(ASSOCIATION, "Ana Silva", EmailAddress.of("ana@example.com"),
-                PhoneNumber.of("912345678"), CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
+        return Member.create(ASSOCIATION, CONTACT, CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
     }
 
     @Nested
@@ -55,7 +60,8 @@ class MemberTest {
             assertThat(member.associationId()).isEqualTo(ASSOCIATION.id());
             assertThat(member.name()).isEqualTo("Ana Silva");
             assertThat(member.email()).isEqualTo(EmailAddress.of("ana@example.com"));
-            assertThat(member.phone()).isEqualTo(PhoneNumber.of("912345678"));
+            assertThat(member.phone()).contains(PhoneNumber.of("912345678"));
+            assertThat(member.contact()).isEqualTo(CONTACT);
             assertThat(member.consent()).isEqualTo(CONSENT);
             assertThat(member.status()).isEqualTo(MemberStatus.ACTIVE);
             assertThat(member.isActive()).isTrue();
@@ -73,8 +79,7 @@ class MemberTest {
             Association advancedEntry = ASSOCIATION.changeEntryLevel(ADVANCED.id());
 
             // Act
-            Member member = Member.create(advancedEntry, "Ana", EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
+            Member member = Member.create(advancedEntry, ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
 
             // Assert
             assertThat(member.levelId()).isEqualTo(ADVANCED.id());
@@ -86,8 +91,7 @@ class MemberTest {
             // (padded name)
 
             // Act
-            Member member = Member.create(ASSOCIATION, "  Ana  ", EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), CONSENT, Set.of(MemberRole.ADMIN), JOIN_CLOCK);
+            Member member = Member.create(ASSOCIATION, ContactDetails.of("  Ana  ", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), CONSENT, Set.of(MemberRole.ADMIN), JOIN_CLOCK);
 
             // Assert
             assertThat(member.name()).isEqualTo("Ana");
@@ -98,8 +102,7 @@ class MemberTest {
         @ValueSource(strings = {"  "})
         void requiresAName(String name) {
             // Arrange
-            Executable act = () -> Member.create(ASSOCIATION, name, EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
+            Executable act = () -> Member.create(ASSOCIATION, ContactDetails.of(name, EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
 
             // Act
             InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
@@ -109,11 +112,23 @@ class MemberTest {
         }
 
         @Test
+        void acceptsANameOfTheMaximumLength() {
+            // Arrange
+            String atMax = "x".repeat(ContactDetails.MAX_NAME_LENGTH);
+
+            // Act
+            Member member = Member.create(ASSOCIATION, ContactDetails.of(atMax, EmailAddress.of("ana@example.com"),
+                    PhoneNumber.of("912345678")), CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
+
+            // Assert
+            assertThat(member.name()).hasSize(ContactDetails.MAX_NAME_LENGTH);
+        }
+
+        @Test
         void rejectsANameThatIsTooLong() {
             // Arrange
-            String tooLong = "x".repeat(Member.MAX_NAME_LENGTH + 1);
-            Executable act = () -> Member.create(ASSOCIATION, tooLong, EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
+            String tooLong = "x".repeat(ContactDetails.MAX_NAME_LENGTH + 1);
+            Executable act = () -> Member.create(ASSOCIATION, ContactDetails.of(tooLong, EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), CONSENT, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
 
             // Act
             InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
@@ -125,8 +140,7 @@ class MemberTest {
         @Test
         void requiresAtLeastOneRole() {
             // Arrange
-            Executable act = () -> Member.create(ASSOCIATION, "Ana", EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), CONSENT, Set.of(), JOIN_CLOCK);
+            Executable act = () -> Member.create(ASSOCIATION, ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), CONSENT, Set.of(), JOIN_CLOCK);
 
             // Act
             InvalidMemberException ex = assertThrows(InvalidMemberException.class, act);
@@ -138,8 +152,7 @@ class MemberTest {
         @Test
         void requiresTheConsentRecord() {
             // Arrange
-            Executable act = () -> Member.create(ASSOCIATION, "Ana", EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), null, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
+            Executable act = () -> Member.create(ASSOCIATION, ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), null, Set.of(MemberRole.MEMBER), JOIN_CLOCK);
 
             // Act
             NullPointerException ex = assertThrows(NullPointerException.class, act);
@@ -154,8 +167,7 @@ class MemberTest {
             Set<MemberRole> roles = Set.of(MemberRole.MEMBER, MemberRole.COACH);
 
             // Act
-            Member member = Member.create(ASSOCIATION, "Rui", EmailAddress.of("rui@example.com"),
-                    PhoneNumber.of("912345679"), CONSENT, roles, JOIN_CLOCK);
+            Member member = Member.create(ASSOCIATION, ContactDetails.of("Rui", EmailAddress.of("rui@example.com"), PhoneNumber.of("912345679")), CONSENT, roles, JOIN_CLOCK);
 
             // Assert
             assertThat(member.hasRole(MemberRole.COACH)).isTrue();
@@ -168,8 +180,7 @@ class MemberTest {
     class Reconstruction {
 
         private Member rebuild(MemberStatus status, LevelId level, List<LevelChange> changes, Instant anonymisedAt) {
-            return Member.reconstruct(MemberId.generate(), ASSOCIATION.id(), "Ana", EmailAddress.of("ana@example.com"),
-                    PhoneNumber.of("912345678"), CONSENT, status, level, Set.of(MemberRole.MEMBER), changes, JOINED,
+            return Member.reconstruct(MemberId.generate(), ASSOCIATION.id(), CONTACT, CONSENT, status, level, Set.of(MemberRole.MEMBER), changes, JOINED,
                     anonymisedAt);
         }
 
@@ -231,6 +242,46 @@ class MemberTest {
         }
 
         @Test
+        void rejectsAHistoryEntryBeforeTheMemberJoined() {
+            // Arrange
+            List<LevelChange> history = List.of(
+                    new LevelChange(BEGINNER.id(), INTERMEDIATE.id(), COACH, JOINED.minusSeconds(1)));
+            Executable act = () -> rebuild(MemberStatus.ACTIVE, INTERMEDIATE.id(), history, null);
+
+            // Act
+            InvalidMemberException ex = assertThrows(InvalidMemberException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("before the member joined");
+        }
+
+        @Test
+        void rejectsAnAnonymisationBeforeTheMemberJoined() {
+            // Arrange
+            Executable act = () -> rebuild(MemberStatus.INACTIVE, BEGINNER.id(), List.of(), JOINED.minusSeconds(1));
+
+            // Act
+            InvalidMemberException ex = assertThrows(InvalidMemberException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("before the member joined");
+        }
+
+        @Test
+        void aPhoneIsOnlyMissingOnAnErasedMember() {
+            // Arrange
+            ContactDetails withoutPhone = ContactDetails.reconstruct("Ana", EmailAddress.of("ana@example.com"), null);
+            Executable act = () -> Member.reconstruct(MemberId.generate(), ASSOCIATION.id(), withoutPhone, CONSENT,
+                    MemberStatus.ACTIVE, BEGINNER.id(), Set.of(MemberRole.MEMBER), List.of(), JOINED, null);
+
+            // Act
+            InvalidMemberException ex = assertThrows(InvalidMemberException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("phone");
+        }
+
+        @Test
         void rejectsAnAnonymisedMemberThatIsStillActive() {
             // Arrange
             Executable act = () -> rebuild(MemberStatus.ACTIVE, BEGINNER.id(), List.of(), LATER);
@@ -252,7 +303,7 @@ class MemberTest {
             Member member = member();
 
             // Act
-            Member promoted = member.changeLevel(INTERMEDIATE, COACH, LATER_CLOCK);
+            Member promoted = member.changeLevel(ASSOCIATION, INTERMEDIATE.id(), COACH, LATER_CLOCK);
 
             // Assert
             assertThat(promoted.levelId()).isEqualTo(INTERMEDIATE.id());
@@ -266,10 +317,10 @@ class MemberTest {
         void keepsEveryChangeInOrder() {
             // Arrange
             MemberId admin = MemberId.generate();
-            Member member = member().changeLevel(INTERMEDIATE, COACH, JOIN_CLOCK);
+            Member member = member().changeLevel(ASSOCIATION, INTERMEDIATE.id(), COACH, JOIN_CLOCK);
 
             // Act
-            Member demoted = member.changeLevel(BEGINNER, admin, LATER_CLOCK);
+            Member demoted = member.changeLevel(ASSOCIATION, BEGINNER.id(), admin, LATER_CLOCK);
 
             // Assert
             assertThat(demoted.levelChanges()).containsExactly(
@@ -284,7 +335,7 @@ class MemberTest {
             Member member = member();
 
             // Act
-            Member same = member.changeLevel(BEGINNER, COACH, LATER_CLOCK);
+            Member same = member.changeLevel(ASSOCIATION, BEGINNER.id(), COACH, LATER_CLOCK);
 
             // Assert
             assertThat(same).isSameAs(member);
@@ -296,13 +347,40 @@ class MemberTest {
             // Arrange
             Association other = Association.create("Other", "other", null, "Porto", "x@y.co", List.of("Open"));
             Member member = member();
-            Executable act = () -> member.changeLevel(other.entryLevel(), COACH, LATER_CLOCK);
+            Executable act = () -> member.changeLevel(other, other.entryLevelId(), COACH, LATER_CLOCK);
 
             // Act
             IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, act);
 
             // Assert
             assertThat(ex.getMessage()).contains("another association");
+        }
+
+        @Test
+        void rejectsALevelThatIsNotInTheAssociation() {
+            // Arrange
+            Member member = member();
+            LevelId unknown = LevelId.generate();
+            Executable act = () -> member.changeLevel(ASSOCIATION, unknown, COACH, LATER_CLOCK);
+
+            // Act
+            LevelNotFoundException ex = assertThrows(LevelNotFoundException.class, act);
+
+            // Assert
+            assertThat(ex.levelId()).isEqualTo(unknown);
+        }
+
+        @Test
+        void anErasedMemberCannotChangeLevel() {
+            // Arrange
+            Member erased = member().anonymise(LATER_CLOCK);
+            Executable act = () -> erased.changeLevel(ASSOCIATION, INTERMEDIATE.id(), COACH, LATER_CLOCK);
+
+            // Act
+            MemberAnonymisedException ex = assertThrows(MemberAnonymisedException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).isEqualTo("An anonymised member cannot be changed");
         }
 
         @Test
@@ -385,10 +463,10 @@ class MemberTest {
             Executable act = erased::reactivate;
 
             // Act
-            InvalidMemberStatusTransitionException ex = assertThrows(InvalidMemberStatusTransitionException.class, act);
+            MemberAnonymisedException ex = assertThrows(MemberAnonymisedException.class, act);
 
             // Assert
-            assertThat(ex.to()).isEqualTo(MemberStatus.ACTIVE);
+            assertThat(ex.getMessage()).isEqualTo("An anonymised member cannot be changed");
         }
     }
 
@@ -409,17 +487,56 @@ class MemberTest {
         }
 
         @Test
-        void revokesARoleButNotTheLastOne() {
+        void revokesARole() {
             // Arrange
             Member coach = member().grantRole(MemberRole.COACH);
 
             // Act
             Member onlyCoach = coach.revokeRole(MemberRole.MEMBER);
-            Executable revokeLast = () -> onlyCoach.revokeRole(MemberRole.COACH);
 
             // Assert
             assertThat(onlyCoach.roles()).containsExactly(MemberRole.COACH);
-            assertThrows(InvalidMemberException.class, revokeLast);
+        }
+
+        @Test
+        void revokingTheLastRoleIsABusinessRuleViolation() {
+            // Arrange
+            Member member = member();
+            Executable act = () -> member.revokeRole(MemberRole.MEMBER);
+
+            // Act
+            LastRoleCannotBeRevokedException ex = assertThrows(LastRoleCannotBeRevokedException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("last role");
+        }
+
+        @Test
+        void revokingARoleTheMemberDoesNotHoldChangesNothing() {
+            // Arrange
+            Member member = member();
+
+            // Act
+            Member same = member.revokeRole(MemberRole.ADMIN);
+
+            // Assert
+            assertThat(same.roles()).containsExactly(MemberRole.MEMBER);
+        }
+
+        @Test
+        void anErasedMemberCannotGainOrLoseRoles() {
+            // Arrange
+            Member erased = member().anonymise(LATER_CLOCK);
+            Executable grant = () -> erased.grantRole(MemberRole.ADMIN);
+            Executable revoke = () -> erased.revokeRole(MemberRole.MEMBER);
+
+            // Act
+            MemberAnonymisedException grantEx = assertThrows(MemberAnonymisedException.class, grant);
+            MemberAnonymisedException revokeEx = assertThrows(MemberAnonymisedException.class, revoke);
+
+            // Assert
+            assertThat(grantEx.getMessage()).contains("anonymised");
+            assertThat(revokeEx.getMessage()).contains("anonymised");
         }
     }
 
@@ -429,7 +546,7 @@ class MemberTest {
         @Test
         void replacesContactDataWithPlaceholdersAndKeepsIdentityAndHistory() {
             // Arrange
-            Member member = member().changeLevel(INTERMEDIATE, COACH, JOIN_CLOCK).grantRole(MemberRole.COACH);
+            Member member = member().changeLevel(ASSOCIATION, INTERMEDIATE.id(), COACH, JOIN_CLOCK).grantRole(MemberRole.COACH);
 
             // Act
             Member erased = member.anonymise(LATER_CLOCK);
@@ -439,10 +556,10 @@ class MemberTest {
             assertThat(erased.associationId()).isEqualTo(member.associationId());
             assertThat(erased.name()).isEqualTo("Anonymised member");
             assertThat(erased.email().value()).isEqualTo("anonymised-" + member.id() + "@anonymised.invalid");
-            assertThat(erased.phone()).isEqualTo(PhoneNumber.ANONYMISED);
+            assertThat(erased.phone()).isEmpty();
             assertThat(erased.levelChanges()).isEqualTo(member.levelChanges());
             assertThat(erased.levelId()).isEqualTo(INTERMEDIATE.id());
-            assertThat(erased.roles()).isEqualTo(member.roles());
+            assertThat(erased.roles()).containsExactly(MemberRole.MEMBER);
             assertThat(erased.consent()).isEqualTo(member.consent());
             assertThat(erased.joinedAt()).isEqualTo(JOINED);
         }
@@ -474,7 +591,34 @@ class MemberTest {
             // Assert
             assertThat(erased.name()).doesNotContain("Ana").doesNotContain("Silva");
             assertThat(erased.email().value()).doesNotContain("ana@example.com");
-            assertThat(erased.phone().value()).doesNotContain("912345678");
+            assertThat(erased.phone()).isEmpty();
+        }
+
+        @Test
+        void dropsAnyPrivilegedRolesOfTheErasedPerson() {
+            // Arrange
+            Member admin = member().grantRole(MemberRole.ADMIN).grantRole(MemberRole.COACH);
+
+            // Act
+            Member erased = admin.anonymise(LATER_CLOCK);
+
+            // Assert
+            assertThat(erased.roles()).containsExactly(MemberRole.MEMBER);
+            assertThat(erased.hasRole(MemberRole.ADMIN)).isFalse();
+        }
+
+        @Test
+        void rejectsAnErasureDatedBeforeTheMemberJoined() {
+            // Arrange
+            Member member = member();
+            Clock beforeJoining = Clock.fixed(JOINED.minusSeconds(1), ZoneOffset.UTC);
+            Executable act = () -> member.anonymise(beforeJoining);
+
+            // Act
+            InvalidMemberException ex = assertThrows(InvalidMemberException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("before the member joined");
         }
 
         @Test
@@ -509,8 +653,7 @@ class MemberTest {
             Member erased = member().anonymise(LATER_CLOCK);
 
             // Act
-            Member rebuilt = Member.reconstruct(erased.id(), erased.associationId(), erased.name(), erased.email(),
-                    erased.phone(), erased.consent(), erased.status(), erased.levelId(), erased.roles(),
+            Member rebuilt = Member.reconstruct(erased.id(), erased.associationId(), erased.contact(), erased.consent(), erased.status(), erased.levelId(), erased.roles(),
                     erased.levelChanges(), erased.joinedAt(), erased.anonymisedAt().orElseThrow());
 
             // Assert

@@ -2,6 +2,8 @@ package com.regivolley.api.domain.model;
 
 import com.regivolley.api.domain.exception.InvalidMemberException;
 import com.regivolley.api.domain.exception.InvalidMemberStatusTransitionException;
+import com.regivolley.api.domain.exception.LastRoleCannotBeRevokedException;
+import com.regivolley.api.domain.exception.MemberAnonymisedException;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -26,16 +28,16 @@ import java.util.Set;
  * infrastructure before a use case runs (architecture.md section 11), and which level changes a
  * coach may make is likewise a use case concern.
  *
- * <p><b>Anonymisation (RGPD erasure)</b> replaces the name, email and phone with placeholders and
- * deactivates the member, keeping the id, the level history, the consent record and the roles, so
- * attendance and payment history stay consistent. It is irreversible.
+ * <p><b>Anonymisation (RGPD erasure)</b> replaces the name, email and phone with placeholders,
+ * deactivates the member and reduces their roles to MEMBER, keeping the id, the level history and
+ * the consent record, so attendance and payment history stay consistent. It is irreversible: an
+ * anonymised member can no longer be changed ({@link MemberAnonymisedException}). It erases only
+ * this aggregate. A full erasure also has to anonymise the person's {@link JoinRequest}s and
+ * anything else holding their data, which is the erasure use case's job.
  *
  * <p>{@link #toString()} prints ids only.
  */
 public final class Member {
-
-    public static final int MAX_NAME_LENGTH = 100;
-    static final String ANONYMISED_NAME = "Anonymised member";
 
     private static final Map<MemberStatus, Set<MemberStatus>> ALLOWED_TRANSITIONS = Map.of(
             MemberStatus.ACTIVE, EnumSet.of(MemberStatus.INACTIVE),
@@ -44,9 +46,7 @@ public final class Member {
 
     private final MemberId id;
     private final AssociationId associationId;
-    private final String name;
-    private final EmailAddress email;
-    private final PhoneNumber phone;
+    private final ContactDetails contact;
     private final GdprConsent consent;
     private final MemberStatus status;
     private final LevelId levelId;
@@ -55,14 +55,11 @@ public final class Member {
     private final Instant joinedAt;
     private final Instant anonymisedAt;
 
-    private Member(MemberId id, AssociationId associationId, String name, EmailAddress email, PhoneNumber phone,
-                   GdprConsent consent, MemberStatus status, LevelId levelId, Set<MemberRole> roles,
+    private Member(MemberId id, AssociationId associationId, ContactDetails contact, GdprConsent consent, MemberStatus status, LevelId levelId, Set<MemberRole> roles,
                    List<LevelChange> levelChanges, Instant joinedAt, Instant anonymisedAt) {
         this.id = id;
         this.associationId = associationId;
-        this.name = name;
-        this.email = email;
-        this.phone = phone;
+        this.contact = contact;
         this.consent = consent;
         this.status = status;
         this.levelId = levelId;
@@ -76,19 +73,19 @@ public final class Member {
      * A new, ACTIVE member at the association's entry level (RN-20). Used when a join request is
      * approved (roles {MEMBER}) and when someone registers an association (roles {ADMIN}).
      */
-    public static Member create(Association association, String name, EmailAddress email, PhoneNumber phone,
-                                GdprConsent consent, Set<MemberRole> roles, Clock clock) {
+    public static Member create(Association association, ContactDetails contact, GdprConsent consent,
+                                Set<MemberRole> roles, Clock clock) {
         Objects.requireNonNull(association, "association must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
-        return reconstruct(MemberId.generate(), association.id(), name, email, phone, consent, MemberStatus.ACTIVE,
+        return reconstruct(MemberId.generate(), association.id(), contact, consent, MemberStatus.ACTIVE,
                 association.entryLevelId(), roles, List.of(), clock.instant(), null);
     }
 
     /** Rebuilds a member from persisted data, re-checking its invariants. */
-    public static Member reconstruct(MemberId id, AssociationId associationId, String name, EmailAddress email,
-                                     PhoneNumber phone, GdprConsent consent, MemberStatus status, LevelId levelId,
-                                     Set<MemberRole> roles, List<LevelChange> levelChanges, Instant joinedAt,
-                                     Instant anonymisedAt) {
+    public static Member reconstruct(MemberId id, AssociationId associationId, ContactDetails contact,
+                                     GdprConsent consent, MemberStatus status, LevelId levelId, Set<MemberRole> roles,
+                                     List<LevelChange> levelChanges, Instant joinedAt, Instant anonymisedAt) {
+        Objects.requireNonNull(contact, "contact must not be null");
         Objects.requireNonNull(status, "status must not be null");
         Objects.requireNonNull(levelId, "levelId must not be null");
         Objects.requireNonNull(roles, "roles must not be null");
@@ -100,20 +97,27 @@ public final class Member {
         if (anonymisedAt != null && status != MemberStatus.INACTIVE) {
             throw new InvalidMemberException("An anonymised member must be inactive");
         }
-        requireConsistentHistory(levelChanges, levelId);
+        if (anonymisedAt == null && contact.phone().isEmpty()) {
+            throw new InvalidMemberException("A member who is not anonymised needs a phone number");
+        }
+        if (anonymisedAt != null && anonymisedAt.isBefore(joinedAt)) {
+            throw new InvalidMemberException("A member cannot be anonymised before the member joined");
+        }
+        requireConsistentHistory(levelChanges, levelId, joinedAt);
         return new Member(
                 Objects.requireNonNull(id, "id must not be null"),
                 Objects.requireNonNull(associationId, "associationId must not be null"),
-                FieldRules.requiredText("name", name, MAX_NAME_LENGTH),
-                Objects.requireNonNull(email, "email must not be null"),
-                Objects.requireNonNull(phone, "phone must not be null"),
+                contact,
                 Objects.requireNonNull(consent, "consent must not be null"),
                 status, levelId, Set.copyOf(roles), List.copyOf(levelChanges), joinedAt, anonymisedAt
         );
     }
 
     /** The history must be a chain of moves that ends at the current level. */
-    private static void requireConsistentHistory(List<LevelChange> changes, LevelId currentLevel) {
+    private static void requireConsistentHistory(List<LevelChange> changes, LevelId currentLevel, Instant joinedAt) {
+        if (changes.stream().anyMatch(change -> change.changedAt().isBefore(joinedAt))) {
+            throw new InvalidMemberException("A level change cannot be dated before the member joined");
+        }
         for (int i = 1; i < changes.size(); i++) {
             LevelChange previous = changes.get(i - 1);
             LevelChange change = changes.get(i);
@@ -130,20 +134,26 @@ public final class Member {
     }
 
     /**
-     * Moves the member to {@code newLevel} and records who did it and when (US-07, RN-20). The
-     * new level applies to bookings made from now on, since eligibility reads the current level.
-     * Moving to the level they already have changes nothing and records nothing.
+     * Moves the member to the association's level {@code newLevelId} and records who did it and
+     * when (US-07, RN-20). The new level applies to bookings made from now on, since eligibility
+     * reads the current level. Moving to the level they already have changes nothing and records
+     * nothing.
      *
      * @param changedBy the coach or administrator who made the change; the caller has authorised them
-     * @throws IllegalArgumentException if {@code newLevel} belongs to another association
+     * @throws IllegalArgumentException if {@code association} isn't the member's
+     * @throws com.regivolley.api.domain.exception.LevelNotFoundException if the level isn't one of the association's
+     * @throws MemberAnonymisedException if the member was anonymised
      */
-    public Member changeLevel(Level newLevel, MemberId changedBy, Clock clock) {
-        Objects.requireNonNull(newLevel, "newLevel must not be null");
+    public Member changeLevel(Association association, LevelId newLevelId, MemberId changedBy, Clock clock) {
+        Objects.requireNonNull(association, "association must not be null");
+        Objects.requireNonNull(newLevelId, "newLevelId must not be null");
         Objects.requireNonNull(changedBy, "changedBy must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
-        if (!newLevel.associationId().equals(associationId)) {
-            throw new IllegalArgumentException("The level belongs to another association");
+        requireNotAnonymised();
+        if (!association.id().equals(associationId)) {
+            throw new IllegalArgumentException("The member belongs to another association");
         }
+        Level newLevel = association.level(newLevelId);
         if (newLevel.id().equals(levelId)) {
             return this;
         }
@@ -157,11 +167,13 @@ public final class Member {
         return transitionTo(MemberStatus.INACTIVE);
     }
 
-    /** INACTIVE -> ACTIVE. An anonymised member can't be reactivated. */
+    /**
+     * INACTIVE -> ACTIVE.
+     *
+     * @throws MemberAnonymisedException if the member was anonymised
+     */
     public Member reactivate() {
-        if (isAnonymised()) {
-            throw new InvalidMemberStatusTransitionException(MemberStatus.INACTIVE, MemberStatus.ACTIVE);
-        }
+        requireNotAnonymised();
         return transitionTo(MemberStatus.ACTIVE);
     }
 
@@ -172,38 +184,57 @@ public final class Member {
         return copy(target, levelId, roles, levelChanges);
     }
 
+    /** @throws MemberAnonymisedException if the member was anonymised */
     public Member grantRole(MemberRole role) {
         Objects.requireNonNull(role, "role must not be null");
+        requireNotAnonymised();
         Set<MemberRole> updated = EnumSet.copyOf(roles);
         updated.add(role);
         return copy(status, levelId, updated, levelChanges);
     }
 
-    /** @throws InvalidMemberException if it is the member's last role */
+    /**
+     * Revoking a role the member does not hold changes nothing.
+     *
+     * @throws LastRoleCannotBeRevokedException if it is the member's only role
+     * @throws MemberAnonymisedException        if the member was anonymised
+     */
     public Member revokeRole(MemberRole role) {
         Objects.requireNonNull(role, "role must not be null");
+        requireNotAnonymised();
         Set<MemberRole> updated = EnumSet.copyOf(roles);
         updated.remove(role);
+        if (updated.isEmpty()) {
+            throw new LastRoleCannotBeRevokedException();
+        }
         return copy(status, levelId, updated, levelChanges);
     }
 
     /**
-     * RGPD erasure: replaces name, email and phone with placeholders and deactivates the member.
-     * Keeps the id, level history, roles, consent record and join date. Idempotent: an already
-     * anonymised member is returned as is.
+     * RGPD erasure of this member: replaces name, email and phone with placeholders, deactivates
+     * the member and reduces their roles to MEMBER, so an erased person keeps no privilege. Keeps
+     * the id, level history, consent record and join date. Irreversible and idempotent: an
+     * already anonymised member is returned as is. This does not erase the person's join
+     * requests or other records; see the class comment.
      */
     public Member anonymise(Clock clock) {
         Objects.requireNonNull(clock, "clock must not be null");
         if (isAnonymised()) {
             return this;
         }
-        return new Member(id, associationId, ANONYMISED_NAME, EmailAddress.anonymisedFor(id), PhoneNumber.ANONYMISED,
-                consent, MemberStatus.INACTIVE, levelId, roles, levelChanges, joinedAt, clock.instant());
+        return reconstruct(id, associationId, ContactDetails.anonymisedFor(id.value()), consent,
+                MemberStatus.INACTIVE, levelId, Set.of(MemberRole.MEMBER), levelChanges, joinedAt, clock.instant());
+    }
+
+    private void requireNotAnonymised() {
+        if (isAnonymised()) {
+            throw new MemberAnonymisedException();
+        }
     }
 
     private Member copy(MemberStatus newStatus, LevelId newLevelId, Set<MemberRole> newRoles,
                         List<LevelChange> newHistory) {
-        return reconstruct(id, associationId, name, email, phone, consent, newStatus, newLevelId, newRoles,
+        return reconstruct(id, associationId, contact, consent, newStatus, newLevelId, newRoles,
                 newHistory, joinedAt, anonymisedAt);
     }
 
@@ -242,16 +273,21 @@ public final class Member {
         return associationId;
     }
 
+    public ContactDetails contact() {
+        return contact;
+    }
+
     public String name() {
-        return name;
+        return contact.name();
     }
 
     public EmailAddress email() {
-        return email;
+        return contact.email();
     }
 
-    public PhoneNumber phone() {
-        return phone;
+    /** Empty only once the member is anonymised. */
+    public Optional<PhoneNumber> phone() {
+        return contact.phone();
     }
 
     public GdprConsent consent() {

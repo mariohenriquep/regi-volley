@@ -30,8 +30,8 @@ class MemberBookingEligibilityTest {
     private static final Instant SESSION_START = Instant.parse("2026-10-14T19:00:00Z");
 
     private static Member newMember() {
-        JoinRequest request = JoinRequest.create(ASSOCIATION.id(), "Ana Silva", EmailAddress.of("ana@example.com"),
-                PhoneNumber.of("912345678"), true, "2026-10", CLOCK);
+        JoinRequest request = JoinRequest.create(ASSOCIATION.id(),
+                ContactDetails.of("Ana Silva", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, "2026-10", CLOCK);
         return request.approve(ASSOCIATION, COACH, CLOCK).member();
     }
 
@@ -52,7 +52,7 @@ class MemberBookingEligibilityTest {
         @Test
         void carriesTheMembersStatusLevelRankAndSubscriptions() {
             // Arrange
-            Member member = newMember().changeLevel(INTERMEDIATE, COACH, CLOCK);
+            Member member = newMember().changeLevel(ASSOCIATION, INTERMEDIATE.id(), COACH, CLOCK);
             Subscription subscription = octoberUnlimited(member);
 
             // Act
@@ -130,7 +130,7 @@ class MemberBookingEligibilityTest {
             Member beginner = newMember();
             Subscription subscription = octoberUnlimited(beginner);
             BookingTarget target = groupAccepting(INTERMEDIATE, ADVANCED);
-            Member promoted = beginner.changeLevel(INTERMEDIATE, COACH, CLOCK);
+            Member promoted = beginner.changeLevel(ASSOCIATION, INTERMEDIATE.id(), COACH, CLOCK);
 
             // Act
             EligibilityDecision before = BookingEligibility.evaluate(

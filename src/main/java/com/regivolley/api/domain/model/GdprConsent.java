@@ -29,9 +29,14 @@ public record GdprConsent(Instant givenAt, String policyVersion) {
      */
     public static GdprConsent record(boolean accepted, String policyVersion, Clock clock) {
         Objects.requireNonNull(clock, "clock must not be null");
+        return record(accepted, policyVersion, clock.instant());
+    }
+
+    /** Same as {@link #record(boolean, String, Clock)} for a caller that already read the clock. */
+    public static GdprConsent record(boolean accepted, String policyVersion, Instant at) {
         if (!accepted) {
             throw new ConsentRequiredException();
         }
-        return new GdprConsent(clock.instant(), policyVersion);
+        return new GdprConsent(at, policyVersion);
     }
 }

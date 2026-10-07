@@ -3,6 +3,7 @@ package com.regivolley.api.domain.model;
 import com.regivolley.api.domain.exception.InvalidFieldException;
 
 import java.util.Locale;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -30,9 +31,9 @@ public record EmailAddress(String value) {
         return new EmailAddress(raw.trim().toLowerCase(Locale.ROOT));
     }
 
-    /** Stand-in for an erased member's address: unique per member, on the reserved {@code .invalid} TLD. */
-    static EmailAddress anonymisedFor(MemberId memberId) {
-        return new EmailAddress("anonymised-" + memberId + "@anonymised.invalid");
+    /** Stand-in for an erased record's address: unique per record, on the reserved {@code .invalid} TLD. */
+    static EmailAddress anonymisedFor(UUID recordId) {
+        return new EmailAddress("anonymised-" + recordId + "@anonymised.invalid");
     }
 
     @Override
