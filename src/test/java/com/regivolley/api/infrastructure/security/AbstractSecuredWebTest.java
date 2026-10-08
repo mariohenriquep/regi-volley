@@ -1,5 +1,13 @@
 package com.regivolley.api.infrastructure.security;
 
+import com.regivolley.api.application.port.AccessTokenIssuer;
+import com.regivolley.api.application.usecase.ActivateAccountUseCase;
+import com.regivolley.api.application.usecase.LoginUseCase;
+import com.regivolley.api.application.usecase.LogoutAllUseCase;
+import com.regivolley.api.application.usecase.LogoutUseCase;
+import com.regivolley.api.application.usecase.RefreshSessionUseCase;
+import com.regivolley.api.application.usecase.RequestPasswordResetUseCase;
+import com.regivolley.api.application.usecase.ResetPasswordUseCase;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.repository.MemberRepository;
@@ -37,6 +45,21 @@ public abstract class AbstractSecuredWebTest {
     protected JwtKeySet keys;
     @MockitoBean
     protected MemberRepository members;
+    // The credential endpoints' use cases: the slice tests the HTTP contract, the services have their own tests.
+    @MockitoBean
+    protected LoginUseCase loginUseCase;
+    @MockitoBean
+    protected RefreshSessionUseCase refreshSessionUseCase;
+    @MockitoBean
+    protected LogoutUseCase logoutUseCase;
+    @MockitoBean
+    protected LogoutAllUseCase logoutAllUseCase;
+    @MockitoBean
+    protected ActivateAccountUseCase activateAccountUseCase;
+    @MockitoBean
+    protected ResetPasswordUseCase resetPasswordUseCase;
+    @MockitoBean
+    protected RequestPasswordResetUseCase requestPasswordResetUseCase;
 
     protected Association association;
     protected Member member;

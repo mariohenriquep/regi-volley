@@ -1,6 +1,7 @@
 package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.RegisterAssociationCommand;
+import com.regivolley.api.application.port.AccountProvisioner;
 import com.regivolley.api.application.result.AssociationRegistered;
 import com.regivolley.api.domain.exception.AssociationModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.ConsentRequiredException;
@@ -8,6 +9,7 @@ import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.ShortNameAlreadyTakenException;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
+import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.MemberRole;
 import com.regivolley.api.domain.model.valueobject.MemberStatus;
 import com.regivolley.api.domain.model.valueobject.ShortName;
@@ -27,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -41,6 +44,8 @@ class RegisterAssociationServiceTest {
     private AssociationRepository associations;
     @Mock
     private MemberRepository members;
+    @Mock
+    private AccountProvisioner provisioner;
 
     private final DirectTransactions transactions = new DirectTransactions();
 
@@ -48,7 +53,7 @@ class RegisterAssociationServiceTest {
 
     @BeforeEach
     void setUp() {
-        useCase = new RegisterAssociationService(associations, members, transactions, Data.CLOCK);
+        useCase = new RegisterAssociationService(associations, members, transactions, provisioner, Data.CLOCK);
         lenient().when(associations.save(any(Association.class))).thenAnswer(returnsFirstArg());
         lenient().when(members.save(any(Member.class))).thenAnswer(returnsFirstArg());
     }
@@ -171,5 +176,43 @@ class RegisterAssociationServiceTest {
         // Assert
         assertThat(registered.associationId()).isNotNull();
         assertThat(transactions.opened()).isEqualTo(2);
+    }
+
+    @Test
+    void provisionsTheFoundersCredentialsAfterTheCommit() {
+        // Arrange
+        RegisterAssociationCommand command = command("volley-club", true);
+
+        // Act
+        AssociationRegistered registered = useCase.execute(command);
+
+        // Assert
+        verify(provisioner).provision(registered.associationId(), registered.founderId(), EmailAddress.of("ana@example.com"));
+    }
+
+    @Test
+    void aFailingProvisionerNeverUndoesTheRegistration() {
+        // Arrange
+        doThrow(new IllegalStateException("db down")).when(provisioner).provision(any(), any(), any());
+
+        // Act
+        AssociationRegistered registered = useCase.execute(command("volley-club", true));
+
+        // Assert
+        assertThat(registered.founderId()).isNotNull();
+        verify(members).save(any(Member.class));
+    }
+
+    @Test
+    void nothingIsProvisionedWhenTheRegistrationFails() {
+        // Arrange
+        when(associations.existsByShortName(ShortName.of("volley-club"))).thenReturn(true);
+        Executable act = () -> useCase.execute(command("volley-club", true));
+
+        // Act
+        assertThrows(ShortNameAlreadyTakenException.class, act);
+
+        // Assert
+        verifyNoInteractions(provisioner);
     }
 }

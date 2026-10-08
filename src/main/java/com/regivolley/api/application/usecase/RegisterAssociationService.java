@@ -1,6 +1,7 @@
 package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.RegisterAssociationCommand;
+import com.regivolley.api.application.port.AccountProvisioner;
 import com.regivolley.api.application.port.TransactionRunner;
 import com.regivolley.api.application.result.AssociationRegistered;
 import com.regivolley.api.domain.exception.ShortNameAlreadyTakenException;
@@ -28,20 +29,23 @@ import java.util.Set;
  * <p>The short name is unique across associations: checked first for a clear answer, and backed by the
  * database constraint for two registrations racing for it (both end as {@link ShortNameAlreadyTakenException}).
  * The founder's contact data and the RGPD consent are validated before anything is stored; the consent is
- * stamped by the server clock.
+ * stamped by the server clock. Once committed, the founder is given a way to sign in (an activation link by email, see
+ * {@link AccountProvisioner}); that step cannot undo the registration.
  */
 @Service
 public class RegisterAssociationService implements RegisterAssociationUseCase {
 
     private final AssociationRepository associations;
     private final MemberRepository members;
+    private final AccountProvisioner provisioner;
     private final UnitOfWork unitOfWork;
     private final Clock clock;
 
     public RegisterAssociationService(AssociationRepository associations, MemberRepository members,
-                                      TransactionRunner transactions, Clock clock) {
+                                      TransactionRunner transactions, AccountProvisioner provisioner, Clock clock) {
         this.associations = associations;
         this.members = members;
+        this.provisioner = provisioner;
         this.unitOfWork = new UnitOfWork(transactions);
         this.clock = clock;
     }
@@ -57,13 +61,14 @@ public class RegisterAssociationService implements RegisterAssociationUseCase {
         Member founder = Member.create(association, founderContact, consent,
                 Set.of(MemberRole.ADMIN, MemberRole.MEMBER), clock);
 
-        return unitOfWork.retrying(() -> {
+        Member storedFounder = unitOfWork.retrying(() -> {
             if (associations.existsByShortName(shortName)) {
                 throw new ShortNameAlreadyTakenException(shortName);
             }
-            Association stored = associations.save(association);
-            Member storedFounder = members.save(founder);
-            return new AssociationRegistered(stored.id(), storedFounder.id());
+            associations.save(association);
+            return members.save(founder);
         });
+        AccountProvisioning.afterCommit(provisioner, storedFounder);
+        return new AssociationRegistered(storedFounder.associationId(), storedFounder.id());
     }
 }

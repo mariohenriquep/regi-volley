@@ -1,6 +1,7 @@
 package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.ApproveJoinRequestCommand;
+import com.regivolley.api.application.port.AccountProvisioner;
 import com.regivolley.api.application.port.TransactionRunner;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
@@ -17,7 +18,8 @@ import java.util.List;
 
 /**
  * US-06, RN-20. An administrator approves a pending join request: the request becomes APPROVED and the member
- * is created at the entry level, both stored in the same transaction. The new member is told after the commit.
+ * is created at the entry level, both stored in the same transaction. After the commit the new member is told and given a
+ * way to sign in (an activation link by email, see {@link AccountProvisioner}); neither can undo the approval.
  * An approval racing a rejection (or another approval) loses on the request's version and is retried, then
  * refused by the request's state machine.
  */
@@ -28,23 +30,27 @@ public class ApproveJoinRequestService implements ApproveJoinRequestUseCase {
     private final MemberRepository members;
     private final JoinRequestRepository joinRequests;
     private final Notifier notifier;
+    private final AccountProvisioner provisioner;
     private final UnitOfWork unitOfWork;
     private final Clock clock;
 
     public ApproveJoinRequestService(AssociationRepository associations, MemberRepository members,
                                      JoinRequestRepository joinRequests, TransactionRunner transactions,
-                                     Notifier notifier, Clock clock) {
+                                     Notifier notifier, AccountProvisioner provisioner, Clock clock) {
         this.associations = associations;
         this.members = members;
         this.joinRequests = joinRequests;
         this.notifier = notifier;
+        this.provisioner = provisioner;
         this.unitOfWork = new UnitOfWork(transactions);
         this.clock = clock;
     }
 
     @Override
     public JoinRequestApproval execute(ApproveJoinRequestCommand command) {
-        return unitOfWork.retryingAndNotify(() -> attempt(command), notifier);
+        JoinRequestApproval approval = unitOfWork.retryingAndNotify(() -> attempt(command), notifier);
+        AccountProvisioning.afterCommit(provisioner, approval.member());
+        return approval;
     }
 
     private Outcome<JoinRequestApproval> attempt(ApproveJoinRequestCommand command) {

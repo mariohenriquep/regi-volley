@@ -7,8 +7,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The seam between the token and the credentials tables. 26b implements it over {@code app_user} (by id) and
- * {@code membership} (by user, association, member); 26a ships only {@link DenyAllSecurityAccountLookup} and a test double.
+ * The seam between the token and the credentials tables. Implemented in {@code infrastructure.persistence.adapter} over
+ * {@code app_user} (by id) and {@code membership} (by user, association, member); tests use an in-memory double.
  *
  * <p>Contract: answer with the account only if the user exists AND has a membership row at exactly
  * {@code (associationId, memberId)}; otherwise empty. Status checks (disabled account, pending membership, stamp)

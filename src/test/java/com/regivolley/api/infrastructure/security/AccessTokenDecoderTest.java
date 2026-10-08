@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.security;
 
+import com.regivolley.api.application.identity.AccessToken;
 import com.nimbusds.jose.jwk.ECKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,7 +50,7 @@ class AccessTokenDecoderTest {
     void acceptsATokenIssuedByTheAccessTokenIssuer() {
         // Arrange
         JwtKeySet keys = JwtKeyLoader.load(TestKeys.privateJwk(active), TestKeys.verificationSet(active), false);
-        AccessTokenIssuer issuer = new AccessTokenIssuer(keys, CLOCK);
+        JwtAccessTokenIssuer issuer = new JwtAccessTokenIssuer(keys, CLOCK);
         UUID userId = UUID.randomUUID();
         UUID associationId = UUID.randomUUID();
         UUID memberId = UUID.randomUUID();
@@ -75,7 +76,7 @@ class AccessTokenDecoderTest {
     void theIssuedClaimsHoldIdsOnlyNoRolesAndNoPersonalData() {
         // Arrange
         JwtKeySet keys = JwtKeyLoader.load(TestKeys.privateJwk(active), TestKeys.verificationSet(active), false);
-        String token = new AccessTokenIssuer(keys, CLOCK).issue(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "s").value();
+        String token = new JwtAccessTokenIssuer(keys, CLOCK).issue(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "s").value();
 
         // Act
         Jwt jwt = decoder.decode(token);
@@ -461,7 +462,7 @@ class AccessTokenDecoderTest {
         ECKey old = TestKeys.generate("old");
         ECKey next = TestKeys.generate("new");
         JwtKeySet keys = JwtKeyLoader.load(TestKeys.privateJwk(next), TestKeys.verificationSet(old, next), false);
-        AccessToken token = new AccessTokenIssuer(keys, CLOCK).issue(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "s");
+        AccessToken token = new JwtAccessTokenIssuer(keys, CLOCK).issue(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "s");
 
         // Act
         Jwt jwt = AccessTokenDecoderFactory.create(keys, CLOCK).decode(token.value());

@@ -50,6 +50,8 @@ class OnionArchitectureTest {
     private static final String DOMAIN_EXCEPTIONS = DOMAIN + ".exception";
     private static final String DOMAIN_PORTS = DOMAIN + ".port";
     private static final String USE_CASES = APPLICATION + ".usecase";
+    private static final String IDENTITY = APPLICATION + ".identity";
+    private static final String APPLICATION_EXCEPTIONS = APPLICATION + ".exception";
     private static final String APPLICATION_PORTS = APPLICATION + ".port";
     private static final String COMMANDS = APPLICATION + ".command";
     private static final String RESULTS_OF_USE_CASES = APPLICATION + ".result";
@@ -441,6 +443,147 @@ class OnionArchitectureTest {
 
         // Assert - exactly one: proves exclusivity, and that the check is not passing vacuously
         assertThat(constructors).containsExactly(SECURITY + ".AuthenticatedActor");
+    }
+
+    @Test
+    void serviceClassesLiveOnlyInTheUseCasePackageOrAsDomainServices() {
+        // Arrange - the request flow is controller -> use case interface -> service in application (architecture.md section 1); a
+        // "*Service" anywhere else is a second place that manages requests
+        String suffix = "Service";
+
+        // Act
+        List<String> violations = typesIn(BASE, source -> source.typeName().endsWith(suffix)
+                && !source.residesIn(USE_CASES) && !source.residesIn(DOMAIN_SERVICES));
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void controllersDependOnlyOnUseCaseInterfacesCommandsResultsDtosMappersAndTheCaller() {
+        // Arrange
+        // (the production sources)
+
+        // Act
+        List<String> violations = controllerDependencyViolations(sources);
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void theControllerDependencyRuleReallyChecksTheRealControllers() {
+        // Arrange
+        long controllers = sources.stream().filter(source -> source.residesIn(WEB_CONTROLLERS)).count();
+        boolean authController = sources.stream().anyMatch(source -> source.name().endsWith("AuthController.java"));
+
+        // Act
+        boolean seesAUseCase = sources.stream().filter(source -> source.residesIn(WEB_CONTROLLERS))
+                .anyMatch(source -> !source.referencesInto(Set.of(USE_CASES)).isEmpty());
+
+        // Assert - guards against the rule passing because it looked at nothing
+        assertThat(controllers).isGreaterThan(1);
+        assertThat(authController).isTrue();
+        assertThat(seesAUseCase).isTrue();
+    }
+
+    @Test
+    void theControllerDependencyRuleCatchesAServiceARepositoryAnEntityAndAPersistenceClass() {
+        // Arrange
+        JavaSourceFile evil = JavaSourceFile.parse("web/controller/EvilController.java",
+                "package com.regivolley.api.infrastructure.web.controller;\n"
+                        + "import com.regivolley.api.application.usecase.LoginService;\n"
+                        + "import com.regivolley.api.application.usecase.LoginUseCase;\n"
+                        + "import com.regivolley.api.domain.repository.MemberRepository;\n"
+                        + "import com.regivolley.api.domain.model.entity.Member;\n"
+                        + "import com.regivolley.api.infrastructure.persistence.adapter.MemberRepositoryAdapter;\n"
+                        + "import com.regivolley.api.infrastructure.security.CurrentActor;\n"
+                        + "import com.regivolley.api.application.command.LoginCommand;\n"
+                        + "class EvilController {}\n");
+
+        // Act
+        List<String> violations = controllerDependencyViolations(List.of(evil));
+
+        // Assert - the use case interface, the command and the caller annotation pass; the other four do not
+        assertThat(violations).hasSize(4);
+        assertThat(violations).anyMatch(v -> v.contains("LoginService"))
+                .anyMatch(v -> v.contains("MemberRepository"))
+                .anyMatch(v -> v.contains("domain.model.entity.Member"))
+                .anyMatch(v -> v.contains("MemberRepositoryAdapter"));
+    }
+
+    @Test
+    void applicationIdentityTypesAreFreeOfFrameworks() {
+        // Arrange - the identity models are plain Java like the domain: no Spring, no JPA, no servlet
+        Set<String> forbidden = Set.of("org.springframework", "jakarta", "com.nimbusds");
+
+        // Act
+        List<String> violations = violations(IDENTITY, forbidden);
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void applicationExceptionsAndIdentityHaveNothingToDoWithPorts() {
+        // Arrange - the models and exceptions are the vocabulary of the ports, never the other way round
+        Set<String> forbidden = Set.of(APPLICATION_PORTS, USE_CASES);
+
+        // Act
+        List<String> violations = new ArrayList<>(violations(IDENTITY, forbidden));
+        violations.addAll(violations(APPLICATION_EXCEPTIONS, forbidden));
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void everyApplicationTypeSitsInAPackageOfItsKind() {
+        // Arrange
+        Set<String> kinds = Set.of(COMMANDS, RESULTS_OF_USE_CASES, USE_CASES, APPLICATION_PORTS, IDENTITY, APPLICATION_EXCEPTIONS);
+
+        // Act
+        List<String> violations = typesIn(APPLICATION, source -> kinds.stream().noneMatch(source::residesIn));
+
+        // Assert
+        assertThat(violations).as("application types belong to one of " + kinds).isEmpty();
+    }
+
+    @Test
+    void persistenceReachesTheSecurityPackageOnlyThroughTheAccountLookupSeam() {
+        // Arrange - the stores are application ports now; the one thing persistence still implements from security is the per-request lookup
+        Set<String> allowed = Set.of(SECURITY + ".SecurityAccountLookup", SECURITY + ".SecurityAccount");
+
+        // Act
+        List<String> violations = sources.stream()
+                .filter(source -> source.residesIn(PERSISTENCE))
+                .flatMap(source -> source.referencesInto(Set.of(SECURITY)).stream()
+                        .filter(reference -> !allowed.contains(reference))
+                        .map(reference -> source.name() + " -> " + reference))
+                .toList();
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    private static List<String> controllerDependencyViolations(List<JavaSourceFile> files) {
+        return files.stream()
+                .filter(source -> source.residesIn(WEB_CONTROLLERS))
+                .flatMap(source -> source.referencesInto(Set.of(BASE)).stream()
+                        .filter(reference -> !allowedForController(reference))
+                        .map(reference -> source.name() + " -> " + reference))
+                .toList();
+    }
+
+    /** What a controller may name: use case interfaces, commands, results, web DTOs and mappers, its own package, the caller annotation and principal, and the request id (the container error page prints it). */
+    private static boolean allowedForController(String reference) {
+        String simpleName = reference.substring(reference.lastIndexOf('.') + 1);
+        return reference.startsWith(COMMANDS + ".") || reference.startsWith(RESULTS_OF_USE_CASES + ".")
+                || reference.startsWith(WEB_DTOS + ".") || reference.startsWith(WEB_MAPPERS + ".")
+                || reference.startsWith(WEB_CONTROLLERS + ".")
+                || (reference.startsWith(USE_CASES + ".") && simpleName.endsWith("UseCase"))
+                || reference.equals(SECURITY + ".CurrentActor") || reference.equals(SECURITY + ".AuthenticatedActor")
+                || reference.equals(SECURITY + ".RequestIds");
     }
 
     @Test

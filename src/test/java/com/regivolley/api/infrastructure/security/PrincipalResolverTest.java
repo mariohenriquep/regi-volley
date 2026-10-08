@@ -1,8 +1,12 @@
 package com.regivolley.api.infrastructure.security;
 
+import com.regivolley.api.application.identity.MembershipStatus;
+import com.regivolley.api.application.identity.UserStatus;
 import com.regivolley.api.application.command.Actor;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
+import com.regivolley.api.domain.model.valueobject.AssociationId;
+import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.repository.MemberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -99,8 +103,7 @@ class PrincipalResolverTest {
     @Test
     void rejectsADisabledAccount() {
         // Arrange
-        accounts.register(userId, association.id(), member.id(),
-                new SecurityAccount(UserStatus.DISABLED, STAMP, MembershipStatus.CONFIRMED));
+        accounts.register(userId, association.id(), member.id(), UserStatus.DISABLED, STAMP, MembershipStatus.CONFIRMED);
 
         // Act
         PrincipalRejectedException e = rejection(validToken());
@@ -124,8 +127,7 @@ class PrincipalResolverTest {
     @Test
     void rejectsAMembershipThatIsStillPending() {
         // Arrange
-        accounts.register(userId, association.id(), member.id(),
-                new SecurityAccount(UserStatus.ACTIVE, STAMP, MembershipStatus.PENDING));
+        accounts.register(userId, association.id(), member.id(), UserStatus.ACTIVE, STAMP, MembershipStatus.PENDING);
 
         // Act
         PrincipalRejectedException e = rejection(validToken());
@@ -168,6 +170,44 @@ class PrincipalResolverTest {
 
         // Assert
         assertThat(e.reason()).isEqualTo(PrincipalRejection.MEMBER_ANONYMISED);
+    }
+
+    @Test
+    void rejectsAMembershipWhoseStoredTenantIsNotTheOneInTheToken() {
+        // Arrange - a lookup that answered with a membership of another association (a bug or a bad join): refuse, never trust it
+        accounts.register(userId, association.id(), member.id(),
+                new SecurityAccount(UserStatus.ACTIVE, STAMP, MembershipStatus.CONFIRMED, AssociationId.generate(), member.id()));
+
+        // Act
+        PrincipalRejectedException e = rejection(validToken());
+
+        // Assert
+        assertThat(e.reason()).isEqualTo(PrincipalRejection.MEMBERSHIP_MISMATCH);
+    }
+
+    @Test
+    void rejectsAMembershipWhoseStoredMemberIsNotTheOneInTheToken() {
+        // Arrange
+        accounts.register(userId, association.id(), member.id(),
+                new SecurityAccount(UserStatus.ACTIVE, STAMP, MembershipStatus.CONFIRMED, association.id(), MemberId.generate()));
+
+        // Act
+        PrincipalRejectedException e = rejection(validToken());
+
+        // Assert
+        assertThat(e.reason()).isEqualTo(PrincipalRejection.MEMBERSHIP_MISMATCH);
+    }
+
+    @Test
+    void resolvesFromExplicitIdsForTheRefreshPath() {
+        // Arrange
+        // (the seeded active member)
+
+        // Act
+        AuthenticatedActor principal = resolver.resolve(userId, association.id(), member.id(), STAMP);
+
+        // Assert
+        assertThat(principal).isEqualTo(new AuthenticatedActor(userId, association.id(), member.id()));
     }
 
     @Test

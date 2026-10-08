@@ -1,6 +1,7 @@
 package com.regivolley.api.infrastructure.security;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import com.regivolley.api.application.port.AccessTokenIssuer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -32,6 +33,6 @@ public class JwtKeyConfiguration {
 
     @Bean
     public AccessTokenIssuer accessTokenIssuer(JwtKeySet keys, Clock clock) {
-        return new AccessTokenIssuer(keys, clock);
+        return new JwtAccessTokenIssuer(keys, clock);
     }
 }

@@ -1,9 +1,6 @@
 package com.regivolley.api.infrastructure.security;
 
 import com.regivolley.api.domain.repository.MemberRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,7 +24,11 @@ import org.springframework.web.filter.CorsFilter;
 import tools.jackson.databind.ObjectMapper;
 
 import java.net.URI;
+import java.time.Clock;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * The security filter chain (threat model section 7): stateless, default-deny with {@link PublicRoutes} as the only exceptions, bearer
@@ -40,7 +41,6 @@ import java.util.List;
 @EnableWebSecurity
 public class SecurityConfiguration {
 
-    private static final Logger LOG = LoggerFactory.getLogger(SecurityConfiguration.class);
     private static final List<String> CORS_METHODS = List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
     private static final List<String> CORS_HEADERS = List.of("Authorization", "Content-Type");
     private static final long HSTS_ONE_YEAR_SECONDS = 31_536_000;
@@ -50,22 +50,23 @@ public class SecurityConfiguration {
         return new ApiErrorWriter(mapper);
     }
 
-    /**
-     * Until 26b provides a {@link SecurityAccountLookup} there are no accounts, so every token is refused (fails closed).
-     */
+    /** The in-memory token buckets (D-9), shared by the per-IP filter and the per-email checks of the services. */
     @Bean
-    public PrincipalResolver principalResolver(ObjectProvider<SecurityAccountLookup> lookup, MemberRepository members) {
-        SecurityAccountLookup accounts = lookup.getIfAvailable(() -> {
-            LOG.warn("No SecurityAccountLookup bean: every access token will be rejected until credentials are provided");
-            return new DenyAllSecurityAccountLookup();
-        });
+    public RateLimiter rateLimiter(Clock clock) {
+        return new RateLimiter(clock);
+    }
+
+    /** The one place a token becomes an identity. Without a {@link SecurityAccountLookup} bean the application does not start. */
+    @Bean
+    public PrincipalResolver principalResolver(SecurityAccountLookup accounts, MemberRepository members) {
         return new PrincipalResolver(accounts, members);
     }
 
     @Bean
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http, JwtDecoder decoder, PrincipalResolver resolver,
-                                                      ApiErrorWriter writer, Environment environment,
-                                                      @Value("${regi-volley.security.cors.allowed-origin:}") String allowedOrigin)
+                                                      ApiErrorWriter writer, RateLimiter rateLimiter, Environment environment,
+                                                      @Value("${regi-volley.security.cors.allowed-origin:}") String allowedOrigin,
+                                                      @Value("${regi-volley.security.web-origin:}") String webOrigin)
             throws Exception {
         CorsConfigurationSource cors = corsConfigurationSource(environment, allowedOrigin);
         ApiAuthenticationEntryPoint entryPoint = new ApiAuthenticationEntryPoint(writer);
@@ -73,7 +74,7 @@ public class SecurityConfiguration {
 
         http
                 // Stateless API: the access token travels in the Authorization header, which a browser never attaches by
-                // itself, so there is no ambient credential to forge. The two cookie endpoints (26b) get their Origin and
+                // itself, so there is no ambient credential to forge. The two cookie endpoints get their Origin and
                 // content-type checks there. Threat model D-7a. (Semgrep p/java reports nothing for this line, so there
                 // is deliberately no suppression comment to rot.)
                 .csrf(csrf -> csrf.disable())
@@ -102,8 +103,17 @@ public class SecurityConfiguration {
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(entryPoint).accessDeniedHandler(accessDenied))
                 .addFilterBefore(new RequestIdFilter(), DisableEncodeUrlFilter.class)
                 .addFilterAfter(new RequestSizeLimitFilter(writer), HeaderWriterFilter.class)
+                .addFilterAfter(new RateLimitFilter(rateLimiter, writer), RequestSizeLimitFilter.class)
+                .addFilterAfter(new CookieEndpointGuardFilter(writer, webOrigins(allowedOrigin, webOrigin)), RateLimitFilter.class)
                 .addFilterBefore(new SuppressedEndpointsFilter(writer), CorsFilter.class);
         return http.build();
+    }
+
+    /** The origins besides the API's own that may call the cookie endpoints: the configured web origin and, under {@code dev}, the local PWA. */
+    private static Set<String> webOrigins(String devOrigin, String webOrigin) {
+        Set<String> origins = new HashSet<>();
+        Stream.of(devOrigin, webOrigin).map(String::trim).filter(origin -> !origin.isEmpty()).forEach(origins::add);
+        return origins;
     }
 
     private void securityHeaders(HeadersConfigurer<HttpSecurity> headers) {
