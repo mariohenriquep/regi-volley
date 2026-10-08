@@ -14,6 +14,8 @@ public enum CancellationKind implements ValueObject {
     LATE,
     /** Cancelled as a consequence of the whole session being cancelled (RN-04). */
     BY_SESSION,
+    /** Cancelled by the association, not the member (deactivating the member, US-08): never late, refunded like BY_SESSION. */
+    BY_ASSOCIATION,
     /** Still waitlisted when the session was completed: never got a seat, so nothing was consumed. */
     NOT_PROMOTED
 }

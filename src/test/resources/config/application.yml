@@ -1,0 +1,4 @@
+# Merged over src/main/resources/application.yml in every test: no background job may run during a test.
+regi-volley:
+  session-generation:
+    enabled: false

@@ -61,7 +61,8 @@ never appears in `domain/`.
 | Domain exceptions | `domain.exception` |
 | Repository ports (interfaces only, one per aggregate root) | `domain.repository` |
 | Other outbound ports (e.g. `Notifier`) | `domain.port` |
-| Use case interface + implementation | `application.usecase` |
+| Use case interface (`*UseCase`) + implementation (`*Service`) and their package-private helpers (`UnitOfWork`, `SeatPromoter`, ...) | `application.usecase` |
+| Outbound ports the application owns that are not about the domain (`TransactionRunner`); interfaces only, no Spring | `application.port` |
 | Use case input records | `application.command` |
 | Use case output records | `application.result` |
 | REST controllers | `infrastructure.web.controller` |
@@ -72,7 +73,8 @@ never appears in `domain/`.
 | Spring Data repository interfaces (`*JpaRepository`, package-private) and repository port implementations (adapters) | `infrastructure.persistence.adapter` |
 | Entity ↔ domain translation (`*PersistenceMapper`) | `infrastructure.persistence.mapper` |
 | Users, credentials, JWT/cookies, role checks | `infrastructure.security` |
-| Email sending (adapter for `Notifier`) | `infrastructure.notification` |
+| Notification sending (adapter for `Notifier`; logs ids only until the email adapter of Phase 2) | `infrastructure.notification` |
+| `TransactionRunner` implementation (`REQUIRES_NEW` template) | `infrastructure.persistence.adapter` |
 | Spring `@Configuration` beans | `infrastructure.config` |
 
 A class that doesn't fit one of these rows is a signal to reconsider the design — flag it rather
@@ -214,7 +216,14 @@ repository adapter saves through one path (`WriteSupport.write`):
 Any lock or version failure is translated to the aggregate's typed
 `*ModifiedConcurrentlyException` (an `AggregateModifiedConcurrentlyException`). Use cases retry
 in a **new transaction** (re-read, then confirm, waitlist or reject) and keep working with the
-aggregate returned by `save`. Database constraints are the backstop: a partial unique index
+aggregate returned by `save`. The loop lives in the package-private `UnitOfWork` (`application.usecase`):
+each attempt runs through the `TransactionRunner` port (`application.port`, implemented with a
+`REQUIRES_NEW` `TransactionTemplate`, so the application never imports Spring's transaction API), at
+most 5 attempts, the last conflict is rethrown (web: 409). Notifications are queued by the attempt and
+sent by `UnitOfWork` only after the commit; a failing `Notifier` is logged and swallowed. Booking also takes the
+member's row lock first (`MemberRepository.findByIdForUpdate`, inside the attempt's transaction), so one member's
+concurrent requests queue up and the RN-07 overlap check (decided by `Session.requireNoOverlapWith` over the
+sessions the repository narrows down) sees what the others committed. Database constraints are the backstop: a partial unique index
 `(session_id, member_id) WHERE status <> 'CANCELLED'` on bookings (RN-07: one live booking per
 member per session; rebooking after a cancellation is allowed) and a unique
 `(association_id, training_group_id, starts_at)` on sessions. Bookings live inside the `Session`

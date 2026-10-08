@@ -13,6 +13,7 @@ import com.regivolley.api.domain.exception.AssociationModifiedConcurrentlyExcept
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -49,6 +50,12 @@ public class AssociationRepositoryAdapter implements AssociationRepository {
     @Transactional(readOnly = true)
     public boolean existsByShortName(ShortName shortName) {
         return associations.existsByShortName(shortName.value());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AssociationId> findAllIds() {
+        return associations.findAllIds().stream().map(AssociationId::new).toList();
     }
 
     @Override

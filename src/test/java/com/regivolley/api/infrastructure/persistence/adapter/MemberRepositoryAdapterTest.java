@@ -250,6 +250,24 @@ class MemberRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void findByIdForUpdateReturnsTheStoredMemberInItsOwnAssociationOnly() {
+        // Arrange
+        Association association = newAssociation();
+        Association other = newAssociation();
+        Member stored = members.save(Member.create(association, Fixtures.contact("Ana Silva"), Fixtures.consent(),
+                Set.of(MemberRole.MEMBER), CLOCK));
+        flushAndClear();
+
+        // Act
+        var own = members.findByIdForUpdate(association.id(), stored.id());
+        var asOther = members.findByIdForUpdate(other.id(), stored.id());
+
+        // Assert
+        assertThat(own).hasValueSatisfying(found -> assertThat(found.id()).isEqualTo(stored.id()));
+        assertThat(asOther).isEmpty();
+    }
+
+    @Test
     void aConstraintViolationMessageNeverContainsTheMembersPersonalData() {
         // Arrange
         Association association = newAssociation();

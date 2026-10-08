@@ -38,6 +38,13 @@ public class MemberRepositoryAdapter implements MemberRepository {
     }
 
     @Override
+    @Transactional
+    public Optional<Member> findByIdForUpdate(AssociationId associationId, MemberId id) {
+        return members.findForUpdateByIdAndAssociationId(id.value(), associationId.value())
+                .map(MemberPersistenceMapper::toDomain);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public Optional<Member> findByEmail(AssociationId associationId, EmailAddress email) {
         return members.findByAssociationIdAndEmail(associationId.value(), email.value())

@@ -44,6 +44,11 @@ class OnionArchitectureTest {
     private static final String DOMAIN_SERVICES = DOMAIN + ".service";
     private static final String SHARED = DOMAIN + ".shared";
     private static final String DOMAIN_EXCEPTIONS = DOMAIN + ".exception";
+    private static final String DOMAIN_PORTS = DOMAIN + ".port";
+    private static final String USE_CASES = APPLICATION + ".usecase";
+    private static final String APPLICATION_PORTS = APPLICATION + ".port";
+    private static final String COMMANDS = APPLICATION + ".command";
+    private static final String RESULTS_OF_USE_CASES = APPLICATION + ".result";
     private static final Set<String> DOMAIN_PACKAGES = Set.of(ENTITIES, VALUE_OBJECTS, RESULTS, DOMAIN_SERVICES,
             SHARED, DOMAIN_EXCEPTIONS, DOMAIN + ".repository", DOMAIN + ".port");
 
@@ -213,6 +218,77 @@ class OnionArchitectureTest {
 
         // Act
         List<String> violations = typesIn(DOMAIN_SERVICES, source -> source.implementsAnyOf(buildingBlocks));
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void outboundPortsAreInterfaces() {
+        // Arrange
+        List<String> portPackages = List.of(DOMAIN + ".repository", DOMAIN_PORTS, APPLICATION_PORTS);
+
+        // Act
+        List<String> violations = new ArrayList<>();
+        for (String portPackage : portPackages) {
+            violations.addAll(typesIn(portPackage, source -> source.kind() != JavaSourceFile.TypeKind.INTERFACE));
+        }
+
+        // Assert
+        assertThat(violations).as("ports are interfaces; adapters live in infrastructure").isEmpty();
+    }
+
+    @Test
+    void applicationPortsAreOnlyForWhatTheApplicationNeedsFromTheOutsideWorld() {
+        // Arrange
+        Set<String> forbidden = Set.of("org.springframework", "jakarta");
+
+        // Act
+        List<String> violations = violations(APPLICATION_PORTS, forbidden);
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void applicationNeverTouchesSpringTransactionApis() {
+        // Arrange - transactions are demarcated through the TransactionRunner port (architecture.md section 10)
+        Set<String> forbidden = Set.of("org.springframework.transaction", "jakarta.transaction");
+
+        // Act
+        List<String> violations = violations(APPLICATION, forbidden);
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void commandsAreRecordsOrEnumsAndResultsAreRecords() {
+        // Arrange
+        // (the application packages from the constants)
+
+        // Act
+        List<String> commandViolations = typesIn(COMMANDS, source -> source.kind() != JavaSourceFile.TypeKind.RECORD
+                && source.kind() != JavaSourceFile.TypeKind.ENUM);
+        List<String> resultViolations = typesIn(RESULTS_OF_USE_CASES, source -> source.kind() != JavaSourceFile.TypeKind.RECORD);
+
+        // Assert
+        assertThat(commandViolations).isEmpty();
+        assertThat(resultViolations).isEmpty();
+    }
+
+    @Test
+    void useCasesAreInterfacesImplementedByServicesInTheUseCasePackage() {
+        // Arrange
+        String useCaseSuffix = "UseCase";
+        String serviceSuffix = "Service";
+
+        // Act
+        List<String> violations = new ArrayList<>(typesIn(BASE, source -> source.typeName().endsWith(useCaseSuffix)
+                && (!source.residesIn(USE_CASES) || (source.kind() != JavaSourceFile.TypeKind.INTERFACE
+                && !source.typeName().equals("UseCase")))));
+        violations.addAll(typesIn(APPLICATION, source -> source.typeName().endsWith(serviceSuffix)
+                && !source.residesIn(USE_CASES)));
 
         // Assert
         assertThat(violations).isEmpty();

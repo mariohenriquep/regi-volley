@@ -6,6 +6,7 @@ import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.ShortName;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -20,6 +21,12 @@ public interface AssociationRepository {
     Optional<Association> findByShortName(ShortName shortName);
 
     boolean existsByShortName(ShortName shortName);
+
+    /**
+     * The ids of every association, for system-wide jobs that then work tenant by tenant (the daily
+     * session generation, US-10). Not a business read: it exposes no tenant data, only who the tenants are.
+     */
+    List<AssociationId> findAllIds();
 
     /**
      * Inserts a new association or updates an existing one with its levels, and returns it as stored,
