@@ -1,6 +1,9 @@
 package com.regivolley.api.domain.service;
 
 import com.regivolley.api.domain.exception.BookingNotAllowedException;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SessionFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.entity.Booking;
 import com.regivolley.api.domain.model.entity.Plan;
 import com.regivolley.api.domain.model.entity.Session;
@@ -51,8 +54,8 @@ class BookingEligibilityTest {
     private static final BookingTarget OPEN_PLAY = new BookingTarget(ASSOCIATION, SESSION_START, Set.of(INTERMEDIATE, ADVANCED));
 
     private static Subscription subscription(MemberId member, PlanTerms terms, Integer validityDays, String start) {
-        Plan plan = Plan.create(ASSOCIATION, "Plan", terms, PRICE, validityDays);
-        return Subscription.create(plan, member, LocalDate.parse(start), List.of());
+        Plan plan = PlanFactory.create(ASSOCIATION, "Plan", terms, PRICE, validityDays);
+        return SubscriptionFactory.create(plan, member, LocalDate.parse(start), List.of());
     }
 
     private static Subscription octoberUnlimited(MemberId member) {
@@ -374,7 +377,7 @@ class BookingEligibilityTest {
         @Test
         void aTargetCanBeBuiltFromASession() {
             // Arrange
-            Session session = Session.create(ASSOCIATION, TrainingGroupId.generate(), MemberId.generate(),
+            Session session = SessionFactory.create(ASSOCIATION, TrainingGroupId.generate(), MemberId.generate(),
                     SESSION_START, SESSION_START.plus(Duration.ofMinutes(90)), 12);
 
             // Act
@@ -408,11 +411,11 @@ class BookingEligibilityTest {
         void aMidWeekRenewalSharesTheWeeklyLimitWithThePreviousSubscription() {
             // Arrange
             MemberId member = MemberId.generate();
-            Plan weekly = Plan.create(ASSOCIATION, "Twice a week", PlanTerms.monthlyNPerWeek(2, Set.of()), PRICE, null);
-            Subscription previous = Subscription.create(weekly, member, LocalDate.parse("2026-09-16"), List.of())
+            Plan weekly = PlanFactory.create(ASSOCIATION, "Twice a week", PlanTerms.monthlyNPerWeek(2, Set.of()), PRICE, null);
+            Subscription previous = SubscriptionFactory.create(weekly, member, LocalDate.parse("2026-09-16"), List.of())
                     .consume(BookingId.generate(), Instant.parse("2026-10-12T19:00:00Z"))
                     .consume(BookingId.generate(), Instant.parse("2026-10-13T19:00:00Z"));
-            Subscription renewal = Subscription.renew(weekly, previous, List.of(previous), LocalDate.parse("2026-10-14"));
+            Subscription renewal = SubscriptionFactory.createRenewal(weekly, previous, List.of(previous), LocalDate.parse("2026-10-14"));
             MemberBookingProfile profile = activeIntermediate(member, previous, renewal);
             BookingTarget saturday = new BookingTarget(ASSOCIATION, Instant.parse("2026-10-17T19:00:00Z"), Set.of(INTERMEDIATE));
             BookingTarget nextMonday = new BookingTarget(ASSOCIATION, Instant.parse("2026-10-19T19:00:00Z"), Set.of(INTERMEDIATE));
@@ -431,10 +434,10 @@ class BookingEligibilityTest {
         void consumingTheChosenSubscriptionWithTheProfilesSubscriptionsAgreesWithEligibility() {
             // Arrange
             MemberId member = MemberId.generate();
-            Plan weekly = Plan.create(ASSOCIATION, "Twice a week", PlanTerms.monthlyNPerWeek(2, Set.of()), PRICE, null);
-            Subscription previous = Subscription.create(weekly, member, LocalDate.parse("2026-09-16"), List.of())
+            Plan weekly = PlanFactory.create(ASSOCIATION, "Twice a week", PlanTerms.monthlyNPerWeek(2, Set.of()), PRICE, null);
+            Subscription previous = SubscriptionFactory.create(weekly, member, LocalDate.parse("2026-09-16"), List.of())
                     .consume(BookingId.generate(), Instant.parse("2026-10-13T19:00:00Z"));
-            Subscription renewal = Subscription.renew(weekly, previous, List.of(previous), LocalDate.parse("2026-10-14"));
+            Subscription renewal = SubscriptionFactory.createRenewal(weekly, previous, List.of(previous), LocalDate.parse("2026-10-14"));
             MemberBookingProfile profile = activeIntermediate(member, previous, renewal);
             BookingTarget saturday = new BookingTarget(ASSOCIATION, Instant.parse("2026-10-17T19:00:00Z"), Set.of(INTERMEDIATE));
 
@@ -474,8 +477,8 @@ class BookingEligibilityTest {
         void aProfileCannotHoldASubscriptionOfAnotherAssociation() {
             // Arrange
             MemberId member = MemberId.generate();
-            Plan foreignPlan = Plan.create(OTHER, "Other", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
-            Subscription foreign = Subscription.create(foreignPlan, member, LocalDate.parse("2026-10-01"), List.of());
+            Plan foreignPlan = PlanFactory.create(OTHER, "Other", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
+            Subscription foreign = SubscriptionFactory.create(foreignPlan, member, LocalDate.parse("2026-10-01"), List.of());
             Executable act = () -> activeIntermediate(member, foreign);
 
             // Act
@@ -488,7 +491,7 @@ class BookingEligibilityTest {
         @Test
         void aTargetCapturesTheSessionsAssociation() {
             // Arrange
-            Session session = Session.create(OTHER, TrainingGroupId.generate(), MemberId.generate(), SESSION_START,
+            Session session = SessionFactory.create(OTHER, TrainingGroupId.generate(), MemberId.generate(), SESSION_START,
                     SESSION_START.plus(Duration.ofMinutes(90)), 12);
 
             // Act
@@ -623,7 +626,7 @@ class BookingEligibilityTest {
             MemberId holder = MemberId.generate();
             MemberId overdueFirst = MemberId.generate();
             MemberId paidSecond = MemberId.generate();
-            Session session = Session.create(ASSOCIATION, TrainingGroupId.generate(), coach, SESSION_START,
+            Session session = SessionFactory.create(ASSOCIATION, TrainingGroupId.generate(), coach, SESSION_START,
                     SESSION_START.plus(Duration.ofMinutes(90)), 1);
             Instant opensAt = POLICY.bookingOpensAt(SESSION_START);
             session = session.book(holder, POLICY, Clock.fixed(opensAt, ZoneOffset.UTC)).session();

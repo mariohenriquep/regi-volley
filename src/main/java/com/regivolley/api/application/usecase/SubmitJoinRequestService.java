@@ -5,6 +5,7 @@ import com.regivolley.api.application.port.TransactionRunner;
 import com.regivolley.api.application.result.JoinRequestSubmitted;
 import com.regivolley.api.domain.exception.JoinRequestNotPossibleException;
 import com.regivolley.api.domain.exception.ShortNameNotFoundException;
+import com.regivolley.api.domain.factory.JoinRequestFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
@@ -55,7 +56,7 @@ public class SubmitJoinRequestService implements SubmitJoinRequestUseCase {
                     || joinRequests.findPendingByEmail(association.id(), email).isPresent()) {
                 throw new JoinRequestNotPossibleException();
             }
-            JoinRequest request = JoinRequest.create(association.id(), contact, command.consentAccepted(),
+            JoinRequest request = JoinRequestFactory.create(association.id(), contact, command.consentAccepted(),
                     command.policyVersion(), clock);
             return new JoinRequestSubmitted(joinRequests.save(request).id());
         });

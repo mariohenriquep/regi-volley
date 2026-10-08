@@ -157,6 +157,132 @@ record JavaSourceFile(String name, String packageName, Set<String> references,
     }
 
     /**
+     * A {@code static} method declared in the file (top-level or nested type): the return type as written, generics
+     * included, its name and whether it is {@code private}.
+     */
+    record StaticMethod(String returnType, String name, boolean isPrivate) {
+    }
+
+    // modifiers, optional method type parameters, the return type (generics allowed), the name and the opening parenthesis;
+    // a static field or a static nested type has no "(" right after its name, so it never matches
+    private static final Pattern STATIC_METHOD = Pattern.compile(
+            "((?:\\b(?:public|protected|private|final|synchronized)\\s+)*)\\bstatic\\s+(?:(?:final|synchronized)\\s+)*"
+                    + "(?:<[^()=;{]*>\\s+)?([\\w.]+(?:<[^()=;{]*>)?(?:\\[\\])?)\\s+(\\w+)\\s*\\(");
+
+    /** Every {@code static} method declared in the file, in order of appearance. */
+    List<StaticMethod> staticMethods() {
+        List<StaticMethod> methods = new java.util.ArrayList<>();
+        Matcher matcher = STATIC_METHOD.matcher(code);
+        while (matcher.find()) {
+            methods.add(new StaticMethod(matcher.group(2), matcher.group(3), matcher.group(1).contains("private")));
+        }
+        return methods;
+    }
+
+    /**
+     * Whether the code calls a static method of {@code simpleTypeName} whose name matches {@code methodNameRegex}:
+     * {@code Session.create(...)}, with or without a package prefix.
+     */
+    boolean callsStatic(String simpleTypeName, String methodNameRegex) {
+        return Pattern.compile("\\b" + Pattern.quote(simpleTypeName) + "\\s*\\.\\s*(?:" + methodNameRegex + ")\\s*\\(")
+                .matcher(code).find();
+    }
+
+    /** The simple names written before {@code .methodName(} in the code: {@code Plan} for {@code Plan.of(x)}, {@code PlanId} for {@code PlanId.generate()}. */
+    List<String> qualifiersOfCallsTo(String methodName) {
+        List<String> qualifiers = new java.util.ArrayList<>();
+        Matcher matcher = Pattern.compile("\\b(\\w+)\\s*\\.\\s*" + Pattern.quote(methodName) + "\\s*\\(").matcher(code);
+        while (matcher.find()) {
+            qualifiers.add(matcher.group(1));
+        }
+        return qualifiers;
+    }
+
+    private static final Pattern REFLECTION = Pattern.compile(
+            "\\bjava\\s*\\.\\s*lang\\s*\\.\\s*(?:reflect|invoke)\\b|\\bgetDeclaredConstructors?\\b|\\bgetConstructors?\\b"
+                    + "|\\bnewInstance\\b|\\bMethodHandles?\\b|\\bsetAccessible\\b|\\bClass\\s*\\.\\s*forName\\b");
+
+    /** What in the code reaches for reflection or method handles (imports and inline uses), comments and strings excluded. */
+    List<String> reflectionUses() {
+        List<String> uses = new java.util.ArrayList<>();
+        Matcher matcher = REFLECTION.matcher(code);
+        while (matcher.find()) {
+            uses.add(matcher.group().replaceAll("\\s+", ""));
+        }
+        return uses;
+    }
+
+    /**
+     * What the top-level class declares at its own level that is not static: {@code "field name"} for an instance field,
+     * {@code "method name"} for an instance method and {@code "constructor"} for a constructor that is not private. A
+     * private constructor (what keeps a utility class from being instantiated), static members and nested types are fine.
+     */
+    List<String> nonStaticMembers() {
+        List<String> found = new java.util.ArrayList<>();
+        Matcher type = TYPE_DECLARATION.matcher(code);
+        if (!type.find()) {
+            return found;
+        }
+        int open = code.indexOf('{', type.end());
+        if (open < 0) {
+            return found;
+        }
+        StringBuilder header = new StringBuilder();
+        boolean initialiser = false;
+        int depth = 1;
+        for (int i = open + 1; i < code.length() && depth > 0; i++) {
+            char c = code.charAt(i);
+            if (depth > 1) {
+                depth += c == '{' ? 1 : c == '}' ? -1 : 0;
+                if (depth == 1 && !initialiser) {
+                    classify(header.toString(), found);
+                    header.setLength(0);
+                }
+                continue;
+            }
+            if (c == ';') {
+                classify(header.toString(), found);
+                header.setLength(0);
+                initialiser = false;
+            } else if (c == '{') {
+                initialiser = initialiser || header.indexOf("=") >= 0;
+                depth++;
+            } else if (c == '}') {
+                depth--;
+            } else {
+                header.append(c);
+            }
+        }
+        return found;
+    }
+
+    private void classify(String rawHeader, List<String> found) {
+        String header = rawHeader.replaceAll("@\\w+(?:\\([^)]*\\))?", " ");
+        int equals = header.indexOf('=');
+        String declaration = (equals >= 0 ? header.substring(0, equals) : header).trim();
+        if (declaration.isEmpty() || declaration.matches("(?s).*\\b(class|record|enum|interface)\\b.*")) {
+            return;
+        }
+        boolean isStatic = declaration.matches("(?s).*\\bstatic\\b.*");
+        int paren = declaration.indexOf('(');
+        if (paren < 0) {
+            if (!isStatic) {
+                found.add("field " + declaration.substring(declaration.lastIndexOf(' ') + 1));
+            }
+            return;
+        }
+        String beforeParen = declaration.substring(0, paren).trim();
+        String name = beforeParen.substring(beforeParen.lastIndexOf(' ') + 1);
+        if (name.equals(typeName)) {
+            if (!declaration.matches("(?s).*\\bprivate\\b.*")) {
+                found.add("constructor");
+            }
+        } else if (!isStatic) {
+            found.add("method " + name);
+        }
+    }
+
+    /**
      * The component names of every record declared in the file, top-level and nested, by record name. Annotations on
      * components (with their own parentheses) and generics are skipped.
      */

@@ -3,6 +3,7 @@ package com.regivolley.api.application.usecase;
 import com.regivolley.api.application.command.GenerateSessionsCommand;
 import com.regivolley.api.application.port.TransactionRunner;
 import com.regivolley.api.application.result.SessionGenerationReport;
+import com.regivolley.api.domain.factory.SessionFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Session;
@@ -87,7 +88,7 @@ public class GenerateSessionsService implements GenerateSessionsUseCase {
         SessionGenerationPolicy policy = association.sessionGenerationPolicy();
         List<Session> existing = sessions.findByTrainingGroupStartingBetween(association.id(), group.id(), from,
                 policy.windowEnd(from));
-        List<Session> generated = group.generateSessions(from, policy, existing);
+        List<Session> generated = SessionFactory.createSessionsFor(group, from, policy, existing);
         generated.forEach(sessions::save);
         return Optional.of(generated.size());
     }

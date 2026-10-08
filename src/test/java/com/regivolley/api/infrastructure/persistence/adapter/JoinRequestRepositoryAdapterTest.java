@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
+import com.regivolley.api.domain.factory.JoinRequestFactory;
 import com.regivolley.api.domain.model.valueobject.PhoneNumber;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
@@ -71,7 +72,7 @@ class JoinRequestRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         MemberId admin = MemberId.generate();
         Instant decidedAt = NOW.plusSeconds(60);
         JoinRequest approved = Fixtures.joinRequest(association.id(), "Rita", NOW)
-                .approve(association, admin, Fixtures.at(decidedAt)).request();
+                .approve(admin, Fixtures.at(decidedAt));
         JoinRequest rejected = Fixtures.joinRequest(association.id(), "Rui", NOW)
                 .reject(admin, "  Not a local  ", Fixtures.at(decidedAt));
 
@@ -163,7 +164,7 @@ class JoinRequestRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         flushAndClear();
         JoinRequest copyA = requests.findById(association.id(), stored.id()).orElseThrow();
         JoinRequest copyB = requests.findById(association.id(), stored.id()).orElseThrow();
-        requests.save(copyB.approve(association, admin, Fixtures.at(NOW.plusSeconds(30))).request());
+        requests.save(copyB.approve(admin, Fixtures.at(NOW.plusSeconds(30))));
         flushAndClear();
         Executable act = () -> requests.save(copyA.reject(admin, "Full", Fixtures.at(NOW.plusSeconds(31))));
 
@@ -193,7 +194,7 @@ class JoinRequestRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     }
 
     private JoinRequest requestFrom(Association association, String email) {
-        return JoinRequest.create(association.id(), ContactDetails.of("Rita", EmailAddress.of(email), PhoneNumber.of("912345678")),
+        return JoinRequestFactory.create(association.id(), ContactDetails.of("Rita", EmailAddress.of(email), PhoneNumber.of("912345678")),
                 true, "2026-01", Fixtures.at(NOW));
     }
 

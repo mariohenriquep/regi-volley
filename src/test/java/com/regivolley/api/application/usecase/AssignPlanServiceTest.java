@@ -7,6 +7,8 @@ import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.exception.PlanNotFoundException;
 import com.regivolley.api.domain.exception.SubscriptionModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.SubscriptionOverlapException;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Plan;
@@ -65,7 +67,7 @@ class AssignPlanServiceTest {
         association = Data.association();
         admin = Data.admin(association);
         target = Data.member(association);
-        monthly = Plan.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
+        monthly = PlanFactory.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
         useCase = new AssignPlanService(members, plans, subscriptions, transactions, Data.CLOCK);
         lenient().when(members.findById(association.id(), admin.id())).thenReturn(Optional.of(admin));
         lenient().when(members.findByIdForUpdate(association.id(), target.id())).thenReturn(Optional.of(target));
@@ -112,7 +114,7 @@ class AssignPlanServiceTest {
     @Test
     void withoutADateItRenewsTheLatestSubscriptionTheDayAfterItEnds() {
         // Arrange
-        Subscription current = Subscription.create(monthly, target.id(), LocalDate.parse("2026-10-01"), List.of());
+        Subscription current = SubscriptionFactory.create(monthly, target.id(), LocalDate.parse("2026-10-01"), List.of());
         when(subscriptions.findByMember(association.id(), target.id())).thenReturn(List.of(current));
 
         // Act
@@ -125,9 +127,9 @@ class AssignPlanServiceTest {
     @Test
     void withoutADateAnExhaustedPackIsRenewedAtOnce() {
         // Arrange
-        Plan pack = Plan.create(association.id(), "Single", PlanTerms.singleSession(Set.of()), Money.ofCents(700), 30);
+        Plan pack = PlanFactory.create(association.id(), "Single", PlanTerms.singleSession(Set.of()), Money.ofCents(700), 30);
         when(plans.findById(association.id(), pack.id())).thenReturn(Optional.of(pack));
-        Subscription used = Data.charged(Subscription.create(pack, target.id(), LocalDate.parse("2026-10-01"), List.of()),
+        Subscription used = Data.charged(SubscriptionFactory.create(pack, target.id(), LocalDate.parse("2026-10-01"), List.of()),
                 Data.session(Data.group(association, Data.coach(association), "Beginner"), 5),
                 Data.bookingOf(Data.booked(Data.session(Data.group(association, Data.coach(association), "Beginner"), 5), target), target));
         when(subscriptions.findByMember(association.id(), target.id())).thenReturn(List.of(used));
@@ -142,7 +144,7 @@ class AssignPlanServiceTest {
     @Test
     void anOverlappingPeriodIsRefusedAndNothingIsStored() {
         // Arrange
-        Subscription current = Subscription.create(monthly, target.id(), LocalDate.parse("2026-10-01"), List.of());
+        Subscription current = SubscriptionFactory.create(monthly, target.id(), LocalDate.parse("2026-10-01"), List.of());
         when(subscriptions.findByMember(association.id(), target.id())).thenReturn(List.of(current));
         Executable act = () -> useCase.execute(assign(monthly.id(), LocalDate.parse("2026-10-15")));
 
@@ -156,7 +158,7 @@ class AssignPlanServiceTest {
     @Test
     void aFreePlanNeedsNoPaymentSoItStartsPaid() {
         // Arrange
-        Plan free = Plan.create(association.id(), "Trial", PlanTerms.singleSession(Set.of()), Money.ofCents(0), 7);
+        Plan free = PlanFactory.create(association.id(), "Trial", PlanTerms.singleSession(Set.of()), Money.ofCents(0), 7);
         when(plans.findById(association.id(), free.id())).thenReturn(Optional.of(free));
 
         // Act

@@ -7,6 +7,7 @@ import com.regivolley.api.domain.exception.LevelNotFoundException;
 import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.exception.PlanModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.PlanNotFoundException;
+import com.regivolley.api.domain.factory.PlanFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Plan;
@@ -62,7 +63,7 @@ class PlanServicesTest {
         association = Data.association();
         admin = Data.admin(association);
         coach = Data.coach(association);
-        plan = Plan.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
+        plan = PlanFactory.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
         create = new CreatePlanService(members, associations, plans, transactions);
         edit = new EditPlanService(members, associations, plans, transactions);
         lenient().when(associations.findById(association.id())).thenReturn(Optional.of(association));

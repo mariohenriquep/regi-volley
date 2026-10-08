@@ -2,6 +2,7 @@ package com.regivolley.api.infrastructure.persistence.adapter;
 
 import com.regivolley.api.domain.exception.MemberEmailAlreadyUsedException;
 import com.regivolley.api.domain.exception.MemberModifiedConcurrentlyException;
+import com.regivolley.api.domain.factory.MemberFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
@@ -58,7 +59,7 @@ class MemberRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     void aNewMemberComesBackWithContactConsentRolesAndLevel() {
         // Arrange
         Association association = newAssociation();
-        Member member = Member.create(association, Fixtures.contact("Ana Silva"), Fixtures.consent(),
+        Member member = MemberFactory.create(association, Fixtures.contact("Ana Silva"), Fixtures.consent(),
                 Set.of(MemberRole.MEMBER, MemberRole.COACH), CLOCK);
 
         // Act
@@ -136,8 +137,8 @@ class MemberRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         Association b = newAssociation();
         EmailAddress shared = EmailAddress.of("same.person@example.com");
         ContactDetails contact = ContactDetails.of("Same Person", shared, PhoneNumber.of("912345678"));
-        Member inA = members.save(Member.create(a, contact, Fixtures.consent(), Set.of(MemberRole.MEMBER), CLOCK));
-        Member inB = members.save(Member.create(b, contact, Fixtures.consent(), Set.of(MemberRole.MEMBER), CLOCK));
+        Member inA = members.save(MemberFactory.create(a, contact, Fixtures.consent(), Set.of(MemberRole.MEMBER), CLOCK));
+        Member inB = members.save(MemberFactory.create(b, contact, Fixtures.consent(), Set.of(MemberRole.MEMBER), CLOCK));
         flushAndClear();
 
         // Act
@@ -173,9 +174,9 @@ class MemberRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association association = newAssociation();
         ContactDetails contact = ContactDetails.of("Ana", EmailAddress.of("dup@example.com"), PhoneNumber.of("912345678"));
-        members.save(Member.create(association, contact, Fixtures.consent(), Set.of(MemberRole.MEMBER), CLOCK));
+        members.save(MemberFactory.create(association, contact, Fixtures.consent(), Set.of(MemberRole.MEMBER), CLOCK));
         Executable act = () -> members.save(
-                Member.create(association, contact, Fixtures.consent(), Set.of(MemberRole.MEMBER), CLOCK));
+                MemberFactory.create(association, contact, Fixtures.consent(), Set.of(MemberRole.MEMBER), CLOCK));
 
         // Act
         MemberEmailAlreadyUsedException ex = assertThrows(MemberEmailAlreadyUsedException.class, act);
@@ -193,7 +194,7 @@ class MemberRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         Member second = members.save(Fixtures.member(association, "Rui"));
         entityManager.flush();
         entityManager.clear();
-        Member stolen = Member.reconstruct(second.id(), second.associationId(),
+        Member stolen = MemberFactory.reconstitute(second.id(), second.associationId(),
                 ContactDetails.of("Rui", first.email(), PhoneNumber.of("912345678")), second.consent(),
                 second.status(), second.levelId(), second.roles(), second.levelChanges(), second.joinedAt(), null, second.version());
         Executable act = () -> members.save(stolen);
@@ -254,7 +255,7 @@ class MemberRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association association = newAssociation();
         Association other = newAssociation();
-        Member stored = members.save(Member.create(association, Fixtures.contact("Ana Silva"), Fixtures.consent(),
+        Member stored = members.save(MemberFactory.create(association, Fixtures.contact("Ana Silva"), Fixtures.consent(),
                 Set.of(MemberRole.MEMBER), CLOCK));
         flushAndClear();
 
@@ -291,15 +292,15 @@ class MemberRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association association = newAssociation();
         Association other = newAssociation();
-        Member admin = members.save(Member.create(association, Fixtures.contact("Admin One"), Fixtures.consent(),
+        Member admin = members.save(MemberFactory.create(association, Fixtures.contact("Admin One"), Fixtures.consent(),
                 Set.of(MemberRole.ADMIN, MemberRole.MEMBER), CLOCK));
-        Member coachAdmin = members.save(Member.create(association, Fixtures.contact("Admin Two"), Fixtures.consent(),
+        Member coachAdmin = members.save(MemberFactory.create(association, Fixtures.contact("Admin Two"), Fixtures.consent(),
                 Set.of(MemberRole.ADMIN, MemberRole.COACH), CLOCK));
-        members.save(Member.create(association, Fixtures.contact("Gone Admin"), Fixtures.consent(),
+        members.save(MemberFactory.create(association, Fixtures.contact("Gone Admin"), Fixtures.consent(),
                 Set.of(MemberRole.ADMIN), CLOCK).deactivate());
-        members.save(Member.create(association, Fixtures.contact("Plain"), Fixtures.consent(),
+        members.save(MemberFactory.create(association, Fixtures.contact("Plain"), Fixtures.consent(),
                 Set.of(MemberRole.MEMBER), CLOCK));
-        members.save(Member.create(other, Fixtures.contact("Foreign Admin"), Fixtures.consent(),
+        members.save(MemberFactory.create(other, Fixtures.contact("Foreign Admin"), Fixtures.consent(),
                 Set.of(MemberRole.ADMIN), CLOCK));
         flushAndClear();
 

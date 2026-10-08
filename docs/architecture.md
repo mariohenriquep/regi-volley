@@ -15,7 +15,7 @@ infrastructure  →  application  →  domain
 ```
 
 - **`domain`** (`com.regivolley.api.domain`) — aggregates, entities, value objects, domain
-  services, domain exceptions and port interfaces (repositories, notifier). Nothing outside this package may be imported here.
+  services, factories, domain exceptions and port interfaces (repositories, notifier). Nothing outside this package may be imported here.
 - **`application`** (`com.regivolley.api.application`) — one use case per operation, plus
   command records. Depends only on `domain`.
 - **`infrastructure`** (`com.regivolley.api.infrastructure`) — everything that talks to the
@@ -29,13 +29,15 @@ Controller  ->  UseCase (interface)  ->  Service (application)  ->  Repository (
 ```
 
 A controller (`infrastructure.web.controller`) only translates HTTP to a command and a result back to a DTO, and calls a `*UseCase`
-interface; it never names a `*Service`, a repository port, an entity or anything in `infrastructure.persistence`. The `*Service`
-in `application.usecase` *manages the request*: transaction and retry, authorization, loading through ports, invoking domain
-behaviour, saving, notifications after the commit. Ports are implemented by adapters in infrastructure, and aggregates are created
-and reconstituted only through factories (#34). `OnionArchitectureTest` pins the parts that exist: a `*Service` lives only in
-`application.usecase` or `domain.service`, and a controller may depend only on `application.usecase` `*UseCase` interfaces,
-`application.command`, `application.result`, `web.dto`, `web.mapper`, its own package, and `CurrentActor` / `AuthenticatedActor` /
-`RequestIds` from `infrastructure.security`.
+interface; it never names a `*Service`, a repository port, a factory, an entity or anything in `infrastructure.persistence`. The
+`*Service` in `application.usecase` *manages the request*: transaction and retry, authorization, loading through ports, **creating new
+aggregates through factories**, invoking domain behaviour, saving, notifications after the commit. Ports are implemented by adapters
+in infrastructure, whose mappers **reconstitute** stored aggregates only through factories (`*Factory.reconstitute...`). The
+**factories** (`domain.factory`) are therefore the only place an aggregate is created or reconstituted. `OnionArchitectureTest` pins
+all of it: a `*Service` lives only in `application.usecase` or `domain.service`; a controller may depend only on `application.usecase`
+`*UseCase` interfaces, `application.command`, `application.result`, `web.dto`, `web.mapper`, its own package, and `CurrentActor` /
+`AuthenticatedActor` / `RequestIds` from `infrastructure.security`; and an aggregate root or entity is constructed (`new X(`) only
+inside `domain.factory`, its own class, or - for an internal entity - its root (section 4, *Factory*).
 
 Mechanically enforced by
 `src/test/java/com/regivolley/api/architecture/OnionArchitectureTest.java` - plain JUnit 5, no
@@ -69,6 +71,7 @@ never appears in `domain/`.
 | What | Package |
 |---|---|
 | Aggregate roots (`Session`, `Plan`, `Subscription`, `Payment`, `Association`, `Member`, `JoinRequest`, `TrainingGroup`, `Venue`) and the entities inside them (`Booking`, `Level`) | `domain.model.entity` |
+| Factories (one `*Factory` per aggregate root: `SessionFactory`, `PlanFactory`, `SubscriptionFactory`, `PaymentFactory`, `AssociationFactory`, `MemberFactory`, `JoinRequestFactory`, `TrainingGroupFactory`, `VenueFactory`) | `domain.factory` |
 | Value objects: ids, `Money`, `BookingPolicy`, `ContactDetails`, status/type/role enums, ... | `domain.model.valueobject` |
 | Outcomes returned by aggregates that contain entities (`BookingResult`, `CapacityChange`, ...) | `domain.model.result` |
 | Domain services and their inputs/outputs (`BookingEligibility`, `BookingTarget`, `PaymentLedger`, ...) | `domain.service` |
@@ -112,8 +115,9 @@ The packages are the DDD building blocks, and `OnionArchitectureTest` enforces t
   other aggregates may point to (by id). Lives in `domain.model.entity`.
 - **Internal entity** (`implements Entity`) - has an identity but exists inside one aggregate
   (`Booking` in `Session`, `Level` in `Association`). It sits in the same package as its root, so
-  its creation and transition methods stay package-private and reachable only through the root.
-  No repository of its own.
+  its transition methods stay package-private and reachable only through the root. Its constructor is `public` (the factory of
+  its root reconstitutes it from storage, and Java cannot grant a class in another package less than that); the root creates
+  new ones, and `OnionArchitectureTest` lets nothing else call it (see *Factory*). No repository of its own.
 - **Value object** (`implements ValueObject`) - immutable, defined by its values, validates
   itself. A record or an enum (a final immutable class only when an accessor must differ from
   the component, e.g. `ContactDetails.phone()` is an `Optional`). Never depends on entities,
@@ -126,10 +130,42 @@ The packages are the DDD building blocks, and `OnionArchitectureTest` enforces t
   about them - accepted explicitly, as it still holds no ports and no mutable state. Types named `*Service`,
   `*Eligibility`, `*Calculator`, `*Evaluator` or `*Specification` live only in `domain.service`,
   and nothing there is an entity or value object.
+- **Factory** - creates a **new** aggregate (id generation, defaults, the initial state, creation rules that span several
+  aggregates) and **reconstitutes** a stored one (`create...` / `reconstitute...`); the only place either happens. One final,
+  stateless `*Factory` class per aggregate root in `domain.factory`, with static methods (no state, no collaborators, no
+  wiring: ids come from `XId.generate()` and time from the `Clock` the caller passes in). The reconstitution of an internal
+  entity goes through its root's factory (`SessionFactory.reconstituteBooking`, `AssociationFactory.reconstituteLevel`). Creation
+  rules that need other aggregates live here: `SubscriptionFactory` (no overlap with the member's active subscriptions, RN-16, and
+  the snapshot of the plan's terms and price), `MemberFactory.fromApprovedJoinRequest` (the member a join request becomes, at the
+  entry level, RN-20), `SessionFactory.createSessionsFor` (one session per occurrence a `TrainingGroup` reports as missing,
+  `TrainingGroup.occurrencesToGenerate`), `PaymentFactory` (a payment and its reversal). A factory depends only on
+  `domain.model.*`, `domain.shared`, `domain.exception` and other factories in `domain.factory`; a domain service may use one (`PaymentLedger` hands back the payment
+  the factory builds), but the model never does.
+  **Constructors validate and are public.** Every invariant of an aggregate is checked in its constructor, and every
+  transition builds its result through the same constructor, so no path yields an invalid aggregate. Java has no "friend" for a
+  class in another package, so the constructor is `public` for `domain.factory` to reach it; the price is that anything could
+  call it, which is why `OnionArchitectureTest` closes every other way in (all on `src/main`, each with a non-vacuity check and a
+  planted-violation test):
+  - `new X(` / `X::new` for a type of `domain.model.entity` is allowed only in `XFactory`, in `X` itself and - for the internal entities
+    `Booking` and `Level` - in their root (`Session.book` makes the `Booking`, `Association.addLevel` the `Level`: the root guards its
+    parts). So a factory builds only its own root and that root's internal entities, never another aggregate.
+  - A type in `domain.model.entity` declares **no non-private static method** except an explicit allowlist (today only
+    `Subscription.holdingPlaceFor`, a finder over a collection that creates nothing). Package-private counts as non-private, so a
+    `static X create(...)`, `of(...)`, `duplicate(...)` or any other static route to a new instance is refused whatever it is called.
+  - `XId.generate()` appears in `domain.model.entity` only as `BookingId` in `Session` and `LevelId` in `Association`: a root numbers
+    the parts it creates, and cannot mint a new instance of itself (a `Plan.duplicate()` would need `PlanId.generate()`).
+  - Reflection and method handles (`java.lang.reflect`, `java.lang.invoke`, `getDeclaredConstructor`, `newInstance`, `setAccessible`,
+    `Class.forName`, ...) are used only in `infrastructure`.
+  - A factory is a stateless utility class: no instance field, no instance method, only a private constructor.
 - **Repository** - one port per aggregate root in `domain.repository`; adapters in
   `infrastructure.persistence.adapter`.
 - **Shared kernel** - `domain.shared` holds the three markers and the validation helper
   `FieldRules`; it depends on nothing in the project except `domain.exception`.
+
+The same test also pins the factories: `*Factory` types in the domain only in `domain.factory` and only final classes there, one for
+every aggregate root, depending only on the model, the shared kernel, the domain exceptions and other factories (never on ports or
+domain services), never used by the model, and the construction, static-method, id, reflection and statelessness rules above. The "persistence mappers reconstitute through
+factories" and "services create only through factories" rules each carry a non-vacuity check and a planted-violation test.
 
 The same test also pins the infrastructure naming: `*Request`/`*Response`/`*Dto` only in
 `infrastructure.web.dto` (and no record there other than a `*Response`, nested ones included, has a component named `associationId`,
@@ -171,6 +207,8 @@ of the domain packages above.
 - **Command pattern for use cases** — `UseCase<IN, OUT>`, one class per operation, reached through its interface from the controller
   (request flow, §1). Helpers that several services share (`SessionIssuer`, `EmailLinkIssuer`, `CredentialLinkConsumer`) are
   package-private in `application.usecase`.
+- **Factory (static)** — `domain.factory`, one per aggregate root; services create through them, persistence mappers
+  reconstitute through them (section 4, *Factory*).
 - **Immutable aggregates with self-validating transitions** — state machines (RN-05 for
   `Session`, RN-12 for `Booking`, RN-18 for `Subscription`) live in the aggregate as an
   allowed-transitions map, exactly like `Task` in task-manager-api. A service never decides from
@@ -455,7 +493,7 @@ Rule violations a user can trigger (booking window closed, session full, duplica
 are domain exceptions extending a common `BusinessRuleException`, carrying structured data
 (ids, instants) plus an English message that the web layer may show as-is; times in those messages
 are formatted in `Europe/Lisbon` as `dd/MM/yyyy HH:mm`, never raw UTC. Invariant and programming errors (invalid
-reconstruct data, null arguments) use English messages and are never shown to users - they map
+reconstitution data, null arguments) use English messages and are never shown to users - they map
 to a generic error.
 
 ## 13. Administration rules that span aggregates

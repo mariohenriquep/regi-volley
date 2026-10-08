@@ -2,6 +2,7 @@ package com.regivolley.api.infrastructure.persistence.adapter;
 
 import com.regivolley.api.domain.exception.BookingNotAllowedException;
 import com.regivolley.api.domain.exception.SubscriptionModifiedConcurrentlyException;
+import com.regivolley.api.domain.factory.PlanFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Plan;
 import com.regivolley.api.domain.model.entity.Subscription;
@@ -44,7 +45,7 @@ class SubscriptionConcurrencyTest extends AbstractPostgresIntegrationTest {
     private AssociationRepository associations;
 
     private Subscription lastCreditPack(Association association, MemberId member) {
-        Plan onlyOne = Plan.create(association.id(), "One credit", PlanTerms.pack(1, Set.of()), Money.ofCents(500), 90);
+        Plan onlyOne = PlanFactory.create(association.id(), "One credit", PlanTerms.pack(1, Set.of()), Money.ofCents(500), 90);
         return subscriptions.save(Fixtures.subscription(onlyOne, member, "2026-10-01"));
     }
 

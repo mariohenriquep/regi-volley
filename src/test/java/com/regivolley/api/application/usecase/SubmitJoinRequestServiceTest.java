@@ -6,6 +6,7 @@ import com.regivolley.api.domain.exception.ConsentRequiredException;
 import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.JoinRequestNotPossibleException;
 import com.regivolley.api.domain.exception.ShortNameNotFoundException;
+import com.regivolley.api.domain.factory.JoinRequestFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Member;
@@ -125,7 +126,7 @@ class SubmitJoinRequestServiceTest {
     void anEmailWithAPendingRequestIsRejectedWithTheSameGenericMessage() {
         // Arrange
         EmailAddress email = EmailAddress.of("rita@example.com");
-        JoinRequest pending = JoinRequest.create(association.id(),
+        JoinRequest pending = JoinRequestFactory.create(association.id(),
                 com.regivolley.api.domain.model.valueobject.ContactDetails.of("Rita", email,
                         com.regivolley.api.domain.model.valueobject.PhoneNumber.of("912345678")), true, "2026-01", Data.CLOCK);
         when(joinRequests.findPendingByEmail(association.id(), email)).thenReturn(Optional.of(pending));

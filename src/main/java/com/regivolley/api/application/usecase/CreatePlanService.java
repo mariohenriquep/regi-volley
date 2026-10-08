@@ -2,6 +2,7 @@ package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.CreatePlanCommand;
 import com.regivolley.api.application.port.TransactionRunner;
+import com.regivolley.api.domain.factory.PlanFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Plan;
@@ -38,7 +39,7 @@ public class CreatePlanService implements CreatePlanUseCase {
             Permissions.requireAdmin(admin, "create plans");
             Association association = Lookups.association(associations, associationId);
             association.requireLevels(command.terms().allowedLevels());
-            return plans.save(Plan.create(associationId, command.name(), command.terms(), command.price(),
+            return plans.save(PlanFactory.create(associationId, command.name(), command.terms(), command.price(),
                     command.validityDays()));
         });
     }

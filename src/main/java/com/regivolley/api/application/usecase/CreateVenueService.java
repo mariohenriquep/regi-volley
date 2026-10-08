@@ -2,6 +2,7 @@ package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.CreateVenueCommand;
 import com.regivolley.api.application.port.TransactionRunner;
+import com.regivolley.api.domain.factory.VenueFactory;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Venue;
 import com.regivolley.api.domain.repository.MemberRepository;
@@ -25,7 +26,7 @@ public class CreateVenueService implements CreateVenueUseCase {
     @Override
     public Venue execute(CreateVenueCommand command) {
         var associationId = command.actor().associationId();
-        Venue venue = Venue.create(associationId, command.name(), command.address(), command.courts());
+        Venue venue = VenueFactory.create(associationId, command.name(), command.address(), command.courts());
         return unitOfWork.retrying(() -> {
             Member admin = Lookups.member(members, associationId, command.actor().memberId());
             Permissions.requireAdmin(admin, "manage venues");

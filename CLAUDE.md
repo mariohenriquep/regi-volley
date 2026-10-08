@@ -36,7 +36,10 @@ pure Java and split by DDD building block: aggregate roots and their internal en
 `domain.model.entity` (`Session` + `Booking`, `Association` + `Level`, `Subscription`, ... implement the
 `AggregateRoot`/`Entity` markers from `domain.shared`), value objects (records/enums implementing
 `ValueObject`, never depending on entities) in `domain.model.valueobject`, operation outcomes in
-`domain.model.result`, domain services (`BookingEligibility`) in `domain.service`. Immutable
+`domain.model.result`, domain services (`BookingEligibility`) in `domain.service`, and one stateless `*Factory` per aggregate root in `domain.factory`
+(the only place an aggregate is created or reconstituted: services call `create...`, persistence mappers call `reconstitute...`;
+constructors validate every invariant and are public only for the factories - an architecture rule keeps `new X(` and static
+creators out of everywhere else). Request flow: Controller -> `*UseCase` -> `*Service` -> Repository -> Adapter -> Factory. Immutable
 aggregates own their state machines and business rules; ports live in
 `domain.repository`/`domain.port`. `application` has
 one `UseCase<IN, OUT>` class per operation. `infrastructure` holds web (`controller`/`dto`/`mapper`/`exception`), persistence

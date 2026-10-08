@@ -15,6 +15,12 @@ import com.regivolley.api.domain.exception.BookingNotAllowedException;
 import com.regivolley.api.domain.exception.BookingOverlapException;
 import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.exception.SessionNotFoundException;
+import com.regivolley.api.domain.factory.AssociationFactory;
+import com.regivolley.api.domain.factory.MemberFactory;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SessionFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
+import com.regivolley.api.domain.factory.TrainingGroupFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Booking;
 import com.regivolley.api.domain.model.entity.Member;
@@ -125,18 +131,18 @@ class BookingFlowIntegrationTest extends AbstractPostgresIntegrationTest {
     private TrainingGroup group;
 
     private void givenAnAssociationWithAGroup() {
-        association = associations.save(Association.create("Club " + UUID.randomUUID(),
+        association = associations.save(AssociationFactory.create("Club " + UUID.randomUUID(),
                 "club-" + UUID.randomUUID().toString().substring(0, 12), null, "Lisbon", "info@club.example",
                 List.of("Beginner", "Intermediate")));
         coach = members.save(newMember(MemberRole.COACH));
-        group = groups.save(TrainingGroup.create(association.id(), "Tuesday group",
+        group = groups.save(TrainingGroupFactory.create(association.id(), "Tuesday group",
                 Set.of(association.entryLevelId()), VenueId.generate(),
                 WeeklySchedule.of(new WeeklySlot(DayOfWeek.TUESDAY, LocalTime.of(20, 0), Duration.ofMinutes(90))),
                 12, coach.id()));
     }
 
     private Member newMember(MemberRole role) {
-        return Member.create(association, ContactDetails.of("Person " + UUID.randomUUID().toString().substring(0, 6),
+        return MemberFactory.create(association, ContactDetails.of("Person " + UUID.randomUUID().toString().substring(0, 6),
                         EmailAddress.of(UUID.randomUUID() + "@example.com"), PhoneNumber.of("912345678")),
                 GdprConsent.record(true, "2026-01", clock), Set.of(role), clock);
     }
@@ -148,15 +154,15 @@ class BookingFlowIntegrationTest extends AbstractPostgresIntegrationTest {
 
     private Member memberWithPack(int credits) {
         Member member = members.save(newMember(MemberRole.MEMBER));
-        Plan plan = plans.save(Plan.create(association.id(), "Pack of " + credits, PlanTerms.pack(credits, Set.of()),
+        Plan plan = plans.save(PlanFactory.create(association.id(), "Pack of " + credits, PlanTerms.pack(credits, Set.of()),
                 Money.ofCents(4500), 90));
         LocalDate yesterday = clock.instant().atZone(ScheduleZone.LISBON.zoneId()).toLocalDate().minusDays(1);
-        subscriptions.save(Subscription.create(plan, member.id(), yesterday, List.of()).markPaid());
+        subscriptions.save(SubscriptionFactory.create(plan, member.id(), yesterday, List.of()).markPaid());
         return member;
     }
 
     private Session newSession(int capacity, Instant start) {
-        return sessions.save(Session.create(association.id(), group.id(), coach.id(), start,
+        return sessions.save(SessionFactory.create(association.id(), group.id(), coach.id(), start,
                 start.plus(Duration.ofMinutes(90)), capacity));
     }
 
@@ -255,9 +261,9 @@ class BookingFlowIntegrationTest extends AbstractPostgresIntegrationTest {
         Session session = sessionInTwoDays(5);
         Member member = memberWithPack();
         PlacedBooking placed = book.execute(new BookSessionCommand(actor(member), session.id()));
-        Association other = associations.save(Association.create("Other " + UUID.randomUUID(),
+        Association other = associations.save(AssociationFactory.create("Other " + UUID.randomUUID(),
                 "other-" + UUID.randomUUID().toString().substring(0, 12), null, "Porto", "x@y.example", List.of("Beginner")));
-        Member foreignAdmin = members.save(Member.create(other, ContactDetails.of("Admin",
+        Member foreignAdmin = members.save(MemberFactory.create(other, ContactDetails.of("Admin",
                         EmailAddress.of(UUID.randomUUID() + "@example.com"), PhoneNumber.of("912345678")),
                 GdprConsent.record(true, "2026-01", clock), Set.of(MemberRole.ADMIN), clock));
 

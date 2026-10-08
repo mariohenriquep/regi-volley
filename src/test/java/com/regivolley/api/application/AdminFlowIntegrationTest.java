@@ -12,15 +12,16 @@ import com.regivolley.api.application.command.DeactivateMemberCommand;
 import com.regivolley.api.application.command.DeleteVenueCommand;
 import com.regivolley.api.application.command.EditPlanCommand;
 import com.regivolley.api.application.command.GrantRoleCommand;
-import com.regivolley.api.application.command.MarkSubscriptionOverdueCommand;
 import com.regivolley.api.application.command.ListSubscriptionsByPaymentStatusQuery;
+import com.regivolley.api.application.command.MarkSubscriptionOverdueCommand;
 import com.regivolley.api.application.command.MyPlanQuery;
 import com.regivolley.api.application.command.RecordPaymentCommand;
 import com.regivolley.api.application.command.RegisterAssociationCommand;
-import com.regivolley.api.application.command.RevokeRoleCommand;
 import com.regivolley.api.application.command.ReversePaymentCommand;
+import com.regivolley.api.application.command.RevokeRoleCommand;
 import com.regivolley.api.application.command.SubmitJoinRequestCommand;
 import com.regivolley.api.application.result.AssociationRegistered;
+import com.regivolley.api.application.result.JoinRequestApproval;
 import com.regivolley.api.application.result.JoinRequestSubmitted;
 import com.regivolley.api.application.result.MyPlan;
 import com.regivolley.api.application.result.PaymentRecorded;
@@ -37,13 +38,13 @@ import com.regivolley.api.application.usecase.DeactivateMemberUseCase;
 import com.regivolley.api.application.usecase.DeleteVenueUseCase;
 import com.regivolley.api.application.usecase.EditPlanUseCase;
 import com.regivolley.api.application.usecase.GrantRoleUseCase;
-import com.regivolley.api.application.usecase.MarkSubscriptionOverdueUseCase;
 import com.regivolley.api.application.usecase.ListSubscriptionsByPaymentStatusUseCase;
+import com.regivolley.api.application.usecase.MarkSubscriptionOverdueUseCase;
 import com.regivolley.api.application.usecase.MyPlanUseCase;
 import com.regivolley.api.application.usecase.RecordPaymentUseCase;
 import com.regivolley.api.application.usecase.RegisterAssociationUseCase;
-import com.regivolley.api.application.usecase.RevokeRoleUseCase;
 import com.regivolley.api.application.usecase.ReversePaymentUseCase;
+import com.regivolley.api.application.usecase.RevokeRoleUseCase;
 import com.regivolley.api.application.usecase.SubmitJoinRequestUseCase;
 import com.regivolley.api.domain.exception.BookingNotAllowedException;
 import com.regivolley.api.domain.exception.JoinRequestNotPossibleException;
@@ -53,6 +54,7 @@ import com.regivolley.api.domain.exception.PaymentExceedsOutstandingException;
 import com.regivolley.api.domain.exception.PaymentNotReversibleException;
 import com.regivolley.api.domain.exception.ShortNameAlreadyTakenException;
 import com.regivolley.api.domain.exception.VenueInUseException;
+import com.regivolley.api.domain.factory.SessionFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Payment;
@@ -60,9 +62,10 @@ import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.entity.Subscription;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
 import com.regivolley.api.domain.model.entity.Venue;
-import com.regivolley.api.domain.model.result.JoinRequestApproval;
 import com.regivolley.api.domain.model.valueobject.BookingRejectionReason;
 import com.regivolley.api.domain.model.valueobject.BookingStatus;
+import com.regivolley.api.domain.model.valueobject.MemberRole;
+import com.regivolley.api.domain.model.valueobject.MemberStatus;
 import com.regivolley.api.domain.model.valueobject.Money;
 import com.regivolley.api.domain.model.valueobject.PaymentMethod;
 import com.regivolley.api.domain.model.valueobject.PaymentStatus;
@@ -70,8 +73,6 @@ import com.regivolley.api.domain.model.valueobject.PlanTerms;
 import com.regivolley.api.domain.model.valueobject.ShortName;
 import com.regivolley.api.domain.model.valueobject.WeeklySchedule;
 import com.regivolley.api.domain.model.valueobject.WeeklySlot;
-import com.regivolley.api.domain.model.valueobject.MemberRole;
-import com.regivolley.api.domain.model.valueobject.MemberStatus;
 import com.regivolley.api.domain.port.Notifier;
 import com.regivolley.api.domain.repository.AssociationRepository;
 import com.regivolley.api.domain.repository.JoinRequestRepository;
@@ -240,7 +241,7 @@ class AdminFlowIntegrationTest extends AbstractPostgresIntegrationTest {
                 WeeklySchedule.of(new WeeklySlot(DayOfWeek.TUESDAY, LocalTime.of(20, 0), Duration.ofMinutes(90))),
                 12, coach.id()));
         var start = clock.instant().plus(Duration.ofDays(2)).truncatedTo(ChronoUnit.SECONDS);
-        Session session = sessions.save(Session.create(registered.associationId(), group.id(), coach.id(), start,
+        Session session = sessions.save(SessionFactory.create(registered.associationId(), group.id(), coach.id(), start,
                 start.plus(Duration.ofMinutes(90)), 12));
         Member player = joinedMember();
 
@@ -371,7 +372,7 @@ class AdminFlowIntegrationTest extends AbstractPostgresIntegrationTest {
                 Set.of(association().entryLevelId()), venue.id(),
                 WeeklySchedule.of(new WeeklySlot(DayOfWeek.MONDAY, LocalTime.of(20, 0), Duration.ofMinutes(90))), 12, coach.id()));
         var start = clock.instant().plus(Duration.ofDays(2)).truncatedTo(ChronoUnit.SECONDS);
-        Session session = sessions.save(Session.create(registered.associationId(), group.id(), coach.id(), start,
+        Session session = sessions.save(SessionFactory.create(registered.associationId(), group.id(), coach.id(), start,
                 start.plus(Duration.ofMinutes(90)), 12));
         Member player = joinedMember();
         Subscription assigned = assignedMonthly(player, 3000);

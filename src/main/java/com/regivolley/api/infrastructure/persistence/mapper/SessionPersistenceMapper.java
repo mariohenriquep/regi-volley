@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.factory.SessionFactory;
 import com.regivolley.api.domain.model.entity.Booking;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
@@ -33,13 +34,13 @@ public final class SessionPersistenceMapper {
     private SessionPersistenceMapper() {
     }
 
-    /** Rebuilds the aggregate, re-checking its invariants. The entity's bookings must be initialised. */
+    /** Rebuilds the aggregate through its factory, which re-checks its invariants. The entity's bookings must be initialised. */
     public static Session toDomain(SessionJpaEntity entity) {
         List<Booking> bookings = entity.getBookings().stream()
                 .sorted(ARRIVAL)
                 .map(SessionPersistenceMapper::toDomain)
                 .toList();
-        return Session.reconstruct(
+        return SessionFactory.reconstitute(
                 new SessionId(entity.getId()),
                 new AssociationId(entity.getAssociationId()),
                 new TrainingGroupId(entity.getTrainingGroupId()),
@@ -54,7 +55,7 @@ public final class SessionPersistenceMapper {
     }
 
     private static Booking toDomain(BookingJpaEntity entity) {
-        return Booking.reconstruct(
+        return SessionFactory.reconstituteBooking(
                 new BookingId(entity.getId()),
                 new AssociationId(entity.getAssociationId()),
                 new SessionId(entity.getSession().getId()),

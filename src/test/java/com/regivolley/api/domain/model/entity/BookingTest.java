@@ -2,6 +2,7 @@ package com.regivolley.api.domain.model.entity;
 
 import com.regivolley.api.domain.exception.InvalidBookingException;
 import com.regivolley.api.domain.exception.InvalidBookingStatusTransitionException;
+import com.regivolley.api.domain.factory.SessionFactory;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.BookingId;
 import com.regivolley.api.domain.model.valueobject.BookingStatus;
@@ -34,12 +35,20 @@ class BookingTest {
     private static Booking bookingIn(BookingStatus status) {
         CancellationKind kind = status == BookingStatus.CANCELLED ? CancellationKind.FREE : null;
         Instant confirmedAt = status == BookingStatus.WAITLISTED || status == BookingStatus.CANCELLED ? null : CONFIRMED_AT;
-        return Booking.reconstruct(BookingId.generate(), ASSOCIATION, SESSION, MEMBER, status, REQUESTED_AT,
+        return SessionFactory.reconstituteBooking(BookingId.generate(), ASSOCIATION, SESSION, MEMBER, status, REQUESTED_AT,
                 confirmedAt, kind);
     }
 
+    /** A booking as {@code Session.book} makes it: CONFIRMED is confirmed at the request instant, WAITLISTED never was. */
+    private static Booking bookingOf(AssociationId association, SessionId session, MemberId member, BookingStatus status,
+                                     Instant requestedAt) {
+        Instant confirmedAt = status == BookingStatus.CONFIRMED ? requestedAt : null;
+        return SessionFactory.reconstituteBooking(BookingId.generate(), association, session, member, status, requestedAt,
+                confirmedAt, null);
+    }
+
     private static Booking reconstruct(BookingStatus status, Instant confirmedAt, CancellationKind kind) {
-        return Booking.reconstruct(BookingId.generate(), ASSOCIATION, SESSION, MEMBER, status, REQUESTED_AT,
+        return SessionFactory.reconstituteBooking(BookingId.generate(), ASSOCIATION, SESSION, MEMBER, status, REQUESTED_AT,
                 confirmedAt, kind);
     }
 
@@ -63,7 +72,7 @@ class BookingTest {
             // (initial status provided by the parameter)
 
             // Act
-            Booking booking = Booking.create(ASSOCIATION, SESSION, MEMBER, initial, REQUESTED_AT);
+            Booking booking = bookingOf(ASSOCIATION, SESSION, MEMBER, initial, REQUESTED_AT);
 
             // Assert
             assertThat(booking.id()).isNotNull();
@@ -82,7 +91,7 @@ class BookingTest {
             // (no input)
 
             // Act
-            Booking booking = Booking.create(ASSOCIATION, SESSION, MEMBER, BookingStatus.CONFIRMED, REQUESTED_AT);
+            Booking booking = bookingOf(ASSOCIATION, SESSION, MEMBER, BookingStatus.CONFIRMED, REQUESTED_AT);
 
             // Assert
             assertThat(booking.confirmedAt()).contains(REQUESTED_AT);
@@ -95,7 +104,7 @@ class BookingTest {
             // (no input)
 
             // Act
-            Booking booking = Booking.create(ASSOCIATION, SESSION, MEMBER, BookingStatus.WAITLISTED, REQUESTED_AT);
+            Booking booking = bookingOf(ASSOCIATION, SESSION, MEMBER, BookingStatus.WAITLISTED, REQUESTED_AT);
 
             // Assert
             assertThat(booking.confirmedAt()).isEmpty();
@@ -128,23 +137,10 @@ class BookingTest {
             );
         }
 
-        @ParameterizedTest
-        @EnumSource(value = BookingStatus.class, names = {"ATTENDED", "NO_SHOW", "CANCELLED"})
-        void rejectsANonInitialStatus(BookingStatus initial) {
-            // Arrange
-            Executable act = () -> Booking.create(ASSOCIATION, SESSION, MEMBER, initial, REQUESTED_AT);
-
-            // Act
-            InvalidBookingException ex = assertThrows(InvalidBookingException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains(initial.name());
-        }
-
         @Test
         void rejectsCancelledWithoutCancellationKind() {
             // Arrange
-            Executable act = () -> Booking.reconstruct(BookingId.generate(), ASSOCIATION, SESSION, MEMBER,
+            Executable act = () -> SessionFactory.reconstituteBooking(BookingId.generate(), ASSOCIATION, SESSION, MEMBER,
                     BookingStatus.CANCELLED, REQUESTED_AT, null, null);
 
             // Act
@@ -157,7 +153,7 @@ class BookingTest {
         @Test
         void rejectsCancellationKindOnANonCancelledBooking() {
             // Arrange
-            Executable act = () -> Booking.reconstruct(BookingId.generate(), ASSOCIATION, SESSION, MEMBER,
+            Executable act = () -> SessionFactory.reconstituteBooking(BookingId.generate(), ASSOCIATION, SESSION, MEMBER,
                     BookingStatus.CONFIRMED, REQUESTED_AT, CONFIRMED_AT, CancellationKind.FREE);
 
             // Act
@@ -170,7 +166,7 @@ class BookingTest {
         @Test
         void rejectsNullRequiredFields() {
             // Arrange
-            Executable act = () -> Booking.reconstruct(null, ASSOCIATION, SESSION, MEMBER,
+            Executable act = () -> SessionFactory.reconstituteBooking(null, ASSOCIATION, SESSION, MEMBER,
                     BookingStatus.CONFIRMED, REQUESTED_AT, CONFIRMED_AT, null);
 
             // Act

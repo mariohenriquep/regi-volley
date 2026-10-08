@@ -1,6 +1,12 @@
 package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.Actor;
+import com.regivolley.api.domain.factory.AssociationFactory;
+import com.regivolley.api.domain.factory.MemberFactory;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SessionFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
+import com.regivolley.api.domain.factory.TrainingGroupFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Booking;
 import com.regivolley.api.domain.model.entity.Member;
@@ -48,7 +54,7 @@ final class Data {
     }
 
     static Association association() {
-        return Association.create("Club", "club-" + UUID.randomUUID().toString().substring(0, 8), null, "Lisbon",
+        return AssociationFactory.create("Club", "club-" + UUID.randomUUID().toString().substring(0, 8), null, "Lisbon",
                 "info@club.example", List.of("Beginner", "Intermediate", "Advanced"));
     }
 
@@ -59,7 +65,7 @@ final class Data {
     /** An active member of the association at the entry level (Beginner) holding the given roles (MEMBER if none). */
     static Member member(Association association, MemberRole... roles) {
         Set<MemberRole> held = roles.length == 0 ? Set.of(MemberRole.MEMBER) : Set.of(roles);
-        return Member.create(association, ContactDetails.of("Person " + UUID.randomUUID().toString().substring(0, 6),
+        return MemberFactory.create(association, ContactDetails.of("Person " + UUID.randomUUID().toString().substring(0, 6),
                         EmailAddress.of(UUID.randomUUID().toString().substring(0, 8) + "@example.com"),
                         PhoneNumber.of("912345678")),
                 GdprConsent.record(true, "2026-01", NOW), held, CLOCK);
@@ -83,13 +89,13 @@ final class Data {
 
     static TrainingGroup group(Association association, Member coach, String... levelNames) {
         Set<LevelId> accepted = Stream.of(levelNames).map(name -> level(association, name)).collect(Collectors.toSet());
-        return TrainingGroup.create(association.id(), "Group", accepted, VenueId.generate(),
+        return TrainingGroupFactory.create(association.id(), "Group", accepted, VenueId.generate(),
                 WeeklySchedule.of(new WeeklySlot(DayOfWeek.WEDNESDAY, LocalTime.of(20, 0), Duration.ofMinutes(90))),
                 12, coach.id());
     }
 
     static Session session(TrainingGroup group, Instant start, int capacity) {
-        return Session.create(group.associationId(), group.id(), group.coachId(), start,
+        return SessionFactory.create(group.associationId(), group.id(), group.coachId(), start,
                 start.plus(Duration.ofMinutes(90)), capacity);
     }
 
@@ -112,19 +118,19 @@ final class Data {
 
     /** A paid, unlimited monthly subscription covering the whole of October 2026. */
     static Subscription unlimited(Association association, Member member) {
-        Plan plan = Plan.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
-        return Subscription.create(plan, member.id(), LocalDate.parse("2026-10-01"), List.of()).markPaid();
+        Plan plan = PlanFactory.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
+        return SubscriptionFactory.create(plan, member.id(), LocalDate.parse("2026-10-01"), List.of()).markPaid();
     }
 
     static Subscription pack(Association association, Member member, int credits) {
-        Plan plan = Plan.create(association.id(), "Pack", PlanTerms.pack(credits, Set.of()), Money.ofCents(4500), 90);
-        return Subscription.create(plan, member.id(), LocalDate.parse("2026-10-01"), List.of()).markPaid();
+        Plan plan = PlanFactory.create(association.id(), "Pack", PlanTerms.pack(credits, Set.of()), Money.ofCents(4500), 90);
+        return SubscriptionFactory.create(plan, member.id(), LocalDate.parse("2026-10-01"), List.of()).markPaid();
     }
 
     /** A pack that only gives access to the listed levels (RN-14). */
     static Subscription packFor(Association association, Member member, int credits, LevelId... allowed) {
-        Plan plan = Plan.create(association.id(), "Pack", PlanTerms.pack(credits, Set.of(allowed)), Money.ofCents(4500), 90);
-        return Subscription.create(plan, member.id(), LocalDate.parse("2026-10-01"), List.of()).markPaid();
+        Plan plan = PlanFactory.create(association.id(), "Pack", PlanTerms.pack(credits, Set.of(allowed)), Money.ofCents(4500), 90);
+        return SubscriptionFactory.create(plan, member.id(), LocalDate.parse("2026-10-01"), List.of()).markPaid();
     }
 
     /** The subscription with its balance already spent on {@code booking} (as if it had been confirmed). */

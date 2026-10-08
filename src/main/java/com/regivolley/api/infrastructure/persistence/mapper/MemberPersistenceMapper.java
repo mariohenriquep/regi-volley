@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.factory.MemberFactory;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
@@ -26,7 +27,7 @@ public final class MemberPersistenceMapper {
     private MemberPersistenceMapper() {
     }
 
-    /** Rebuilds the aggregate, re-checking its invariants. */
+    /** Rebuilds the aggregate through its factory, which re-checks its invariants. */
     public static Member toDomain(MemberJpaEntity entity) {
         ContactDetails contact = ContactDetails.reconstruct(entity.getName(), new EmailAddress(entity.getEmail()),
                 entity.getPhone() == null ? null : new PhoneNumber(entity.getPhone()));
@@ -37,7 +38,7 @@ public final class MemberPersistenceMapper {
                 .map(row -> new LevelChange(new LevelId(row.getFromLevelId()), new LevelId(row.getToLevelId()),
                         new MemberId(row.getChangedBy()), row.getChangedAt()))
                 .toList();
-        return Member.reconstruct(
+        return MemberFactory.reconstitute(
                 new MemberId(entity.getId()),
                 new AssociationId(entity.getAssociationId()),
                 contact,

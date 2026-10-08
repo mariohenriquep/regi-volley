@@ -1,5 +1,14 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
+import com.regivolley.api.domain.factory.AssociationFactory;
+import com.regivolley.api.domain.factory.JoinRequestFactory;
+import com.regivolley.api.domain.factory.MemberFactory;
+import com.regivolley.api.domain.factory.PaymentFactory;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SessionFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
+import com.regivolley.api.domain.factory.TrainingGroupFactory;
+import com.regivolley.api.domain.factory.VenueFactory;
 import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
@@ -81,7 +90,7 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
         // Arrange
         twoAssociations();
         Session ofA = sessions.save(Fixtures.session(a.id(), SESSION_START, 12));
-        Session hijack = Session.reconstruct(ofA.id(), b.id(), ofA.trainingGroupId(), ofA.coachId(), ofA.startsAt(),
+        Session hijack = SessionFactory.reconstitute(ofA.id(), b.id(), ofA.trainingGroupId(), ofA.coachId(), ofA.startsAt(),
                 ofA.endsAt(), 1, SessionStatus.SCHEDULED, null, List.of(), 0L);
         Executable act = () -> sessions.save(hijack);
 
@@ -98,7 +107,7 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
         // Arrange
         twoAssociations();
         Member ofA = members.save(Fixtures.member(a, "Ana"));
-        Member hijack = Member.reconstruct(ofA.id(), b.id(), Fixtures.contact("Mallory"), ofA.consent(),
+        Member hijack = MemberFactory.reconstitute(ofA.id(), b.id(), Fixtures.contact("Mallory"), ofA.consent(),
                 MemberStatus.ACTIVE, b.entryLevelId(), Set.of(MemberRole.ADMIN),
                 List.of(), ofA.joinedAt(), null, 0L);
         Executable act = () -> members.save(hijack);
@@ -116,7 +125,7 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
         // Arrange
         twoAssociations();
         Plan ofA = plans.save(Fixtures.pack(a.id(), Set.of()));
-        Plan hijack = Plan.reconstruct(ofA.id(), b.id(), "Hijacked", ofA.terms(), ofA.price(), 90, 0L);
+        Plan hijack = PlanFactory.reconstitute(ofA.id(), b.id(), "Hijacked", ofA.terms(), ofA.price(), 90, 0L);
         Executable act = () -> plans.save(hijack);
 
         // Act
@@ -131,13 +140,13 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
     void aVenueOfAnotherAssociationIsNeitherOverwrittenNorDeleted() {
         // Arrange
         twoAssociations();
-        Venue ofA = venues.save(Venue.create(a.id(), "Pavilhao", "Rua A", 2));
-        Venue hijack = Venue.reconstruct(ofA.id(), b.id(), "Hijacked", "Rua B", 1, 0L);
+        Venue ofA = venues.save(VenueFactory.create(a.id(), "Pavilhao", "Rua A", 2));
+        Venue hijack = VenueFactory.reconstitute(ofA.id(), b.id(), "Hijacked", "Rua B", 1, 0L);
         Executable overwrite = () -> venues.save(hijack);
 
         // Act
         assertThrows(DataIntegrityViolationException.class, overwrite);
-        Executable delete = () -> venues.delete(Venue.reconstruct(ofA.id(), b.id(), "Pavilhao", "Rua A", 2, ofA.version()));
+        Executable delete = () -> venues.delete(VenueFactory.reconstitute(ofA.id(), b.id(), "Pavilhao", "Rua A", 2, ofA.version()));
         assertThrows(com.regivolley.api.domain.exception.VenueModifiedConcurrentlyException.class, delete);
 
         // Assert
@@ -150,7 +159,7 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
         // Arrange
         twoAssociations();
         Subscription ofA = subscriptions.save(Fixtures.subscription(Fixtures.pack(a.id(), Set.of()), MemberId.generate(), "2026-10-01"));
-        Payment hijack = Payment.reconstruct(com.regivolley.api.domain.model.valueobject.PaymentId.generate(), b.id(), ofA.id(),
+        Payment hijack = PaymentFactory.reconstitute(com.regivolley.api.domain.model.valueobject.PaymentId.generate(), b.id(), ofA.id(),
                 com.regivolley.api.domain.model.valueobject.Money.ofCents(100), java.time.LocalDate.parse("2026-10-10"),
                 com.regivolley.api.domain.model.valueobject.PaymentMethod.CASH, MemberId.generate(), Fixtures.NOW, null);
         Executable act = () -> payments.add(hijack);
@@ -168,7 +177,7 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
         // Arrange
         twoAssociations();
         TrainingGroup ofA = groups.save(Fixtures.group(a.id(), "Open play", Set.of(a.entryLevelId()), MemberId.generate()));
-        TrainingGroup hijack = TrainingGroup.reconstruct(ofA.id(), b.id(), "Hijacked", Set.of(b.entryLevelId()),
+        TrainingGroup hijack = TrainingGroupFactory.reconstitute(ofA.id(), b.id(), "Hijacked", Set.of(b.entryLevelId()),
                 ofA.venueId(), ofA.schedule(), 1, ofA.coachId(), TrainingGroupStatus.ACTIVE, 0L);
         Executable act = () -> groups.save(hijack);
 
@@ -186,7 +195,7 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
         twoAssociations();
         Subscription ofA = subscriptions.save(
                 Fixtures.subscription(Fixtures.pack(a.id(), Set.of()), MemberId.generate(), "2026-10-01"));
-        Subscription hijack = Subscription.reconstruct(ofA.id(), b.id(), ofA.memberId(), ofA.planId(), ofA.terms(), ofA.price(),
+        Subscription hijack = SubscriptionFactory.reconstitute(ofA.id(), b.id(), ofA.memberId(), ofA.planId(), ofA.terms(), ofA.price(),
                 ofA.startDate(), ofA.endDate(), PaymentStatus.PAID, List.of(), 0L);
         Executable act = () -> subscriptions.save(hijack);
 
@@ -203,7 +212,7 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
         // Arrange
         twoAssociations();
         JoinRequest ofA = joinRequests.save(Fixtures.joinRequest(a.id(), "Rita", Fixtures.NOW));
-        JoinRequest hijack = JoinRequest.reconstruct(ofA.id(), b.id(), Fixtures.contact("Mallory"), ofA.consent(),
+        JoinRequest hijack = JoinRequestFactory.reconstitute(ofA.id(), b.id(), Fixtures.contact("Mallory"), ofA.consent(),
                 JoinRequestStatus.PENDING, ofA.requestedAt(), null, null, null, null, 0L);
         Executable act = () -> joinRequests.save(hijack);
 
@@ -219,8 +228,8 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
     void anAssociationCannotTakeAnotherAssociationsLevelRow() {
         // Arrange
         twoAssociations();
-        Level stolen = Level.reconstruct(a.entryLevelId(), b.id(), "Stolen", 0);
-        Association hijack = Association.reconstruct(b.id(), b.name(), b.shortName(), null, b.locality(),
+        Level stolen = AssociationFactory.reconstituteLevel(a.entryLevelId(), b.id(), "Stolen", 0);
+        Association hijack = AssociationFactory.reconstitute(b.id(), b.name(), b.shortName(), null, b.locality(),
                 b.contactEmail(), b.bookingPolicy(), b.sessionGenerationPolicy(), NoShowPolicy.defaults(), List.of(stolen), stolen.id(),
                 b.version());
         Executable act = () -> associations.save(hijack);

@@ -1,6 +1,7 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
 import com.regivolley.api.domain.exception.VenueModifiedConcurrentlyException;
+import com.regivolley.api.domain.factory.VenueFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Venue;
 import com.regivolley.api.domain.repository.AssociationRepository;
@@ -46,7 +47,7 @@ class VenueRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     void aNewVenueComesBackWithAllItsFields() {
         // Arrange
         Association association = newAssociation();
-        Venue venue = Venue.create(association.id(), "Pavilhao Central", "Rua A 1, Lisboa", 2);
+        Venue venue = VenueFactory.create(association.id(), "Pavilhao Central", "Rua A 1, Lisboa", 2);
 
         // Act
         Venue loaded = saveAndReload(venue);
@@ -60,7 +61,7 @@ class VenueRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     void savingAgainUpdatesTheVenueInPlaceAndMovesTheVersionByOne() {
         // Arrange
         Association association = newAssociation();
-        Venue stored = venues.save(Venue.create(association.id(), "Old", "Old street", 1));
+        Venue stored = venues.save(VenueFactory.create(association.id(), "Old", "Old street", 1));
         flushAndClear();
         Venue edited = venues.findById(association.id(), stored.id()).orElseThrow().edit("New", "New street", 3);
 
@@ -80,7 +81,7 @@ class VenueRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     void aStaleCopyIsRejectedAndTheOtherEditIsNotLost() {
         // Arrange
         Association association = newAssociation();
-        Venue stored = venues.save(Venue.create(association.id(), "Venue", "Street", 1));
+        Venue stored = venues.save(VenueFactory.create(association.id(), "Venue", "Street", 1));
         flushAndClear();
         Venue copyA = venues.findById(association.id(), stored.id()).orElseThrow();
         Venue copyB = venues.findById(association.id(), stored.id()).orElseThrow();
@@ -101,9 +102,9 @@ class VenueRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association a = newAssociation();
         Association b = newAssociation();
-        Venue ofA = venues.save(Venue.create(a.id(), "Zeta", "Street", 1));
-        Venue ofA2 = venues.save(Venue.create(a.id(), "Alpha", "Street", 1));
-        Venue ofB = venues.save(Venue.create(b.id(), "Beta", "Street", 1));
+        Venue ofA = venues.save(VenueFactory.create(a.id(), "Zeta", "Street", 1));
+        Venue ofA2 = venues.save(VenueFactory.create(a.id(), "Alpha", "Street", 1));
+        Venue ofB = venues.save(VenueFactory.create(b.id(), "Beta", "Street", 1));
         flushAndClear();
 
         // Act
@@ -123,10 +124,10 @@ class VenueRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association a = newAssociation();
         Association b = newAssociation();
-        Venue stored = venues.save(Venue.create(a.id(), "Venue", "Street", 1));
+        Venue stored = venues.save(VenueFactory.create(a.id(), "Venue", "Street", 1));
         flushAndClear();
         Venue asLoaded = venues.findById(a.id(), stored.id()).orElseThrow();
-        Venue disguised = Venue.reconstruct(stored.id(), b.id(), "Venue", "Street", 1, asLoaded.version());
+        Venue disguised = VenueFactory.reconstitute(stored.id(), b.id(), "Venue", "Street", 1, asLoaded.version());
         Executable foreignDelete = () -> venues.delete(disguised);
 
         // Act
@@ -142,7 +143,7 @@ class VenueRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     void deletingWithAStaleCopyOrTwiceIsAConflict() {
         // Arrange
         Association association = newAssociation();
-        Venue stored = venues.save(Venue.create(association.id(), "Venue", "Street", 1));
+        Venue stored = venues.save(VenueFactory.create(association.id(), "Venue", "Street", 1));
         flushAndClear();
         Venue stale = venues.findById(association.id(), stored.id()).orElseThrow();
         venues.save(venues.findById(association.id(), stored.id()).orElseThrow().edit("Venue", "Other street", 1));

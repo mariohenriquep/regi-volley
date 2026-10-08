@@ -3,7 +3,6 @@ package com.regivolley.api.domain.model.entity;
 import com.regivolley.api.domain.exception.BookingNotAllowedException;
 import com.regivolley.api.domain.exception.InvalidPaymentStatusTransitionException;
 import com.regivolley.api.domain.exception.InvalidSubscriptionException;
-import com.regivolley.api.domain.exception.SubscriptionOverlapException;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.BookingId;
 import com.regivolley.api.domain.model.valueobject.BookingRejectionReason;
@@ -38,7 +37,8 @@ import java.util.stream.Collectors;
 /**
  * A member's plan over a period (RN-16, US-20, US-23): start and end dates (both inclusive), a
  * snapshot of the plan's terms, the payment status (RN-18) and the bookings that currently hold
- * a place in its balance (RN-15).
+ * a place in its balance (RN-15). It is assigned, renewed and reconstituted only by {@code SubscriptionFactory},
+ * which also owns the no-overlap rule (RN-16) and the price snapshot.
  *
  * <p>Immutable: every change returns a new instance. Everything is judged against the
  * <em>session's</em> Europe/Lisbon calendar date, never "today": validity, pack credits and the
@@ -69,76 +69,18 @@ public final class Subscription implements AggregateRoot {
     private final List<CreditUsage> usages;
     private final long version;
 
-    private Subscription(SubscriptionId id, AssociationId associationId, MemberId memberId, PlanId planId,
-                         PlanTerms terms, Money price, LocalDate startDate, LocalDate endDate,
-                         PaymentStatus paymentStatus, List<CreditUsage> usages, long version) {
-        this.id = id;
-        this.associationId = associationId;
-        this.memberId = memberId;
-        this.planId = planId;
-        this.terms = terms;
-        this.price = price;
-        this.startDate = startDate;
-        this.endDate = endDate;
-        this.paymentStatus = paymentStatus;
-        this.usages = usages;
-        this.version = version;
-    }
-
     /**
-     * Assigns {@code plan} to a member from {@code startDate}; the end follows from the plan
-     * (US-20). Starts PENDING until a payment is registered. Rejected if the period overlaps any
-     * <em>active</em> subscription the member already has (RN-16): a PACK or SINGLE_SESSION
-     * subscription with no credits left is not active (see {@link #isExhausted()}), so a new pack
-     * may start while the old one's period still runs. Other members' subscriptions in
-     * {@code existing} are ignored, but every one of them must belong to the plan's association
-     * (architecture.md section 8).
-     *
-     * @throws IllegalArgumentException if {@code existing} holds a subscription of another association
-     */
-    public static Subscription create(Plan plan, MemberId memberId, LocalDate startDate,
-                                      Collection<Subscription> existing) {
-        Objects.requireNonNull(plan, "plan must not be null");
-        Objects.requireNonNull(memberId, "memberId must not be null");
-        Objects.requireNonNull(startDate, "startDate must not be null");
-        Objects.requireNonNull(existing, "existing must not be null");
-        if (existing.stream().anyMatch(other -> !other.associationId.equals(plan.associationId()))) {
-            throw new IllegalArgumentException("Existing subscriptions must belong to the plan's association");
-        }
-        LocalDate endDate = plan.endDateFor(startDate);
-        existing.stream()
-                .filter(other -> other.memberId.equals(memberId))
-                .filter(other -> !other.isExhausted())
-                .filter(other -> other.overlaps(startDate, endDate))
-                .findFirst()
-                .ifPresent(other -> {
-                    throw new SubscriptionOverlapException(other.startDate, other.endDate);
-                });
-        return reconstruct(SubscriptionId.generate(), plan.associationId(), memberId, plan.id(), plan.terms(), plan.price(),
-                startDate, endDate, PaymentStatus.PENDING, List.of(), 0L);
-    }
-
-    /**
-     * Renews {@code previous} (RN-16). A monthly subscription is renewed the day after it ends; a
-     * pack or single session whose credits are used up is renewed at once, on {@code today} (see
-     * {@link #renewalStartDate(LocalDate)}).
-     */
-    public static Subscription renew(Plan plan, Subscription previous, Collection<Subscription> existing,
-                                     LocalDate today) {
-        Objects.requireNonNull(previous, "previous must not be null");
-        return create(plan, previous.memberId, previous.renewalStartDate(today), existing);
-    }
-
-    /**
-     * Rebuilds a subscription from persisted data, re-checking its invariants.
+     * Checks every invariant, so no subscription exists in an invalid state. Public because the only callers are
+     * {@code SubscriptionFactory} (new and renewed subscriptions, persisted ones) and this class; the architecture
+     * test pins that.
      *
      * @param version the optimistic-lock version it was loaded with (0 for a new subscription); every change
      *                carries it over unchanged, so a stale copy is detected when it is saved. It is what stops two
      *                concurrent bookings of one member from spending the same last credit (architecture.md section 10)
      */
-    public static Subscription reconstruct(SubscriptionId id, AssociationId associationId, MemberId memberId,
-                                           PlanId planId, PlanTerms terms, Money price, LocalDate startDate,
-                                           LocalDate endDate, PaymentStatus paymentStatus, List<CreditUsage> usages, long version) {
+    public Subscription(SubscriptionId id, AssociationId associationId, MemberId memberId, PlanId planId,
+                        PlanTerms terms, Money price, LocalDate startDate, LocalDate endDate,
+                        PaymentStatus paymentStatus, List<CreditUsage> usages, long version) {
         Objects.requireNonNull(terms, "terms must not be null");
         Objects.requireNonNull(price, "price must not be null");
         Objects.requireNonNull(startDate, "startDate must not be null");
@@ -152,13 +94,17 @@ public final class Subscription implements AggregateRoot {
             throw new InvalidSubscriptionException("The version must not be negative");
         }
         requireConsistentUsages(terms, startDate, endDate, usages);
-        return new Subscription(
-                Objects.requireNonNull(id, "id must not be null"),
-                Objects.requireNonNull(associationId, "associationId must not be null"),
-                Objects.requireNonNull(memberId, "memberId must not be null"),
-                Objects.requireNonNull(planId, "planId must not be null"),
-                terms, price, startDate, endDate, paymentStatus, List.copyOf(usages), version
-        );
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.associationId = Objects.requireNonNull(associationId, "associationId must not be null");
+        this.memberId = Objects.requireNonNull(memberId, "memberId must not be null");
+        this.planId = Objects.requireNonNull(planId, "planId must not be null");
+        this.terms = terms;
+        this.price = price;
+        this.startDate = startDate;
+        this.endDate = endDate;
+        this.paymentStatus = paymentStatus;
+        this.usages = List.copyOf(usages);
+        this.version = version;
     }
 
     private static void requireConsistentUsages(PlanTerms terms, LocalDate startDate, LocalDate endDate,

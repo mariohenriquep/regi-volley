@@ -3,6 +3,7 @@ package com.regivolley.api.application.usecase;
 import com.regivolley.api.application.command.CreateTrainingGroupCommand;
 import com.regivolley.api.application.port.TransactionRunner;
 import com.regivolley.api.domain.exception.VenueNotFoundException;
+import com.regivolley.api.domain.factory.TrainingGroupFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
@@ -49,7 +50,7 @@ public class CreateTrainingGroupService implements CreateTrainingGroupUseCase {
             association.requireLevels(command.acceptedLevels());
             Lookups.coach(members, associationId, command.coachId());
 
-            return groups.save(TrainingGroup.create(associationId, command.name(), command.acceptedLevels(),
+            return groups.save(TrainingGroupFactory.create(associationId, command.name(), command.acceptedLevels(),
                     command.venueId(), command.schedule(), command.capacity(), command.coachId()));
         });
     }

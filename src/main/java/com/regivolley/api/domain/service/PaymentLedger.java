@@ -2,6 +2,7 @@ package com.regivolley.api.domain.service;
 
 import com.regivolley.api.domain.exception.PaymentExceedsOutstandingException;
 import com.regivolley.api.domain.exception.PaymentNotReversibleException;
+import com.regivolley.api.domain.factory.PaymentFactory;
 import com.regivolley.api.domain.model.entity.Payment;
 import com.regivolley.api.domain.model.entity.Subscription;
 import com.regivolley.api.domain.model.valueobject.MemberId;
@@ -27,7 +28,8 @@ import java.util.Set;
  *
  * <p><b>Partial payments</b> are allowed (a member may pay a pack in two instalments); an overpayment is not,
  * so the paid total never exceeds the price. The subscription is PAID exactly when nothing is due. Paid is
- * the sum of the payments minus the sum of their reversals.
+ * the sum of the payments minus the sum of their reversals. It decides; the payment it hands back is built by
+ * {@code PaymentFactory}.
  */
 public final class PaymentLedger {
 
@@ -80,7 +82,7 @@ public final class PaymentLedger {
         if (amount.cents() > outstanding().cents()) {
             throw new PaymentExceedsOutstandingException(outstanding());
         }
-        return Payment.record(subscription, amount, paidOn, method, recordedBy, clock);
+        return PaymentFactory.create(subscription, amount, paidOn, method, recordedBy, clock);
     }
 
     /**
@@ -101,7 +103,7 @@ public final class PaymentLedger {
         if (reversed.contains(paymentId)) {
             throw PaymentNotReversibleException.alreadyReversed();
         }
-        return payment.reverse(reversedBy, clock);
+        return PaymentFactory.createReversal(payment, reversedBy, clock);
     }
 
     /** The ledger with one more payment, the one just recorded or reversed. */

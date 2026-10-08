@@ -24,37 +24,27 @@ public final class Level implements Entity {
     private final String name;
     private final int rank;
 
-    private Level(LevelId id, AssociationId associationId, String name, int rank) {
-        this.id = id;
-        this.associationId = associationId;
-        this.name = name;
-        this.rank = rank;
-    }
-
-    /** New level, only created through {@link Association}. */
-    static Level create(AssociationId associationId, String name, int rank) {
-        return reconstruct(LevelId.generate(), associationId, name, rank);
-    }
-
-    /** Rebuilds a level from persisted data, re-checking its invariants. */
-    public static Level reconstruct(LevelId id, AssociationId associationId, String name, int rank) {
+    /**
+     * Checks every invariant, so no level exists in an invalid state. Public so that {@code AssociationFactory} can
+     * reconstitute one with its association; a level is created and changed only by its {@link Association}, and the
+     * architecture test lets nothing else construct one.
+     */
+    public Level(LevelId id, AssociationId associationId, String name, int rank) {
         if (rank < 0) {
             throw new InvalidAssociationException("A level rank must not be negative");
         }
-        return new Level(
-                Objects.requireNonNull(id, "id must not be null"),
-                Objects.requireNonNull(associationId, "associationId must not be null"),
-                FieldRules.requiredText("level name", name, MAX_NAME_LENGTH),
-                rank
-        );
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.associationId = Objects.requireNonNull(associationId, "associationId must not be null");
+        this.name = FieldRules.requiredText("level name", name, MAX_NAME_LENGTH);
+        this.rank = rank;
     }
 
     Level renamedTo(String newName) {
-        return reconstruct(id, associationId, newName, rank);
+        return new Level(id, associationId, newName, rank);
     }
 
     Level withRank(int newRank) {
-        return reconstruct(id, associationId, name, newRank);
+        return new Level(id, associationId, name, newRank);
     }
 
     /** The minimal view booking eligibility needs (RN-14, RN-21). */

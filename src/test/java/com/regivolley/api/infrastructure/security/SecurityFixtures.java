@@ -1,5 +1,7 @@
 package com.regivolley.api.infrastructure.security;
 
+import com.regivolley.api.domain.factory.AssociationFactory;
+import com.regivolley.api.domain.factory.MemberFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
@@ -24,11 +26,11 @@ final class SecurityFixtures {
     }
 
     static Association association() {
-        return Association.create("Club", "club-sec", null, "Lisbon", "info@club.example", List.of("Beginner"));
+        return AssociationFactory.create("Club", "club-sec", null, "Lisbon", "info@club.example", List.of("Beginner"));
     }
 
     static Member active(Association association) {
-        return Member.create(association,
+        return MemberFactory.create(association,
                 ContactDetails.of("Ana Silva", EmailAddress.of("ana.silva@example.com"), PhoneNumber.of("912345678")),
                 GdprConsent.record(true, "2026-01", NOW), Set.of(MemberRole.MEMBER), CLOCK);
     }

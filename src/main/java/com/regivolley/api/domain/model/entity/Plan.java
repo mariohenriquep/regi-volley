@@ -20,7 +20,7 @@ import java.util.Set;
  *
  * <p>Validity: monthly plans last one calendar month from the start date; PACK and SINGLE_SESSION
  * plans last {@code validityDays} days (the start day counts as the first). See
- * {@link #endDateFor(LocalDate)}.
+ * {@link #endDateFor(LocalDate)}. A plan is created and reconstituted only by {@code PlanFactory}.
  */
 public final class Plan implements AggregateRoot {
 
@@ -32,33 +32,16 @@ public final class Plan implements AggregateRoot {
     private final Integer validityDays;
     private final long version;
 
-    private Plan(PlanId id, AssociationId associationId, String name, PlanTerms terms, Money price,
-                 Integer validityDays, long version) {
-        this.id = id;
-        this.associationId = associationId;
-        this.name = name;
-        this.terms = terms;
-        this.price = price;
-        this.validityDays = validityDays;
-        this.version = version;
-    }
-
     /**
-     * @param validityDays required (at least 1) for PACK and SINGLE_SESSION, absent for monthly plans
-     */
-    public static Plan create(AssociationId associationId, String name, PlanTerms terms, Money price,
-                              Integer validityDays) {
-        return reconstruct(PlanId.generate(), associationId, name, terms, price, validityDays, 0L);
-    }
-
-    /**
-     * Rebuilds a plan from persisted data, re-checking its invariants.
+     * Checks every invariant, so no plan exists in an invalid state. Public because the only callers are
+     * {@code PlanFactory} (new plans and persisted ones) and this class; the architecture test pins that.
      *
-     * @param version the optimistic-lock version it was loaded with (0 for a new plan); a stale copy is
-     *                detected when it is saved (architecture.md section 10)
+     * @param validityDays required (at least 1) for PACK and SINGLE_SESSION, absent for monthly plans
+     * @param version      the optimistic-lock version it was loaded with (0 for a new plan); a stale copy is
+     *                     detected when it is saved (architecture.md section 10)
      */
-    public static Plan reconstruct(PlanId id, AssociationId associationId, String name, PlanTerms terms,
-                                   Money price, Integer validityDays, long version) {
+    public Plan(PlanId id, AssociationId associationId, String name, PlanTerms terms, Money price,
+                Integer validityDays, long version) {
         Objects.requireNonNull(terms, "terms must not be null");
         if (version < 0) {
             throw new InvalidPlanException("The version must not be negative");
@@ -73,13 +56,13 @@ public final class Plan implements AggregateRoot {
         if (!needsValidity && validityDays != null) {
             throw new InvalidPlanException("A " + terms.type() + " plan has no validityDays: it lasts one month");
         }
-        return new Plan(
-                Objects.requireNonNull(id, "id must not be null"),
-                Objects.requireNonNull(associationId, "associationId must not be null"),
-                name.trim(), terms,
-                Objects.requireNonNull(price, "price must not be null"),
-                validityDays, version
-        );
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.associationId = Objects.requireNonNull(associationId, "associationId must not be null");
+        this.name = name.trim();
+        this.terms = terms;
+        this.price = Objects.requireNonNull(price, "price must not be null");
+        this.validityDays = validityDays;
+        this.version = version;
     }
 
     /**
@@ -87,7 +70,7 @@ public final class Plan implements AggregateRoot {
      * the version stay. Subscriptions already sold keep the terms they snapshotted.
      */
     public Plan edit(String newName, PlanTerms newTerms, Money newPrice, Integer newValidityDays) {
-        return reconstruct(id, associationId, newName, newTerms, newPrice, newValidityDays, version);
+        return new Plan(id, associationId, newName, newTerms, newPrice, newValidityDays, version);
     }
 
     /**

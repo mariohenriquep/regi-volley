@@ -12,6 +12,7 @@ import com.regivolley.api.domain.exception.TrainingGroupArchivedException;
 import com.regivolley.api.domain.exception.TrainingGroupModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.TrainingGroupNotFoundException;
 import com.regivolley.api.domain.exception.VenueNotFoundException;
+import com.regivolley.api.domain.factory.VenueFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
@@ -81,7 +82,7 @@ class TrainingGroupServicesTest {
         association = Data.association();
         admin = Data.admin(association);
         coach = Data.coach(association);
-        venue = Venue.create(association.id(), "Pavilhao", "Rua A", 2);
+        venue = VenueFactory.create(association.id(), "Pavilhao", "Rua A", 2);
         group = Data.group(association, coach, "Beginner");
         create = new CreateTrainingGroupService(members, associations, venues, groups, transactions);
         edit = new EditTrainingGroupService(members, associations, groups, transactions);

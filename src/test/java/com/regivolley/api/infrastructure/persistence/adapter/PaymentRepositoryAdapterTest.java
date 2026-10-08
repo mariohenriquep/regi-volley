@@ -2,6 +2,7 @@ package com.regivolley.api.infrastructure.persistence.adapter;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import com.regivolley.api.domain.exception.PaymentModifiedConcurrentlyException;
+import com.regivolley.api.domain.factory.PaymentFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Payment;
 import com.regivolley.api.domain.model.entity.Subscription;
@@ -53,7 +54,7 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     }
 
     private Payment pay(Subscription subscription, long cents) {
-        return Payment.record(subscription, Money.ofCents(cents), PAID_ON, PaymentMethod.MB_WAY, ADMIN, CLOCK);
+        return PaymentFactory.create(subscription, Money.ofCents(cents), PAID_ON, PaymentMethod.MB_WAY, ADMIN, CLOCK);
     }
 
     private void flushAndClear() {
@@ -67,7 +68,7 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         Association association = newAssociation();
         Subscription subscription = newSubscription(association);
         Payment payment = pay(subscription, 4500);
-        Payment reversal = payment.reverse(MemberId.generate(), Fixtures.at(Fixtures.NOW.plusSeconds(60)));
+        Payment reversal = PaymentFactory.createReversal(payment, MemberId.generate(), Fixtures.at(Fixtures.NOW.plusSeconds(60)));
 
         // Act
         payments.add(payment);
@@ -90,7 +91,7 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         Association association = newAssociation();
         Subscription subscription = newSubscription(association);
         Subscription another = newSubscription(association);
-        Payment second = Payment.reconstruct(PaymentId.generate(), association.id(),
+        Payment second = PaymentFactory.reconstitute(PaymentId.generate(), association.id(),
                 subscription.id(), Money.ofCents(200), PAID_ON, PaymentMethod.CASH, ADMIN, Fixtures.NOW.plusSeconds(10), null);
         Payment first = pay(subscription, 100);
         payments.add(second);
@@ -172,7 +173,7 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         Association association = newAssociation();
         Payment payment = payments.add(pay(newSubscription(association), 4500));
         flushAndClear();
-        Payment sameIdOtherAmount = Payment.reconstruct(payment.id(), association.id(), payment.subscriptionId(),
+        Payment sameIdOtherAmount = PaymentFactory.reconstitute(payment.id(), association.id(), payment.subscriptionId(),
                 Money.ofCents(1), PAID_ON, PaymentMethod.CASH, ADMIN, Fixtures.NOW, null);
         Executable act = () -> payments.add(sameIdOtherAmount);
 
@@ -188,9 +189,9 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association association = newAssociation();
         Payment payment = payments.add(pay(newSubscription(association), 4500));
-        payments.add(payment.reverse(ADMIN, CLOCK));
+        payments.add(PaymentFactory.createReversal(payment, ADMIN, CLOCK));
         flushAndClear();
-        Executable act = () -> payments.add(payment.reverse(ADMIN, CLOCK));
+        Executable act = () -> payments.add(PaymentFactory.createReversal(payment, ADMIN, CLOCK));
 
         // Act
         PaymentModifiedConcurrentlyException ex = assertThrows(PaymentModifiedConcurrentlyException.class, act);
@@ -206,7 +207,7 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         Subscription subscription = newSubscription(association);
         Payment foreignPayment = payments.add(pay(newSubscription(association), 100));
         flushAndClear();
-        Executable act = () -> payments.add(Payment.reconstruct(PaymentId.generate(), association.id(), subscription.id(),
+        Executable act = () -> payments.add(PaymentFactory.reconstitute(PaymentId.generate(), association.id(), subscription.id(),
                 Money.ofCents(100), PAID_ON, PaymentMethod.CASH, ADMIN, Fixtures.NOW, foreignPayment.id()));
 
         // Act
@@ -220,7 +221,7 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     void aViolationUnrelatedToConcurrencyIsNotDisguisedAsAConflict() {
         // Arrange
         Association association = newAssociation();
-        Payment orphan = Payment.reconstruct(PaymentId.generate(), association.id(),
+        Payment orphan = PaymentFactory.reconstitute(PaymentId.generate(), association.id(),
                 com.regivolley.api.domain.model.valueobject.SubscriptionId.generate(), Money.ofCents(100), PAID_ON,
                 PaymentMethod.CASH, ADMIN, Fixtures.NOW, null);
         Executable act = () -> payments.add(orphan);
@@ -237,7 +238,7 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association association = newAssociation();
         Payment payment = payments.add(pay(newSubscription(association), 4500));
-        Payment reversal = payments.add(payment.reverse(ADMIN, CLOCK));
+        Payment reversal = payments.add(PaymentFactory.createReversal(payment, ADMIN, CLOCK));
         flushAndClear();
         Executable insert = () -> jdbc.update("""
                 insert into payments (id, association_id, subscription_id, amount_cents, paid_on, method, recorded_by, recorded_at, reversal_of)

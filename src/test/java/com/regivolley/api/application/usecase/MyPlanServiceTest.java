@@ -4,6 +4,8 @@ import com.regivolley.api.application.command.MyPlanQuery;
 import com.regivolley.api.application.result.MyPlan;
 import com.regivolley.api.application.result.MySubscription;
 import com.regivolley.api.domain.exception.MemberNotFoundException;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Plan;
@@ -66,7 +68,7 @@ class MyPlanServiceTest {
     }
 
     private Plan plan(String name, PlanTerms terms, Integer validityDays) {
-        Plan plan = Plan.create(association.id(), name, terms, Money.ofCents(3000), validityDays);
+        Plan plan = PlanFactory.create(association.id(), name, terms, Money.ofCents(3000), validityDays);
         knownPlans.add(plan);
         return plan;
     }
@@ -81,7 +83,7 @@ class MyPlanServiceTest {
         Plan pack = plan("Pack of 10", PlanTerms.pack(10, Set.of()), 90);
         Session session = Data.session(Data.group(association, Data.coach(association), "Beginner"), 5);
         Session booked = Data.booked(session, member);
-        Subscription subscription = Data.charged(Subscription.create(pack, member.id(), LocalDate.parse("2026-10-01"), List.of()),
+        Subscription subscription = Data.charged(SubscriptionFactory.create(pack, member.id(), LocalDate.parse("2026-10-01"), List.of()),
                 session, Data.bookingOf(booked, member));
         owns(subscription);
 
@@ -105,7 +107,7 @@ class MyPlanServiceTest {
     void anUnlimitedPlanHasNoRemainingCount() {
         // Arrange
         Plan monthly = plan("Monthly", PlanTerms.monthlyUnlimited(Set.of()), null);
-        owns(Subscription.create(monthly, member.id(), LocalDate.parse("2026-10-01"), List.of()).markPaid());
+        owns(SubscriptionFactory.create(monthly, member.id(), LocalDate.parse("2026-10-01"), List.of()).markPaid());
 
         // Act
         MyPlan result = useCase.execute(new MyPlanQuery(Data.actor(member)));
@@ -120,7 +122,7 @@ class MyPlanServiceTest {
     void aWeeklyPlanShowsWhatIsLeftThisWeek() {
         // Arrange
         Plan weekly = plan("Twice a week", PlanTerms.monthlyNPerWeek(2, Set.of()), null);
-        owns(Subscription.create(weekly, member.id(), LocalDate.parse("2026-10-01"), List.of()));
+        owns(SubscriptionFactory.create(weekly, member.id(), LocalDate.parse("2026-10-01"), List.of()));
 
         // Act
         MyPlan result = useCase.execute(new MyPlanQuery(Data.actor(member)));
@@ -133,9 +135,9 @@ class MyPlanServiceTest {
     void expiredSubscriptionsAreLeftOutAndFutureOnesShownInOrder() {
         // Arrange
         Plan monthly = plan("Monthly", PlanTerms.monthlyUnlimited(Set.of()), null);
-        Subscription expired = Subscription.create(monthly, member.id(), LocalDate.parse("2026-08-01"), List.of());
-        Subscription current = Subscription.create(monthly, member.id(), LocalDate.parse("2026-10-01"), List.of());
-        Subscription upcoming = Subscription.create(monthly, member.id(), LocalDate.parse("2026-11-01"), List.of());
+        Subscription expired = SubscriptionFactory.create(monthly, member.id(), LocalDate.parse("2026-08-01"), List.of());
+        Subscription current = SubscriptionFactory.create(monthly, member.id(), LocalDate.parse("2026-10-01"), List.of());
+        Subscription upcoming = SubscriptionFactory.create(monthly, member.id(), LocalDate.parse("2026-11-01"), List.of());
         owns(expired, current, upcoming);
 
         // Act
@@ -188,8 +190,8 @@ class MyPlanServiceTest {
         // Arrange
         Plan monthly = plan("Monthly", PlanTerms.monthlyUnlimited(Set.of()), null);
         Plan pack = plan("Pack", PlanTerms.pack(10, Set.of()), 90);
-        owns(Subscription.create(monthly, member.id(), LocalDate.parse("2026-10-01"), List.of()),
-                Subscription.create(pack, member.id(), LocalDate.parse("2026-11-01"), List.of()));
+        owns(SubscriptionFactory.create(monthly, member.id(), LocalDate.parse("2026-10-01"), List.of()),
+                SubscriptionFactory.create(pack, member.id(), LocalDate.parse("2026-11-01"), List.of()));
 
         // Act
         MyPlan result = useCase.execute(new MyPlanQuery(Data.actor(member)));
@@ -203,8 +205,8 @@ class MyPlanServiceTest {
     @Test
     void aSubscriptionWhosePlanCannotBeLoadedIsStillShownWithAPlaceholderName() {
         // Arrange
-        Plan vanished = Plan.create(association.id(), "Gone", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
-        owns(Subscription.create(vanished, member.id(), LocalDate.parse("2026-10-01"), List.of()));
+        Plan vanished = PlanFactory.create(association.id(), "Gone", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
+        owns(SubscriptionFactory.create(vanished, member.id(), LocalDate.parse("2026-10-01"), List.of()));
 
         // Act
         MyPlan result = useCase.execute(new MyPlanQuery(Data.actor(member)));

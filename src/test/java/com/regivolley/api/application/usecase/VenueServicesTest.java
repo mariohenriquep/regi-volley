@@ -10,6 +10,7 @@ import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.exception.VenueInUseException;
 import com.regivolley.api.domain.exception.VenueModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.VenueNotFoundException;
+import com.regivolley.api.domain.factory.VenueFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Venue;
@@ -62,7 +63,7 @@ class VenueServicesTest {
         association = Data.association();
         admin = Data.admin(association);
         coach = Data.coach(association);
-        venue = Venue.create(association.id(), "Pavilhao Central", "Rua A 1", 2);
+        venue = VenueFactory.create(association.id(), "Pavilhao Central", "Rua A 1", 2);
         create = new CreateVenueService(members, venues, transactions);
         edit = new EditVenueService(members, venues, transactions);
         delete = new DeleteVenueService(members, venues, groups, transactions);

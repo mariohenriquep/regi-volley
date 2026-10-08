@@ -2,7 +2,6 @@ package com.regivolley.api.domain.model.entity;
 
 import com.regivolley.api.domain.exception.InvalidJoinRequestException;
 import com.regivolley.api.domain.exception.InvalidJoinRequestStatusTransitionException;
-import com.regivolley.api.domain.model.result.JoinRequestApproval;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
@@ -10,7 +9,6 @@ import com.regivolley.api.domain.model.valueobject.GdprConsent;
 import com.regivolley.api.domain.model.valueobject.JoinRequestId;
 import com.regivolley.api.domain.model.valueobject.JoinRequestStatus;
 import com.regivolley.api.domain.model.valueobject.MemberId;
-import com.regivolley.api.domain.model.valueobject.MemberRole;
 import com.regivolley.api.domain.model.valueobject.PhoneNumber;
 import com.regivolley.api.domain.shared.AggregateRoot;
 import com.regivolley.api.domain.shared.FieldRules;
@@ -29,9 +27,9 @@ import java.util.Set;
  * an administrator decides: PENDING -> APPROVED | REJECTED, both final. Immutable: a decision
  * returns a new instance.
  *
- * <p>Approving creates the {@link Member} at the association's entry level (RN-20), returned with
- * the approved request in a {@link JoinRequestApproval}; sending the email is the use case's job.
- * Rejecting may carry a reason.
+ * <p>Approving only moves the request; the {@link Member} it becomes, at the association's entry level (RN-20), is created
+ * by {@code MemberFactory.fromApprovedJoinRequest}, and sending the email is the use case's job. Rejecting may carry a
+ * reason. A request is created and reconstituted only by {@code JoinRequestFactory}.
  *
  * <p><b>Anonymisation (RGPD erasure)</b> replaces the contact details with placeholders and keeps
  * the id, status, decision audit (who and when) and consent record. A request still PENDING is
@@ -65,50 +63,19 @@ public final class JoinRequest implements AggregateRoot {
     private final Instant anonymisedAt;
     private final long version;
 
-    private JoinRequest(JoinRequestId id, AssociationId associationId, ContactDetails contact, GdprConsent consent,
-                        JoinRequestStatus status, Instant requestedAt, Instant decidedAt, MemberId decidedBy,
-                        String rejectionReason, Instant anonymisedAt, long version) {
-        this.id = id;
-        this.associationId = associationId;
-        this.contact = contact;
-        this.consent = consent;
-        this.status = status;
-        this.requestedAt = requestedAt;
-        this.decidedAt = decidedAt;
-        this.decidedBy = decidedBy;
-        this.rejectionReason = rejectionReason;
-        this.anonymisedAt = anonymisedAt;
-        this.version = version;
-    }
-
     /**
-     * A new PENDING request. The consent is stamped now, by the server clock.
-     *
-     * @param consentAccepted whether the person ticked the RGPD consent
-     * @param policyVersion   the version of the privacy policy they were shown
-     * @throws com.regivolley.api.domain.exception.ConsentRequiredException if the consent was not accepted
-     */
-    public static JoinRequest create(AssociationId associationId, ContactDetails contact, boolean consentAccepted,
-                                     String policyVersion, Clock clock) {
-        Objects.requireNonNull(clock, "clock must not be null");
-        Instant now = clock.instant();
-        GdprConsent consent = GdprConsent.record(consentAccepted, policyVersion, now);
-        return reconstruct(JoinRequestId.generate(), associationId, contact, consent,
-                JoinRequestStatus.PENDING, now, null, null, null, null, 0L);
-    }
-
-    /**
-     * Rebuilds a request from persisted data, re-checking its invariants. A decider is required
-     * for every decision except the withdrawal of an erased request (REJECTED and anonymised).
+     * Checks every invariant, so no request exists in an invalid state. Public because the only callers are
+     * {@code JoinRequestFactory} (new requests and persisted ones) and this class; the architecture test pins that.
+     * A decider is required for every decision except the withdrawal of an erased request (REJECTED and anonymised).
      *
      * @param version the optimistic-lock version it was loaded with (0 for a new request); decisions and
      *                erasure carry it over, so approving and rejecting at once cannot both be stored
      *                (architecture.md section 10)
      */
-    public static JoinRequest reconstruct(JoinRequestId id, AssociationId associationId, ContactDetails contact,
-                                          GdprConsent consent, JoinRequestStatus status, Instant requestedAt,
-                                          Instant decidedAt, MemberId decidedBy, String rejectionReason,
-                                          Instant anonymisedAt, long version) {
+    public JoinRequest(JoinRequestId id, AssociationId associationId, ContactDetails contact,
+                       GdprConsent consent, JoinRequestStatus status, Instant requestedAt,
+                       Instant decidedAt, MemberId decidedBy, String rejectionReason,
+                       Instant anonymisedAt, long version) {
         Objects.requireNonNull(contact, "contact must not be null");
         Objects.requireNonNull(status, "status must not be null");
         Objects.requireNonNull(requestedAt, "requestedAt must not be null");
@@ -136,13 +103,17 @@ public final class JoinRequest implements AggregateRoot {
         if (anonymisedAt != null && anonymisedAt.isBefore(requestedAt)) {
             throw new InvalidJoinRequestException("A request cannot be anonymised before it was made");
         }
-        return new JoinRequest(
-                Objects.requireNonNull(id, "id must not be null"),
-                Objects.requireNonNull(associationId, "associationId must not be null"),
-                contact,
-                Objects.requireNonNull(consent, "consent must not be null"),
-                status, requestedAt, decidedAt, decidedBy, normaliseReason(rejectionReason), anonymisedAt, version
-        );
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.associationId = Objects.requireNonNull(associationId, "associationId must not be null");
+        this.contact = contact;
+        this.consent = Objects.requireNonNull(consent, "consent must not be null");
+        this.status = status;
+        this.requestedAt = requestedAt;
+        this.decidedAt = decidedAt;
+        this.decidedBy = decidedBy;
+        this.rejectionReason = normaliseReason(rejectionReason);
+        this.anonymisedAt = anonymisedAt;
+        this.version = version;
     }
 
     private static String normaliseReason(String reason) {
@@ -155,23 +126,17 @@ public final class JoinRequest implements AggregateRoot {
     }
 
     /**
-     * PENDING -> APPROVED (US-06): the person becomes an ACTIVE member with the MEMBER role, at
-     * the association's entry level (RN-20), carrying the consent they gave.
+     * PENDING -> APPROVED (US-06). Only the request changes here: the member it becomes (ACTIVE, role MEMBER, at the
+     * association's entry level, RN-20, carrying the consent given) is created by
+     * {@code MemberFactory.fromApprovedJoinRequest} from the approved request, so the instant of the decision is also
+     * the instant the member joined.
      *
      * @param decidedBy the administrator who approved; the caller has authorised them
-     * @throws IllegalArgumentException if {@code association} isn't the request's
      */
-    public JoinRequestApproval approve(Association association, MemberId decidedBy, Clock clock) {
-        Objects.requireNonNull(association, "association must not be null");
+    public JoinRequest approve(MemberId decidedBy, Clock clock) {
         Objects.requireNonNull(decidedBy, "decidedBy must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
-        if (!association.id().equals(associationId)) {
-            throw new IllegalArgumentException("The join request belongs to another association");
-        }
-        Clock decisionTime = Clock.fixed(clock.instant(), clock.getZone());
-        JoinRequest approved = decide(JoinRequestStatus.APPROVED, decidedBy, null, decisionTime);
-        Member member = Member.create(association, contact, consent, Set.of(MemberRole.MEMBER), decisionTime);
-        return new JoinRequestApproval(approved, member);
+        return decide(JoinRequestStatus.APPROVED, decidedBy, null, clock);
     }
 
     /**
@@ -189,7 +154,7 @@ public final class JoinRequest implements AggregateRoot {
         if (!ALLOWED_TRANSITIONS.get(status).contains(target)) {
             throw new InvalidJoinRequestStatusTransitionException(status, target);
         }
-        return reconstruct(id, associationId, contact, consent, target, requestedAt, clock.instant(),
+        return new JoinRequest(id, associationId, contact, consent, target, requestedAt, clock.instant(),
                 decider, reason, anonymisedAt, version);
     }
 
@@ -207,10 +172,10 @@ public final class JoinRequest implements AggregateRoot {
         Instant now = clock.instant();
         ContactDetails erased = ContactDetails.anonymisedFor(id.value());
         if (isPending()) {
-            return reconstruct(id, associationId, erased, consent, JoinRequestStatus.REJECTED, requestedAt, now,
+            return new JoinRequest(id, associationId, erased, consent, JoinRequestStatus.REJECTED, requestedAt, now,
                     null, WITHDRAWN_REASON, now, version);
         }
-        return reconstruct(id, associationId, erased, consent, status, requestedAt, decidedAt, decidedBy,
+        return new JoinRequest(id, associationId, erased, consent, status, requestedAt, decidedAt, decidedBy,
                 null, now, version);
     }
 
