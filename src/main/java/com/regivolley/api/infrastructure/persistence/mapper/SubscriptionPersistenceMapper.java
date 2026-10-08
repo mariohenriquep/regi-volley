@@ -6,6 +6,7 @@ import com.regivolley.api.domain.model.valueobject.BookingId;
 import com.regivolley.api.domain.model.valueobject.CreditUsage;
 import com.regivolley.api.domain.model.valueobject.LevelId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
+import com.regivolley.api.domain.model.valueobject.Money;
 import com.regivolley.api.domain.model.valueobject.PaymentStatus;
 import com.regivolley.api.domain.model.valueobject.PlanId;
 import com.regivolley.api.domain.model.valueobject.PlanTerms;
@@ -42,6 +43,7 @@ public final class SubscriptionPersistenceMapper {
                 new MemberId(entity.getMemberId()),
                 new PlanId(entity.getPlanId()),
                 terms,
+                Money.ofCents(entity.getPriceCents()),
                 entity.getStartDate(),
                 entity.getEndDate(),
                 PaymentStatus.valueOf(entity.getPaymentStatus()),
@@ -57,6 +59,7 @@ public final class SubscriptionPersistenceMapper {
         entity.setAssociationId(associationId);
         entity.setMemberId(subscription.memberId().value());
         entity.setPlanId(subscription.planId().value());
+        entity.setPriceCents(subscription.price().cents());
         entity.setPlanType(terms.type().name());
         entity.setSessionsPerWeek(terms.sessionsPerWeek());
         entity.setCredits(terms.credits());

@@ -802,4 +802,21 @@ class AssociationTest {
             assertThat(text).contains(level.id().toString());
         }
     }
+
+    @Test
+    void requireLevelsAcceptsTheAssociationsOwnLevelsAndNamesTheFirstForeignOne() {
+        // Arrange
+        Association association = association();
+        Set<LevelId> own = Set.of(idOf(association, "Beginner"), idOf(association, "Advanced"));
+        LevelId foreign = LevelId.generate();
+        Executable act = () -> association.requireLevels(Set.of(idOf(association, "Beginner"), foreign));
+
+        // Act
+        association.requireLevels(own);
+        association.requireLevels(Set.of());
+        LevelNotFoundException ex = assertThrows(LevelNotFoundException.class, act);
+
+        // Assert
+        assertThat(ex.levelId()).isEqualTo(foreign);
+    }
 }

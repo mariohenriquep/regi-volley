@@ -11,6 +11,8 @@ import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /** {@link PlanRepository} on Spring Data JPA. */
@@ -29,6 +31,16 @@ public class PlanRepositoryAdapter implements PlanRepository {
     @Transactional(readOnly = true)
     public Optional<Plan> findById(AssociationId associationId, PlanId id) {
         return plans.findByIdAndAssociationId(id.value(), associationId.value()).map(PlanPersistenceMapper::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Plan> findByIds(AssociationId associationId, Collection<PlanId> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return plans.findByAssociationIdAndIdIn(associationId.value(), ids.stream().map(PlanId::value).toList())
+                .stream().map(PlanPersistenceMapper::toDomain).toList();
     }
 
     @Override

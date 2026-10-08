@@ -41,6 +41,9 @@ public class SubscriptionJpaEntity {
     @Column(name = "plan_id", nullable = false)
     private UUID planId;
 
+    @Column(name = "price_cents", nullable = false)
+    private long priceCents;
+
     @Column(name = "plan_type", nullable = false)
     private String planType;
 
@@ -105,6 +108,14 @@ public class SubscriptionJpaEntity {
 
     public void setPlanId(UUID planId) {
         this.planId = planId;
+    }
+
+    public long getPriceCents() {
+        return priceCents;
+    }
+
+    public void setPriceCents(long priceCents) {
+        this.priceCents = priceCents;
     }
 
     public String getPlanType() {

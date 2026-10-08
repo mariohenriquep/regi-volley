@@ -10,6 +10,7 @@ import com.regivolley.api.domain.model.valueobject.BookingRejectionReason;
 import com.regivolley.api.domain.model.valueobject.CreditUsage;
 import com.regivolley.api.domain.model.valueobject.LevelId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
+import com.regivolley.api.domain.model.valueobject.Money;
 import com.regivolley.api.domain.model.valueobject.PaymentStatus;
 import com.regivolley.api.domain.model.valueobject.PlanId;
 import com.regivolley.api.domain.model.valueobject.PlanTerms;
@@ -53,7 +54,7 @@ public final class Subscription implements AggregateRoot {
     private static final Map<PaymentStatus, Set<PaymentStatus>> ALLOWED_TRANSITIONS = Map.of(
             PaymentStatus.PENDING, EnumSet.of(PaymentStatus.PAID, PaymentStatus.OVERDUE),
             PaymentStatus.OVERDUE, EnumSet.of(PaymentStatus.PAID),
-            PaymentStatus.PAID, EnumSet.noneOf(PaymentStatus.class)
+            PaymentStatus.PAID, EnumSet.of(PaymentStatus.PENDING)
     );
 
     private final SubscriptionId id;
@@ -61,6 +62,7 @@ public final class Subscription implements AggregateRoot {
     private final MemberId memberId;
     private final PlanId planId;
     private final PlanTerms terms;
+    private final Money price;
     private final LocalDate startDate;
     private final LocalDate endDate;
     private final PaymentStatus paymentStatus;
@@ -68,13 +70,14 @@ public final class Subscription implements AggregateRoot {
     private final long version;
 
     private Subscription(SubscriptionId id, AssociationId associationId, MemberId memberId, PlanId planId,
-                         PlanTerms terms, LocalDate startDate, LocalDate endDate, PaymentStatus paymentStatus,
-                         List<CreditUsage> usages, long version) {
+                         PlanTerms terms, Money price, LocalDate startDate, LocalDate endDate,
+                         PaymentStatus paymentStatus, List<CreditUsage> usages, long version) {
         this.id = id;
         this.associationId = associationId;
         this.memberId = memberId;
         this.planId = planId;
         this.terms = terms;
+        this.price = price;
         this.startDate = startDate;
         this.endDate = endDate;
         this.paymentStatus = paymentStatus;
@@ -111,7 +114,7 @@ public final class Subscription implements AggregateRoot {
                 .ifPresent(other -> {
                     throw new SubscriptionOverlapException(other.startDate, other.endDate);
                 });
-        return reconstruct(SubscriptionId.generate(), plan.associationId(), memberId, plan.id(), plan.terms(),
+        return reconstruct(SubscriptionId.generate(), plan.associationId(), memberId, plan.id(), plan.terms(), plan.price(),
                 startDate, endDate, PaymentStatus.PENDING, List.of(), 0L);
     }
 
@@ -134,9 +137,10 @@ public final class Subscription implements AggregateRoot {
      *                concurrent bookings of one member from spending the same last credit (architecture.md section 10)
      */
     public static Subscription reconstruct(SubscriptionId id, AssociationId associationId, MemberId memberId,
-                                           PlanId planId, PlanTerms terms, LocalDate startDate, LocalDate endDate,
-                                           PaymentStatus paymentStatus, List<CreditUsage> usages, long version) {
+                                           PlanId planId, PlanTerms terms, Money price, LocalDate startDate,
+                                           LocalDate endDate, PaymentStatus paymentStatus, List<CreditUsage> usages, long version) {
         Objects.requireNonNull(terms, "terms must not be null");
+        Objects.requireNonNull(price, "price must not be null");
         Objects.requireNonNull(startDate, "startDate must not be null");
         Objects.requireNonNull(endDate, "endDate must not be null");
         Objects.requireNonNull(paymentStatus, "paymentStatus must not be null");
@@ -153,7 +157,7 @@ public final class Subscription implements AggregateRoot {
                 Objects.requireNonNull(associationId, "associationId must not be null"),
                 Objects.requireNonNull(memberId, "memberId must not be null"),
                 Objects.requireNonNull(planId, "planId must not be null"),
-                terms, startDate, endDate, paymentStatus, List.copyOf(usages), version
+                terms, price, startDate, endDate, paymentStatus, List.copyOf(usages), version
         );
     }
 
@@ -190,11 +194,19 @@ public final class Subscription implements AggregateRoot {
         return transitionTo(PaymentStatus.OVERDUE);
     }
 
+    /**
+     * PAID -> PENDING: a payment was reversed and money is due again (RN-19). A paid subscription never goes
+     * back any other way, and never to OVERDUE directly: lateness is judged separately.
+     */
+    public Subscription reopenPayment() {
+        return transitionTo(PaymentStatus.PENDING);
+    }
+
     private Subscription transitionTo(PaymentStatus target) {
         if (!ALLOWED_TRANSITIONS.get(paymentStatus).contains(target)) {
             throw new InvalidPaymentStatusTransitionException(paymentStatus, target);
         }
-        return new Subscription(id, associationId, memberId, planId, terms, startDate, endDate, target, usages, version);
+        return new Subscription(id, associationId, memberId, planId, terms, price, startDate, endDate, target, usages, version);
     }
 
     // ------------------------------------------------------- balance (RN-06, RN-15)
@@ -373,7 +385,7 @@ public final class Subscription implements AggregateRoot {
     }
 
     private Subscription withUsages(List<CreditUsage> newUsages) {
-        return new Subscription(id, associationId, memberId, planId, terms, startDate, endDate, paymentStatus,
+        return new Subscription(id, associationId, memberId, planId, terms, price, startDate, endDate, paymentStatus,
                 List.copyOf(newUsages), version);
     }
 
@@ -435,6 +447,14 @@ public final class Subscription implements AggregateRoot {
     /** The plan's rules as they were when the subscription was created. */
     public PlanTerms terms() {
         return terms;
+    }
+
+    /**
+     * What the subscription costs: the plan's price when it was assigned. Like {@link #terms()}, a later edit of the
+     * plan does not change it, so what a member owes (and has paid) never moves under them.
+     */
+    public Money price() {
+        return price;
     }
 
     public PlanType type() {

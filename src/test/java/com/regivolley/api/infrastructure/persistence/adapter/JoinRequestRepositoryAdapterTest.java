@@ -1,5 +1,9 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
+import com.regivolley.api.domain.model.valueobject.PhoneNumber;
+import com.regivolley.api.domain.model.valueobject.ContactDetails;
+import com.regivolley.api.domain.model.valueobject.EmailAddress;
+import com.regivolley.api.domain.exception.JoinRequestNotPossibleException;
 import com.regivolley.api.domain.exception.JoinRequestModifiedConcurrentlyException;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
@@ -186,5 +190,66 @@ class JoinRequestRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // Assert
         assertThat(stored.version()).isZero();
         assertThat(decided.version()).isEqualTo(1L);
+    }
+
+    private JoinRequest requestFrom(Association association, String email) {
+        return JoinRequest.create(association.id(), ContactDetails.of("Rita", EmailAddress.of(email), PhoneNumber.of("912345678")),
+                true, "2026-01", Fixtures.at(NOW));
+    }
+
+    @Test
+    void findPendingByEmailFindsOnlyAPendingRequestOfThatAssociation() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        JoinRequest pending = requests.save(requestFrom(a, "rita@example.com"));
+        JoinRequest decided = requests.save(requestFrom(a, "done@example.com"));
+        requests.save(decided.reject(MemberId.generate(), null, Fixtures.at(NOW.plusSeconds(5))));
+        requests.save(requestFrom(b, "other@example.com"));
+        flushAndClear();
+
+        // Act
+        var found = requests.findPendingByEmail(a.id(), EmailAddress.of("rita@example.com"));
+        var decidedFound = requests.findPendingByEmail(a.id(), EmailAddress.of("done@example.com"));
+        var asOtherAssociation = requests.findPendingByEmail(b.id(), EmailAddress.of("rita@example.com"));
+
+        // Assert
+        assertThat(found).hasValueSatisfying(request -> assertThat(request.id()).isEqualTo(pending.id()));
+        assertThat(decidedFound).isEmpty();
+        assertThat(asOtherAssociation).isEmpty();
+    }
+
+    @Test
+    void twoPendingRequestsWithTheSameEmailInOneAssociationAreRejectedWithoutRevealingIt() {
+        // Arrange
+        Association association = newAssociation();
+        requests.save(requestFrom(association, "rita@example.com"));
+        flushAndClear();
+        Executable act = () -> requests.save(requestFrom(association, "rita@example.com"));
+
+        // Act
+        JoinRequestNotPossibleException ex = assertThrows(JoinRequestNotPossibleException.class, act);
+
+        // Assert
+        assertThat(ex.getMessage()).doesNotContain("rita");
+        assertThat(ex.getCause()).isNull();
+    }
+
+    @Test
+    void theSameEmailMayRequestAgainOnceTheEarlierRequestWasDecidedOrInAnotherAssociation() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        JoinRequest first = requests.save(requestFrom(a, "rita@example.com"));
+        requests.save(first.reject(MemberId.generate(), null, Fixtures.at(NOW.plusSeconds(5))));
+        flushAndClear();
+
+        // Act
+        JoinRequest again = requests.save(requestFrom(a, "rita@example.com"));
+        JoinRequest elsewhere = requests.save(requestFrom(b, "rita@example.com"));
+
+        // Assert
+        assertThat(again.isPending()).isTrue();
+        assertThat(elsewhere.isPending()).isTrue();
     }
 }

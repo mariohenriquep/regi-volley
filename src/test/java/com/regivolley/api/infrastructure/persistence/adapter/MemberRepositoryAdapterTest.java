@@ -285,4 +285,53 @@ class MemberRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         assertThat(ex.getMessage()).contains("not-null").doesNotContain(email);
         assertThat(ex.getMostSpecificCause().getMessage()).doesNotContain(email);
     }
+
+    @Test
+    void findActiveAdminIdsReturnsOnlyTheActiveAdminsOfThatAssociationByIdOrder() {
+        // Arrange
+        Association association = newAssociation();
+        Association other = newAssociation();
+        Member admin = members.save(Member.create(association, Fixtures.contact("Admin One"), Fixtures.consent(),
+                Set.of(MemberRole.ADMIN, MemberRole.MEMBER), CLOCK));
+        Member coachAdmin = members.save(Member.create(association, Fixtures.contact("Admin Two"), Fixtures.consent(),
+                Set.of(MemberRole.ADMIN, MemberRole.COACH), CLOCK));
+        members.save(Member.create(association, Fixtures.contact("Gone Admin"), Fixtures.consent(),
+                Set.of(MemberRole.ADMIN), CLOCK).deactivate());
+        members.save(Member.create(association, Fixtures.contact("Plain"), Fixtures.consent(),
+                Set.of(MemberRole.MEMBER), CLOCK));
+        members.save(Member.create(other, Fixtures.contact("Foreign Admin"), Fixtures.consent(),
+                Set.of(MemberRole.ADMIN), CLOCK));
+        flushAndClear();
+
+        // Act
+        var admins = members.findActiveAdminIds(association.id());
+
+        // Assert
+        assertThat(admins).containsExactlyInAnyOrder(admin.id(), coachAdmin.id());
+        assertThat(admins).extracting(id -> id.value().toString()).isSorted();
+        assertThat(members.findActiveAdminIds(other.id())).hasSize(1);
+        assertThat(members.findActiveAdminIds(com.regivolley.api.domain.model.valueobject.AssociationId.generate())).isEmpty();
+    }
+
+    @Test
+    void findByIdsReturnsTheRequestedMembersOfThatAssociationOnly() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        Member one = members.save(Fixtures.member(a, "One"));
+        Member two = members.save(Fixtures.member(a, "Two"));
+        Member three = members.save(Fixtures.member(a, "Three"));
+        Member foreign = members.save(Fixtures.member(b, "Foreign"));
+        flushAndClear();
+
+        // Act
+        var found = members.findByIds(a.id(), java.util.List.of(one.id(), two.id(), foreign.id()));
+        var asOther = members.findByIds(b.id(), java.util.List.of(one.id()));
+
+        // Assert
+        assertThat(found).extracting(Member::id).containsExactlyInAnyOrder(one.id(), two.id());
+        assertThat(found).extracting(Member::id).doesNotContain(three.id(), foreign.id());
+        assertThat(asOther).isEmpty();
+        assertThat(members.findByIds(a.id(), java.util.List.of())).isEmpty();
+    }
 }

@@ -4,6 +4,7 @@ import com.regivolley.api.domain.exception.TrainingGroupModifiedConcurrentlyExce
 import com.regivolley.api.domain.model.entity.TrainingGroup;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.TrainingGroupId;
+import com.regivolley.api.domain.model.valueobject.VenueId;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +16,9 @@ public interface TrainingGroupRepository {
 
     /** All groups of the association, ACTIVE and ARCHIVED, by name. */
     List<TrainingGroup> findAllByAssociation(AssociationId associationId);
+
+    /** Whether an ACTIVE group of the association runs at that venue (US-02: such a venue cannot be deleted). */
+    boolean existsActiveWithVenue(AssociationId associationId, VenueId venueId);
 
     /**
      * Inserts a new group or updates an existing one, and returns it as stored, with its new version

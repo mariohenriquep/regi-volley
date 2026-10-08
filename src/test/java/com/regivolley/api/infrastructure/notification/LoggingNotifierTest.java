@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
+import com.regivolley.api.domain.model.valueobject.JoinRequestId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.model.valueobject.SessionId;
 import org.junit.jupiter.api.AfterEach;
@@ -79,5 +80,31 @@ class LoggingNotifierTest {
         // Assert
         assertThat(messages()).singleElement().satisfies(message ->
                 assertThat(message).contains(member.toString(), "noShows=3"));
+    }
+
+    @Test
+    void logsTheApprovalWithIdsOnly() {
+        // Arrange
+        // (ids from the fields)
+
+        // Act
+        notifier.memberApproved(association, member);
+
+        // Assert
+        assertThat(messages()).singleElement().satisfies(message ->
+                assertThat(message).contains(association.toString(), member.toString()));
+    }
+
+    @Test
+    void logsTheRejectionWithIdsOnly() {
+        // Arrange
+        JoinRequestId request = JoinRequestId.generate();
+
+        // Act
+        notifier.joinRequestRejected(association, request);
+
+        // Assert
+        assertThat(messages()).singleElement().satisfies(message ->
+                assertThat(message).contains(association.toString(), request.toString()));
     }
 }

@@ -1,5 +1,7 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
+import com.regivolley.api.domain.model.entity.Venue;
+import com.regivolley.api.domain.model.valueobject.VenueId;
 import com.regivolley.api.domain.exception.AggregateModifiedConcurrentlyException;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
@@ -180,5 +182,27 @@ class TrainingGroupRepositoryAdapterTest extends AbstractPostgresIntegrationTest
         assertThat(groups.findAllByAssociation(a.id())).extracting(TrainingGroup::id).containsExactly(ofA2.id(), ofA.id());
         assertThat(groups.findAllByAssociation(b.id())).extracting(TrainingGroup::id).containsExactly(ofB.id());
         assertThat(groups.findAllByAssociation(AssociationId.generate())).isEmpty();
+    }
+
+    @Test
+    void existsActiveWithVenueIsTrueOnlyForAnActiveGroupOfThatAssociationAtThatVenue() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        TrainingGroup active = groups.save(group(a.id(), "Active", twoLevels(a), MemberId.generate()));
+        TrainingGroup archived = groups.save(group(a.id(), "Archived", twoLevels(a), MemberId.generate()).archive());
+        flushAndClear();
+
+        // Act
+        boolean activeVenue = groups.existsActiveWithVenue(a.id(), active.venueId());
+        boolean archivedVenue = groups.existsActiveWithVenue(a.id(), archived.venueId());
+        boolean asOtherAssociation = groups.existsActiveWithVenue(b.id(), active.venueId());
+        boolean unknownVenue = groups.existsActiveWithVenue(a.id(), VenueId.generate());
+
+        // Assert
+        assertThat(activeVenue).isTrue();
+        assertThat(archivedVenue).isFalse();
+        assertThat(asOtherAssociation).isFalse();
+        assertThat(unknownVenue).isFalse();
     }
 }

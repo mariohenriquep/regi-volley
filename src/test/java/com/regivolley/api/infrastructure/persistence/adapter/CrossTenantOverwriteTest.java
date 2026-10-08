@@ -5,7 +5,9 @@ import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Level;
 import com.regivolley.api.domain.model.entity.Member;
+import com.regivolley.api.domain.model.entity.Payment;
 import com.regivolley.api.domain.model.entity.Plan;
+import com.regivolley.api.domain.model.entity.Venue;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.entity.Subscription;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
@@ -19,7 +21,9 @@ import com.regivolley.api.domain.model.valueobject.TrainingGroupStatus;
 import com.regivolley.api.domain.repository.AssociationRepository;
 import com.regivolley.api.domain.repository.JoinRequestRepository;
 import com.regivolley.api.domain.repository.MemberRepository;
+import com.regivolley.api.domain.repository.PaymentRepository;
 import com.regivolley.api.domain.repository.PlanRepository;
+import com.regivolley.api.domain.repository.VenueRepository;
 import com.regivolley.api.domain.repository.SessionRepository;
 import com.regivolley.api.domain.repository.SubscriptionRepository;
 import com.regivolley.api.domain.repository.TrainingGroupRepository;
@@ -53,6 +57,10 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
     private MemberRepository members;
     @Autowired
     private PlanRepository plans;
+    @Autowired
+    private VenueRepository venues;
+    @Autowired
+    private PaymentRepository payments;
     @Autowired
     private TrainingGroupRepository groups;
     @Autowired
@@ -120,6 +128,42 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void aVenueOfAnotherAssociationIsNeitherOverwrittenNorDeleted() {
+        // Arrange
+        twoAssociations();
+        Venue ofA = venues.save(Venue.create(a.id(), "Pavilhao", "Rua A", 2));
+        Venue hijack = Venue.reconstruct(ofA.id(), b.id(), "Hijacked", "Rua B", 1, 0L);
+        Executable overwrite = () -> venues.save(hijack);
+
+        // Act
+        assertThrows(DataIntegrityViolationException.class, overwrite);
+        Executable delete = () -> venues.delete(Venue.reconstruct(ofA.id(), b.id(), "Pavilhao", "Rua A", 2, ofA.version()));
+        assertThrows(com.regivolley.api.domain.exception.VenueModifiedConcurrentlyException.class, delete);
+
+        // Assert
+        assertThat(venues.findById(a.id(), ofA.id()).orElseThrow().name()).isEqualTo("Pavilhao");
+        assertThat(venues.findById(b.id(), ofA.id())).isEmpty();
+    }
+
+    @Test
+    void aPaymentCannotBeAddedToASubscriptionOfAnotherAssociation() {
+        // Arrange
+        twoAssociations();
+        Subscription ofA = subscriptions.save(Fixtures.subscription(Fixtures.pack(a.id(), Set.of()), MemberId.generate(), "2026-10-01"));
+        Payment hijack = Payment.reconstruct(com.regivolley.api.domain.model.valueobject.PaymentId.generate(), b.id(), ofA.id(),
+                com.regivolley.api.domain.model.valueobject.Money.ofCents(100), java.time.LocalDate.parse("2026-10-10"),
+                com.regivolley.api.domain.model.valueobject.PaymentMethod.CASH, MemberId.generate(), Fixtures.NOW, null);
+        Executable act = () -> payments.add(hijack);
+
+        // Act
+        assertThrows(DataIntegrityViolationException.class, act);
+
+        // Assert
+        assertThat(payments.findBySubscription(a.id(), ofA.id())).isEmpty();
+        assertThat(payments.findBySubscription(b.id(), ofA.id())).isEmpty();
+    }
+
+    @Test
     void aTrainingGroupOfAnotherAssociationIsNotOverwritten() {
         // Arrange
         twoAssociations();
@@ -142,7 +186,7 @@ class CrossTenantOverwriteTest extends AbstractPostgresIntegrationTest {
         twoAssociations();
         Subscription ofA = subscriptions.save(
                 Fixtures.subscription(Fixtures.pack(a.id(), Set.of()), MemberId.generate(), "2026-10-01"));
-        Subscription hijack = Subscription.reconstruct(ofA.id(), b.id(), ofA.memberId(), ofA.planId(), ofA.terms(),
+        Subscription hijack = Subscription.reconstruct(ofA.id(), b.id(), ofA.memberId(), ofA.planId(), ofA.terms(), ofA.price(),
                 ofA.startDate(), ofA.endDate(), PaymentStatus.PAID, List.of(), 0L);
         Executable act = () -> subscriptions.save(hijack);
 

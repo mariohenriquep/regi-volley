@@ -1,5 +1,6 @@
 package com.regivolley.api.domain.model.entity;
 
+import com.regivolley.api.domain.exception.InvalidCoachException;
 import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.InvalidMemberException;
 import com.regivolley.api.domain.exception.InvalidMemberStatusTransitionException;
@@ -753,6 +754,59 @@ class MemberTest {
             assertThat(member).isEqualTo(renamedCopy).hasSameHashCodeAs(renamedCopy);
             assertThat(differentMember).isFalse();
             assertThat(member).isNotEqualTo("not a member");
+        }
+    }
+
+    @Nested
+    class Coaching {
+
+        private Member holding(MemberRole... roles) {
+            return Member.create(ASSOCIATION, CONTACT, CONSENT, Set.of(roles), JOIN_CLOCK);
+        }
+
+        @Test
+        void anActiveMemberHoldingTheCoachRoleCanCoach() {
+            // Arrange
+            Member coach = holding(MemberRole.COACH, MemberRole.MEMBER);
+
+            // Act
+            boolean canCoach = coach.canCoach();
+            Member checked = coach.requireCanCoach();
+
+            // Assert
+            assertThat(canCoach).isTrue();
+            assertThat(checked).isSameAs(coach);
+        }
+
+        @Test
+        void aMemberWithoutTheCoachRoleCannotCoach() {
+            // Arrange
+            Member plain = holding(MemberRole.MEMBER);
+            Executable act = plain::requireCanCoach;
+
+            // Act
+            InvalidCoachException ex = assertThrows(InvalidCoachException.class, act);
+
+            // Assert
+            assertThat(plain.canCoach()).isFalse();
+            assertThat(ex.coachId()).isEqualTo(plain.id());
+        }
+
+        @Test
+        void aDeactivatedOrAnonymisedCoachCannotCoach() {
+            // Arrange
+            Member gone = holding(MemberRole.COACH).deactivate();
+            Member erased = holding(MemberRole.COACH).anonymise(LATER_CLOCK);
+            Executable inactive = gone::requireCanCoach;
+            Executable anonymised = erased::requireCanCoach;
+
+            // Act
+            assertThrows(InvalidCoachException.class, inactive);
+            assertThrows(InvalidCoachException.class, anonymised);
+
+            // Assert
+            assertThat(gone.canCoach()).isFalse();
+            assertThat(erased.canCoach()).isFalse();
         }
     }
 }

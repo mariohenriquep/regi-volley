@@ -1,11 +1,12 @@
 package com.regivolley.api.domain.port;
 
 import com.regivolley.api.domain.model.valueobject.AssociationId;
+import com.regivolley.api.domain.model.valueobject.JoinRequestId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.model.valueobject.SessionId;
 
 /**
- * Outbound port for telling people what happened to their bookings (US-16, RN-04, RN-11). It takes
+ * Outbound port for telling people what happened to their bookings and requests (US-06, US-16, RN-04, RN-11). It takes
  * ids only: the adapter looks up the address and writes the message (email arrives in Phase 2), so
  * no personal data travels through the application layer or its logs.
  *
@@ -25,4 +26,16 @@ public interface Notifier {
      * block). The adapter warns the member and the association's administrators.
      */
     void noShowLimitReached(AssociationId associationId, MemberId memberId, int noShowsThisMonth);
+
+    /**
+     * A join request was approved and the person is now a member (US-06). The adapter writes to the address of the
+     * member it looks up by id.
+     */
+    void memberApproved(AssociationId associationId, MemberId memberId);
+
+    /**
+     * A join request was rejected (US-06). The adapter looks the request's address up by id; the administrator's
+     * free-text reason is not passed on.
+     */
+    void joinRequestRejected(AssociationId associationId, JoinRequestId requestId);
 }

@@ -245,4 +245,23 @@ class AssociationRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // Assert
         assertThat(found).isFalse();
     }
+
+    @Test
+    void findByIdForUpdateReturnsTheStoredAssociationWithItsLevels() {
+        // Arrange
+        Association stored = associations.save(Fixtures.association());
+        entityManager.flush();
+        entityManager.clear();
+
+        // Act
+        var locked = associations.findByIdForUpdate(stored.id());
+        var unknown = associations.findByIdForUpdate(com.regivolley.api.domain.model.valueobject.AssociationId.generate());
+
+        // Assert
+        assertThat(locked).hasValueSatisfying(found -> {
+            assertThat(found.id()).isEqualTo(stored.id());
+            assertThat(found.levels()).hasSize(3);
+        });
+        assertThat(unknown).isEmpty();
+    }
 }

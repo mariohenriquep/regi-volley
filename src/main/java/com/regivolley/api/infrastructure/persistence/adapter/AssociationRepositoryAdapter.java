@@ -41,6 +41,12 @@ public class AssociationRepositoryAdapter implements AssociationRepository {
     }
 
     @Override
+    @Transactional
+    public Optional<Association> findByIdForUpdate(AssociationId id) {
+        return associations.findForUpdateById(id.value()).map(AssociationPersistenceMapper::toDomain);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public Optional<Association> findByShortName(ShortName shortName) {
         return associations.findByShortName(shortName.value()).map(AssociationPersistenceMapper::toDomain);

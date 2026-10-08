@@ -7,12 +7,17 @@ import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /** Port for {@link Member} aggregates, roles and level history included. Every read is scoped to one association (architecture.md section 8). */
 public interface MemberRepository {
 
     Optional<Member> findById(AssociationId associationId, MemberId id);
+
+    /** The members of this association among these ids (unknown or foreign ids are simply absent), in no particular order. */
+    List<Member> findByIds(AssociationId associationId, Collection<MemberId> ids);
 
     /**
      * As {@link #findById}, but takes the member's row lock for the rest of the current transaction, so
@@ -21,6 +26,14 @@ public interface MemberRepository {
      * lock is released at its commit or rollback. Must run inside a transaction.
      */
     Optional<Member> findByIdForUpdate(AssociationId associationId, MemberId id);
+
+    /**
+     * The ids of the association's active administrators, ordered by id, read with a fresh query (ids, not
+     * entities, so nothing already loaded in the transaction can answer for the database). The last-administrator
+     * guard counts through it after taking {@link AssociationRepository#findByIdForUpdate}, which is what
+     * serialises it against other removals of an administrator.
+     */
+    List<MemberId> findActiveAdminIds(AssociationId associationId);
 
     /** The member of this association with that email; the same email in another association is another person. */
     Optional<Member> findByEmail(AssociationId associationId, EmailAddress email);

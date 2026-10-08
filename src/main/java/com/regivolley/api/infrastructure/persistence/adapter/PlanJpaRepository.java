@@ -5,6 +5,8 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -12,6 +14,8 @@ import java.util.UUID;
 interface PlanJpaRepository extends JpaRepository<PlanJpaEntity, UUID> {
 
     Optional<PlanJpaEntity> findByIdAndAssociationId(UUID id, UUID associationId);
+
+    List<PlanJpaEntity> findByAssociationIdAndIdIn(UUID associationId, Collection<UUID> ids);
 
     /**
      * Same row as {@code findByIdAndAssociationId}, but locked for update without loading any child rows:

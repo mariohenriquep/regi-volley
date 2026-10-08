@@ -21,5 +21,7 @@ interface SubscriptionJpaRepository extends JpaRepository<SubscriptionJpaEntity,
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<SubscriptionJpaEntity> findForUpdateByIdAndAssociationId(UUID id, UUID associationId);
 
+    List<SubscriptionJpaEntity> findByAssociationIdAndPaymentStatusOrderByEndDateAscIdAsc(UUID associationId, String paymentStatus);
+
     List<SubscriptionJpaEntity> findByAssociationIdAndMemberIdOrderByStartDateAscIdAsc(UUID associationId, UUID memberId);
 }

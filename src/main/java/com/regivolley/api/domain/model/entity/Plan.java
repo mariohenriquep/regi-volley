@@ -83,6 +83,14 @@ public final class Plan implements AggregateRoot {
     }
 
     /**
+     * Replaces everything an administrator may change (US-19), revalidating it as a whole; the id, the tenant and
+     * the version stay. Subscriptions already sold keep the terms they snapshotted.
+     */
+    public Plan edit(String newName, PlanTerms newTerms, Money newPrice, Integer newValidityDays) {
+        return reconstruct(id, associationId, newName, newTerms, newPrice, newValidityDays, version);
+    }
+
+    /**
      * Last day (inclusive) of a subscription to this plan starting on {@code start}. A month runs
      * to the day before the same day-of-month next month: 01/10 ends 31/10, so a renewal starts
      * on 01/11 (RN-16). When the next month is too short for the start day (30/01, 31/01), the

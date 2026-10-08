@@ -63,6 +63,46 @@ class PlanTest {
     }
 
     @Nested
+    class Editing {
+
+        @Test
+        void editReplacesNameTermsPriceAndValidityButKeepsIdentityTenantAndVersion() {
+            // Arrange
+            Plan plan = Plan.reconstruct(PlanId.generate(), ASSOCIATION, "Old", PlanTerms.monthlyUnlimited(Set.of()),
+                    PRICE, null, 4L);
+
+            // Act
+            Plan edited = plan.edit("  New pack  ", PlanTerms.pack(10, Set.of(OPEN_PLAY)), Money.ofCents(4500), 90);
+
+            // Assert
+            assertThat(edited.id()).isEqualTo(plan.id());
+            assertThat(edited.associationId()).isEqualTo(ASSOCIATION);
+            assertThat(edited.version()).isEqualTo(4L);
+            assertThat(edited.name()).isEqualTo("New pack");
+            assertThat(edited.type()).isEqualTo(PlanType.PACK);
+            assertThat(edited.price()).isEqualTo(Money.ofCents(4500));
+            assertThat(edited.validityDays()).hasValue(90);
+            assertThat(edited.allowedLevels()).containsExactly(OPEN_PLAY);
+        }
+
+        @Test
+        void editRevalidatesTheInvariants() {
+            // Arrange
+            Plan plan = Plan.create(ASSOCIATION, "Plan", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
+            Executable noValidity = () -> plan.edit("Plan", PlanTerms.pack(10, Set.of()), PRICE, null);
+            Executable blankName = () -> plan.edit(" ", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
+
+            // Act
+            InvalidPlanException validity = assertThrows(InvalidPlanException.class, noValidity);
+            InvalidPlanException name = assertThrows(InvalidPlanException.class, blankName);
+
+            // Assert
+            assertThat(validity.getMessage()).contains("validityDays");
+            assertThat(name.getMessage()).contains("name");
+        }
+    }
+
+    @Nested
     class Creation {
 
         @Test

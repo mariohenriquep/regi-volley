@@ -21,5 +21,7 @@ interface JoinRequestJpaRepository extends JpaRepository<JoinRequestJpaEntity, U
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<JoinRequestJpaEntity> findForUpdateByIdAndAssociationId(UUID id, UUID associationId);
 
+    Optional<JoinRequestJpaEntity> findByAssociationIdAndEmailAndStatus(UUID associationId, String email, String status);
+
     List<JoinRequestJpaEntity> findByAssociationIdAndStatusOrderByRequestedAtAscIdAsc(UUID associationId, String status);
 }

@@ -18,6 +18,15 @@ public interface AssociationRepository {
 
     Optional<Association> findById(AssociationId id);
 
+    /**
+     * As {@link #findById}, but takes the association row's lock for the rest of the current transaction. The
+     * association is the one row every member of the tenant belongs to, so it serialises the operations that
+     * must not run side by side - removing an administrator (last-administrator rule) - without locking members.
+     * Meant to be the first thing such a transaction does; the lock is released at its commit or rollback. Must run
+     * inside a transaction.
+     */
+    Optional<Association> findByIdForUpdate(AssociationId id);
+
     Optional<Association> findByShortName(ShortName shortName);
 
     boolean existsByShortName(ShortName shortName);

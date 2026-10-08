@@ -270,6 +270,15 @@ public final class Association implements AggregateRoot {
         return levelIds.stream().map(this::rankOf).collect(Collectors.toUnmodifiableSet());
     }
 
+    /**
+     * Every one of these levels must be one of this association's (a group or a plan may not use another tenant's).
+     *
+     * @throws LevelNotFoundException for a level that is not
+     */
+    public void requireLevels(Set<LevelId> levelIds) {
+        levelIds.forEach(this::level);
+    }
+
     /** Whether every one of these levels is one of this association's (a group may not accept another tenant's level). */
     public boolean hasAllLevels(Set<LevelId> levelIds) {
         return levelIds().containsAll(levelIds);

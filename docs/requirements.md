@@ -170,7 +170,7 @@ definidos por associação; entre parênteses fica o valor por omissão.
   *Decisão 7/10/2026: um pack (ou sessão avulsa) sem senhas disponíveis deixa de estar ativo, por
   isso o membro pode comprar um novo pack de imediato. O limite "N por semana" conta por membro
   (todas as subscrições), não por subscrição: uma renovação a meio da semana não duplica o limite.
-  Um pagamento pago (Paga) só volta atrás através de um estorno (RN-19), numa fase seguinte.*
+  Um pagamento pago (Paga) só volta atrás através de um estorno (RN-19): a subscrição Paga passa a Pendente.*
 
 ### Pagamentos (manuais)
 
@@ -181,6 +181,14 @@ definidos por associação; entre parênteses fica o valor por omissão.
   Em atraso **não pode reservar**; a reserva é recusada com o motivo.
 - **RN-19** Um pagamento registado não se apaga: corrige-se com um estorno, para manter o
   histórico.
+  *Decisões 8/10/2026 (issue #25): (1) são aceites pagamentos parciais, mas não pagamentos acima do valor em
+  dívida; a subscrição fica Paga quando o total pago (pagamentos menos estornos) atinge o preço do plano, e
+  continua como estava até lá. O preço é o do plano no momento do registo. Um plano gratuito dá uma subscrição
+  já Paga. (2) O estorno é um novo pagamento do mesmo valor ligado ao original (conta como negativo, com quem o
+  fez e quando); cada pagamento só se estorna uma vez e um estorno não se estorna (regista-se um pagamento
+  novo). (3) Se, depois de um estorno, voltar a haver valor em dívida, uma subscrição Paga passa a Pendente (nunca
+  diretamente a Em atraso; marcar como Em atraso é uma decisão à parte). Uma subscrição Em atraso paga na
+  totalidade passa a Paga.*
 
 ### Níveis
 
@@ -293,6 +301,10 @@ A Fase 1 é a prioridade: sem reservas fiáveis, nada mais tem valor.
 
 ### Questões em aberto
 
+- [x] Pode uma associação ficar sem administrador ativo? **Não** — o último administrador ativo não pode ser
+  desativado nem perder o papel de administrador (8/10/2026).
+- [x] O pedido de adesão revela se o email já é de um membro ou tem um pedido pendente? **Não** — a recusa é
+  genérica e igual nos dois casos (8/10/2026).
 - [ ] Qual é a associação piloto, e quantos membros e turmas tem?
 - [ ] Uma pessoa pode pertencer a várias associações com a mesma conta já no MVP?
 - [x] O bloqueio por faltas (RN-11) é desejado, ou basta um aviso? **Por agora, só aviso** (7/10/2026).

@@ -1,5 +1,6 @@
 package com.regivolley.api.domain.model.entity;
 
+import com.regivolley.api.domain.exception.InvalidCoachException;
 import com.regivolley.api.domain.exception.InvalidMemberException;
 import com.regivolley.api.domain.exception.InvalidMemberStatusTransitionException;
 import com.regivolley.api.domain.exception.LastRoleCannotBeRevokedException;
@@ -275,6 +276,25 @@ public final class Member implements AggregateRoot {
             throw new IllegalArgumentException("The member belongs to another association");
         }
         return new MemberBookingProfile(associationId, id, status, association.rankOf(levelId), subscriptions);
+    }
+
+    /**
+     * Whether this member can be the coach of a group or session: active and holding COACH (an anonymised member
+     * holds only MEMBER, so never).
+     */
+    public boolean canCoach() {
+        return isActive() && hasRole(MemberRole.COACH);
+    }
+
+    /**
+     * @return this member
+     * @throws InvalidCoachException if {@link #canCoach()} is false
+     */
+    public Member requireCanCoach() {
+        if (!canCoach()) {
+            throw new InvalidCoachException(id);
+        }
+        return this;
     }
 
     public boolean hasRole(MemberRole role) {

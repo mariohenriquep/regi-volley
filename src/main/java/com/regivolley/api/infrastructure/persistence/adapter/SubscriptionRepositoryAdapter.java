@@ -4,6 +4,7 @@ import com.regivolley.api.domain.exception.SubscriptionModifiedConcurrentlyExcep
 import com.regivolley.api.domain.model.entity.Subscription;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
+import com.regivolley.api.domain.model.valueobject.PaymentStatus;
 import com.regivolley.api.domain.model.valueobject.SubscriptionId;
 import com.regivolley.api.domain.repository.SubscriptionRepository;
 import com.regivolley.api.infrastructure.persistence.entity.SubscriptionJpaEntity;
@@ -43,6 +44,15 @@ public class SubscriptionRepositoryAdapter implements SubscriptionRepository {
     public List<Subscription> findByMember(AssociationId associationId, MemberId memberId) {
         return subscriptions.findByAssociationIdAndMemberIdOrderByStartDateAscIdAsc(
                         associationId.value(), memberId.value()).stream()
+                .map(SubscriptionPersistenceMapper::toDomain)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Subscription> findByPaymentStatus(AssociationId associationId, PaymentStatus status) {
+        return subscriptions.findByAssociationIdAndPaymentStatusOrderByEndDateAscIdAsc(
+                        associationId.value(), status.name()).stream()
                 .map(SubscriptionPersistenceMapper::toDomain)
                 .toList();
     }
