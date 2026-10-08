@@ -5,8 +5,10 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
@@ -25,7 +27,8 @@ import java.util.stream.Stream;
  * {@code new com.regivolley.api.infrastructure.Foo()} is.
  */
 record JavaSourceFile(String name, String packageName, Set<String> references,
-                      TypeKind kind, String typeName, Set<String> modifiers, Set<String> implementedInterfaces) {
+                      TypeKind kind, String typeName, Set<String> modifiers, Set<String> implementedInterfaces,
+                      String code) {
 
     /** The kind of the top-level type a file declares; {@code NONE} for e.g. {@code package-info}. */
     enum TypeKind { CLASS, RECORD, ENUM, INTERFACE, NONE }
@@ -41,7 +44,7 @@ record JavaSourceFile(String name, String packageName, Set<String> references,
 
     // Only the roots the rules care about; a qualified name is any run of dotted identifiers.
     private static final Pattern QUALIFIED_REFERENCE =
-            Pattern.compile("\\b((?:com\\.regivolley|org\\.springframework|jakarta)(?:\\.\\w+)+)");
+            Pattern.compile("\\b((?:com\\.regivolley|com\\.nimbusds|org\\.springframework|jakarta)(?:\\.\\w+)+)");
 
     private static final Pattern COMMENTS_AND_STRINGS = Pattern.compile(
             "//[^\\n]*|/\\*.*?\\*/|\"\"\".*?\"\"\"|\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'",
@@ -65,7 +68,7 @@ record JavaSourceFile(String name, String packageName, Set<String> references,
     private static JavaSourceFile withTypeShape(String name, String packageName, Set<String> references, String body) {
         Matcher type = TYPE_DECLARATION.matcher(body);
         if (!type.find()) {
-            return new JavaSourceFile(name, packageName, references, TypeKind.NONE, "", Set.of(), Set.of());
+            return new JavaSourceFile(name, packageName, references, TypeKind.NONE, "", Set.of(), Set.of(), body);
         }
         Set<String> modifiers = new LinkedHashSet<>();
         for (String word : type.group(1).trim().split("\\s+")) {
@@ -83,7 +86,7 @@ record JavaSourceFile(String name, String packageName, Set<String> references,
         String header = header(body, type.end());
         String clause = kind == TypeKind.INTERFACE ? "extends" : "implements";
         return new JavaSourceFile(name, packageName, references, kind, type.group(3), modifiers,
-                simpleNames(clause, header));
+                simpleNames(clause, header), body);
     }
 
     /** The text between the type name and its opening brace, ignoring braces inside parentheses. */
@@ -141,6 +144,53 @@ record JavaSourceFile(String name, String packageName, Set<String> references,
 
     boolean implementsAnyOf(Set<String> interfaceNames) {
         return implementedInterfaces.stream().anyMatch(interfaceNames::contains);
+    }
+
+    /**
+     * Whether the code (comments and strings excluded) constructs {@code simpleTypeName}: {@code new Actor(...)}, the same
+     * with a package prefix ({@code new a.b.Actor(...)}), or the constructor reference {@code Actor::new}.
+     */
+    boolean instantiates(String simpleTypeName) {
+        String type = Pattern.quote(simpleTypeName);
+        return Pattern.compile("\\bnew\\s+(?:[\\w.]+\\.)?" + type + "\\s*\\(").matcher(code).find()
+                || Pattern.compile("\\b" + type + "\\s*::\\s*new\\b").matcher(code).find();
+    }
+
+    /**
+     * The component names of every record declared in the file, top-level and nested, by record name. Annotations on
+     * components (with their own parentheses) and generics are skipped.
+     */
+    Map<String, List<String>> recordComponents() {
+        Map<String, List<String>> records = new LinkedHashMap<>();
+        Matcher declaration = Pattern.compile("\\brecord\\s+(\\w+)\\s*(?:<[^>]*>)?\\s*\\(").matcher(code);
+        while (declaration.find()) {
+            records.put(declaration.group(1), componentsFrom(declaration.end()));
+        }
+        return records;
+    }
+
+    /** The component names of the top-level record, in order; empty for any other kind. */
+    List<String> recordComponentNames() {
+        return kind == TypeKind.RECORD ? recordComponents().getOrDefault(typeName, List.of()) : List.of();
+    }
+
+    private List<String> componentsFrom(int start) {
+        int depth = 1;
+        StringBuilder components = new StringBuilder();
+        for (int i = start; i < code.length() && depth > 0; i++) {
+            char c = code.charAt(i);
+            if (c == '(' || c == '<') depth++;
+            else if (c == ')' || c == '>') depth--;
+            if (depth > 0) {
+                // Keep top-level text only: nested parentheses (annotation arguments) and generics are blanked.
+                components.append(depth == 1 && c != '(' && c != ')' && c != '<' && c != '>' ? c : ' ');
+            }
+        }
+        return Arrays.stream(components.toString().split(","))
+                .map(String::trim)
+                .filter(component -> !component.isEmpty())
+                .map(component -> component.substring(component.lastIndexOf(' ') + 1))
+                .toList();
     }
 
     boolean isFinal() {

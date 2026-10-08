@@ -39,3 +39,7 @@ frontend/.vite
 
 # Env files
 .env
+
+# Local JWT signing keys (threat-model-rest-api.md, D-2): never committed
+*.pem
+*.jwk

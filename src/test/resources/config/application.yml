@@ -2,3 +2,8 @@
 regi-volley:
   session-generation:
     enabled: false
+
+spring:
+  profiles:
+    # Profile `test` (like `dev`) may generate an ephemeral JWT key pair; every other profile must configure keys.
+    active: test

@@ -67,15 +67,17 @@ never appears in `domain/`.
 | Use case output records | `application.result` |
 | REST controllers | `infrastructure.web.controller` |
 | Request/response DTOs, error shape | `infrastructure.web.dto` |
-| `@RestControllerAdvice` exception mapping | `infrastructure.web.exception` |
+| `@RestControllerAdvice` exception mapping (`*ExceptionHandler`) | `infrastructure.web.exception` |
 | Domain ↔ DTO translation (`*WebMapper`) | `infrastructure.web.mapper` |
 | JPA entities (`*JpaEntity`) | `infrastructure.persistence.entity` |
 | Spring Data repository interfaces (`*JpaRepository`, package-private) and repository port implementations (adapters) | `infrastructure.persistence.adapter` |
 | Entity ↔ domain translation (`*PersistenceMapper`) | `infrastructure.persistence.mapper` |
-| Users, credentials, JWT/cookies, role checks | `infrastructure.security` |
+| Spring Security configuration, filters (`*Filter`), entry point / access-denied handler, JWT keys, decoder and issuer, `PrincipalResolver`, `AuthenticatedActor`, the account-lookup seam | `infrastructure.security` |
 | Notification sending (adapter for `Notifier`; logs ids only until the email adapter of Phase 2) | `infrastructure.notification` |
 | `TransactionRunner` implementation (`REQUIRES_NEW` template) | `infrastructure.persistence.adapter` |
-| Spring `@Configuration` beans | `infrastructure.config` |
+| Spring `@Configuration` beans that are not security (clock, scheduler, the start-up guard on the database secret) | `infrastructure.config` |
+| 26b: the `SecurityAccountLookup` adapter (reads `app_user` and `membership`) | `infrastructure.persistence.adapter` |
+| 26b: `app_user` / `membership` JPA entities and their Spring Data repositories | `infrastructure.persistence.entity` / `.adapter` |
 
 A class that doesn't fit one of these rows is a signal to reconsider the design — flag it rather
 than inventing a package ad hoc. If `domain.model.entity` grows unwieldy, splitting it per
@@ -111,7 +113,13 @@ The packages are the DDD building blocks, and `OnionArchitectureTest` enforces t
   `FieldRules`; it depends on nothing in the project except `domain.exception`.
 
 The same test also pins the infrastructure naming: `*Request`/`*Response`/`*Dto` only in
-`infrastructure.web.dto`, `*WebMapper` in `infrastructure.web.mapper`, `*PersistenceMapper` in
+`infrastructure.web.dto` (and no record there other than a `*Response`, nested ones included, has a component named `associationId`,
+`tenantId`, `roles` or `version`: the tenant comes from the token), `*Controller` only in `infrastructure.web.controller`, `*ExceptionHandler`
+only in `infrastructure.web.exception`, servlet filters (anything touching `jakarta.servlet.Filter` or
+`org.springframework.web.filter`) and `*PrincipalResolver` only in `infrastructure.security`; `com.nimbusds` only in
+`infrastructure.security`, and `org.springframework.security` only there plus exactly `AccessDeniedException` and
+`AuthenticationException` in the exception advice; `infrastructure.web` never touches persistence or
+the repository ports; exactly one class, `AuthenticatedActor`, calls `new Actor(`; `*WebMapper` in `infrastructure.web.mapper`, `*PersistenceMapper` in
 `infrastructure.persistence.mapper`, `*JpaEntity` in `infrastructure.persistence.entity`,
 `*JpaRepository` in `infrastructure.persistence.adapter`; and every domain type must sit in one
 of the domain packages above.
@@ -167,7 +175,10 @@ Identical to task-manager-api:
 - **Application** — JUnit 5 + Mockito, ports mocked, no Spring context.
 - **Persistence** — `@DataJpaTest` + Testcontainers (real PostgreSQL), extending
   `AbstractPostgresIntegrationTest`.
-- **Web** — `@WebMvcTest` + MockMvc, use cases mocked.
+- **Web** — `@WebMvcTest` + MockMvc, use cases mocked. Security and error-mapping tests use the **real filter chain**,
+  advice and controllers (`AbstractSecuredWebTest`: `@WebMvcTest` importing `SecurityConfiguration`, a mocked
+  `MemberRepository` and the in-memory `SecurityAccountLookup`); test-only controllers live outside `com.regivolley.api`
+  and are `@Import`ed so they never enter the route inventory.
 - **Architecture** — plain JUnit 5 (`OnionArchitectureTest`, see §1).
 - **Assertions** — JUnit `assertThrows` for code that must throw, AssertJ `assertThat` for
   everything else; no `assertThatThrownBy`. When a use case throws, verify nothing was saved.
@@ -236,15 +247,86 @@ erasure against a stale edit, and approve against reject.
 
 ## 11. Identity and authentication
 
-- **Infrastructure** (`infrastructure.security`): users, credentials, login, sessions/JWT, and
-  the mapping from a user to their `Member` in each association (`user_id` exists only there).
-  It resolves the principal to `(AssociationId, MemberId, roles)` through a port and checks roles
-  server-side on every request, before the use case is called.
+The design and its reasoning are in [`security/threat-model-rest-api.md`](security/threat-model-rest-api.md) (decision ids
+`D-n`); this section says what the code does. Issue #26 is delivered in three steps: 26a (this: the security foundation),
+26b (users, login, refresh, rate limits), 26c (controllers).
+
+- **Infrastructure** (`infrastructure.security`): the filter chain, token verification and issuing, and the mapping from a
+  token to the caller. The domain never sees any of it.
 - **Domain**: a person's role *within an association* (`MEMBER`, `COACH`, `ADMIN`) is tenant
   business data recorded on `Member` - a person can hold several, the founder becomes admin
-  (US-01). The domain records roles but never authorises with them.
+  (US-01). The domain records roles but never authorises with them. Roles are **not** in the token and the web layer has
+  no role matrix: use cases check them with `Permissions` from the actor's `Member` (D-5).
 - Rules about the actor's relationship to the data ("coach of this group", "owner of this
   booking") are decided by the domain or use case from the actor's `MemberId`.
+
+**Filter chain** (`SecurityConfiguration`). Stateless, no sessions or cookies, CSRF off (no ambient credential: the token
+is in the `Authorization` header; the two cookie endpoints of 26b get Origin and content-type checks, D-7a), form login /
+basic / logout off, no actuator. Default deny: `anyRequest().authenticated()`, and `PublicRoutes` is the only way out of it
+(`POST /api/v1/public/associations`, `GET .../{shortName}`, `POST .../{shortName}/join-requests`, the six
+`/api/v1/auth/*` credential routes of 26b, and `/error`). `RouteInventoryTest` lists every mapped route as `PUBLIC` or
+`AUTHENTICATED`; a controller that adds a route without a row fails the build, as does a row that contradicts the chain.
+Order: `RequestIdFilter` (server-generated `X-Request-Id`, MDC `requestId` and a request attribute that survives into the
+container's error dispatch; the client's value is ignored; the log pattern prints it) then the Spring Security filters, with
+`RequestSizeLimitFilter` right after the header writer (413 over 64 KiB or after 64 KiB actually read, 411 for a chunked body;
+Tomcat's swallow size is set explicitly) and `SuppressedEndpointsFilter` before CORS, which answers 404 to `/.well-known/**`:
+Spring Security 7 would otherwise serve `/.well-known/oauth-protected-resource` to anyone, ahead of authorization and outside
+the route inventory. Headers: `Cache-Control: no-store`, `nosniff`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src
+'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, HSTS one year with subdomains (Spring emits it on HTTPS requests
+only, so it needs TLS or forwarded headers in front of the app). They are applied to every response, not only `/api/**`.
+CORS is off; only under profile `dev` with `regi-volley.security.cors.allowed-origin` set is that single origin allowed
+(explicit methods and headers, credentials only on `/api/v1/auth/**`; `*` is refused at start-up).
+
+**Access token** (D-1, D-4). ES256, 10 minutes, skew 30 s, claims `iss=regi-volley-api`, `aud=regi-volley-web`, `sub` (user
+id), `aid`, `mid`, `sv` (security stamp), `iat`, `exp`: ids only. `AccessTokenDecoderFactory` builds Spring's
+`NimbusJwtDecoder` over a Nimbus processor whose `Es256KeySelector` returns a key only for `alg: ES256` with a `kid` of the
+closed set (so `none`, HS\*, RS\*, a missing or unknown kid get no key before any cryptography); issuer, audience, expiry and
+not-before are validated with the injected `Clock`, and a token missing any required claim is rejected. `AccessTokenIssuer`
+(a `NimbusJwtEncoder` over the signing `ECKey`) is what 26b's login and refresh call. Only the `Authorization: Bearer`
+header is read: a token in a query string or form body is not a credential, and on a public route no token is read at all (a
+stale header cannot turn the login into a 401). A token must also have been issued no later than now plus the skew and live
+no longer than the TTL plus the skew, whatever its signature says.
+
+**Keys** (D-2, `JwtKeyLoader`, `JwtKeyConfiguration`). `JWT_SIGNING_KEY` (one private key) and `JWT_VERIFICATION_KEYS`
+(public keys, always including the active one's) are read from the environment as JWK / JWK Set JSON or as PEM (PKCS#8
+`PRIVATE KEY`, X.509 `PUBLIC KEY`) with a `kid: <id>` line before each block, because PEM cannot carry a key id. A PEM
+private key has no public half the JDK can read, so it is paired with the verification key of the same kid; a JWK private
+key brings its own. Every configuration is checked, under every profile: EC on P-256 only, `kid` present, no duplicate kid or
+key, no private key in the verification set, the signing key's public half in the set, and a sign-then-verify probe proving
+the pair matches; any failure stops the start. Rotation is by overlap (two public keys during the access lifetime). The
+ephemeral key pair exists only under profiles `dev` and `test` and never when `prod` is active too (`prod,dev` still
+needs a key); every other profile, including none, refuses to start without one. `SecretsGuardConfiguration`
+(`infrastructure.config`, active unless `dev` or `test`) refuses a blank or the default `DB_PASSWORD`. There is no
+JWKS endpoint (no second verifier yet). Key material is never logged or printed (`toString` shows kids only).
+
+**Principal** (D-5, D-6). `PrincipalResolver` runs after the signature check on **every** request and is the only code that
+turns a token into an identity: the account must exist and be `ACTIVE`, its security stamp must equal `sv`
+(constant-time), the membership must be `CONFIRMED` (all three from `SecurityAccountLookup`), and `MemberRepository.findById`
+must return that member for that association, active and not anonymised. Any failure is a `PrincipalRejectedException`
+(logged by ids and reason) and the client sees the constant 401. No cache, so deactivation, erasure and password change take
+effect on the next request. The result is `AuthenticatedActor(userId, associationId, memberId)`; controllers take it with
+`@CurrentActor AuthenticatedActor caller` (our name for `@AuthenticationPrincipal`) and call `caller.actor()`, the one
+`new Actor(...)` in the codebase.
+
+**The seam to 26b.** `app_user` and `membership` do not exist yet. `SecurityAccountLookup.find(userId, associationId,
+memberId)` returns the stored `SecurityAccount(userStatus, securityStamp, membershipStatus)` or empty when the user has no
+membership at exactly that member; 26b implements it over primary-key reads of those two tables and registers it as a
+bean (no cache). Until then `DenyAllSecurityAccountLookup` is used and every token is rejected (fails closed); tests use
+`InMemorySecurityAccountLookup`. 26b also adds the exception to section 8: `app_user` is an identity table with no
+`association_id`; tenant data hangs off `membership`.
+
+**Errors** (`ApiExceptionHandler`, `infrastructure.web.exception`). One body `{code, message, requestId[, fields]}`.
+403 `NotAllowedException`; 404 every `*NotFoundException` (also another tenant's id: same body, no id echoed); 202
+`{"status":"RECEIVED"}` for `JoinRequestNotPossibleException` (D-14); 409 `ShortNameAlreadyTaken`, `MemberEmailAlreadyUsed`,
+`LastAdministrator`, `DuplicateBooking` and any `AggregateModifiedConcurrentlyException`; 422 every other
+`BusinessRuleException` with its own English message (`InvalidFieldException` also names its field); 400 malformed,
+invalid or unknown-property input with field names only, never values; 404/405/406/415 for the other Spring MVC errors;
+500 for everything else, logging the exception class and the place it was thrown, never its message. Spring Security's
+`AccessDeniedException`/`AuthenticationException` thrown inside a handler keep their 403/401. Errors raised in the filter
+chain (401, 403, 411, 413) are written by the security layer in the same shape, and `ErrorPageController` replaces Boot's
+error page so container-level errors have it too. `server.error.include-*` is `never`, and `DefaultHandlerExceptionResolver`
+is raised to ERROR so Spring's own warnings never quote rejected input. `LogHygieneTest` captures the log and proves a
+rejected email, a password, a token and an `Authorization` header never reach it.
 
 Personal data (name, email, phone) is never written to logs or `toString` (NFR "Operação"/RGPD).
 Erasure on request anonymises every aggregate holding it (`Member`, `JoinRequest`) while keeping

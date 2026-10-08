@@ -21,7 +21,7 @@ The build enforces JDK 21 via Maven Toolchains - needs `~/.m2/toolchains.xml` (t
 ./mvnw verify                                 # test + JaCoCo coverage gate (85% line/branch)
 ./mvnw test -Dtest=OnionArchitectureTest      # architecture rules only
 ./mvnw test -Dtest='BookingTest$Cancel#...'   # single method in a @Nested class
-./mvnw spring-boot:run                        # run the app (needs Postgres)
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # run the app (needs Postgres; `dev` = throwaway JWT key)
 docker compose up -d                          # local Postgres for spring-boot:run
 ./mvnw cyclonedx:makeBom                      # CycloneDX SBOM -> target/regi-volley-sbom.json (CI only otherwise)
 ```
