@@ -88,7 +88,9 @@ alerting on spikes in auth failures. Don't design a SIEM for a project with one 
 | SCA | Build | configured | Dependabot (maven + github-actions) |
 | Coverage gate | Test | ✅ live locally | JaCoCo, 85% line/branch, `mvn verify` |
 | Architecture gate | Test | ✅ live locally | JUnit 5 (`OnionArchitectureTest`) |
-| Tenant isolation tests | Test | required per adapter, none yet (no adapters) | JUnit + Testcontainers |
+| Tenant isolation tests | Test | ✅ live per persistence adapter (#14); HTTP-level cross-tenant IDOR matrix required in #26 | JUnit + Testcontainers |
+| Threat model: REST API + JWT | Plan | ✅ written (`docs/security/threat-model-rest-api.md`; ES256 JWT, Argon2id), implementation pending (#26a-c) | STRIDE, light |
+| AuthN/AuthZ functional security tests | Test | required in #26: 401/403 matrix, alg-none/tampered/expired tokens, refresh reuse, rate limit, enumeration uniformity, log-capture (no PII) | JUnit + Testcontainers + MockMvc |
 | Branch protection | Plan | ⬜ not configured | GitHub required status checks |
 | Container Image Scan | Build/Release | planned (later issue) | Trivy |
 | DAST | Test | N/A — no staging env | — |
