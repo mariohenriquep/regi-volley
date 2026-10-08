@@ -19,7 +19,7 @@ import java.lang.annotation.Target;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({AssociationRepositoryAdapter.class, JoinRequestRepositoryAdapter.class, MemberRepositoryAdapter.class,
-        PlanRepositoryAdapter.class, SessionRepositoryAdapter.class, SubscriptionRepositoryAdapter.class,
-        TrainingGroupRepositoryAdapter.class})
+        PaymentRepositoryAdapter.class, PlanRepositoryAdapter.class, SessionRepositoryAdapter.class, SubscriptionRepositoryAdapter.class,
+        TrainingGroupRepositoryAdapter.class, VenueRepositoryAdapter.class})
 public @interface PersistenceTest {
 }

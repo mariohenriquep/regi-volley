@@ -4,6 +4,7 @@ import com.regivolley.api.domain.exception.SubscriptionModifiedConcurrentlyExcep
 import com.regivolley.api.domain.model.entity.Subscription;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
+import com.regivolley.api.domain.model.valueobject.PaymentStatus;
 import com.regivolley.api.domain.model.valueobject.SubscriptionId;
 
 import java.util.List;
@@ -16,6 +17,9 @@ public interface SubscriptionRepository {
 
     /** All subscriptions of the member, oldest period first (overlap check, balance, eligibility). */
     List<Subscription> findByMember(AssociationId associationId, MemberId memberId);
+
+    /** The association's subscriptions in that payment status, those ending first first (US-22: who is overdue). */
+    List<Subscription> findByPaymentStatus(AssociationId associationId, PaymentStatus status);
 
     /**
      * Inserts a new subscription or updates an existing one with its usages, and returns it as stored,

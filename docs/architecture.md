@@ -53,10 +53,10 @@ never appears in `domain/`.
 
 | What | Package |
 |---|---|
-| Aggregate roots (`Session`, `Plan`, `Subscription`, `Association`, `Member`, `JoinRequest`, `TrainingGroup`) and the entities inside them (`Booking`, `Level`) | `domain.model.entity` |
+| Aggregate roots (`Session`, `Plan`, `Subscription`, `Payment`, `Association`, `Member`, `JoinRequest`, `TrainingGroup`, `Venue`) and the entities inside them (`Booking`, `Level`) | `domain.model.entity` |
 | Value objects: ids, `Money`, `BookingPolicy`, `ContactDetails`, status/type/role enums, ... | `domain.model.valueobject` |
 | Outcomes returned by aggregates that contain entities (`BookingResult`, `CapacityChange`, ...) | `domain.model.result` |
-| Domain services and their inputs/outputs (`BookingEligibility`, `BookingTarget`, ...) | `domain.service` |
+| Domain services and their inputs/outputs (`BookingEligibility`, `BookingTarget`, `PaymentLedger`, ...) | `domain.service` |
 | `AggregateRoot` / `Entity` / `ValueObject` markers, shared validation (`FieldRules`) | `domain.shared` |
 | Domain exceptions | `domain.exception` |
 | Repository ports (interfaces only, one per aggregate root) | `domain.repository` |
@@ -99,8 +99,10 @@ The packages are the DDD building blocks, and `OnionArchitectureTest` enforces t
   results or domain services. Lives in `domain.model.valueobject`.
 - **Result** - the record an aggregate method returns when one operation changes the root and
   its inner entities together (`BookingResult`, `CapacityChange`, ...). `domain.model.result`.
-- **Domain service** - stateless domain logic that spans aggregates and fits none of them
-  (`BookingEligibility`); it takes plain facts, no ports. Types named `*Service`,
+- **Domain service** - domain logic that spans aggregates and fits none of them
+  (`BookingEligibility`); it takes plain facts, no ports. Most are stateless; `PaymentLedger` is an immutable
+  value-holding service, built from the facts of one subscription (its price and payments) and answering questions
+  about them - accepted explicitly, as it still holds no ports and no mutable state. Types named `*Service`,
   `*Eligibility`, `*Calculator`, `*Evaluator` or `*Specification` live only in `domain.service`,
   and nothing there is an entity or value object.
 - **Repository** - one port per aggregate root in `domain.repository`; adapters in
@@ -128,7 +130,7 @@ of the domain packages above.
 | Lista de espera | `Booking` in status `WAITLISTED` |
 | Plano | `Plan` |
 | Subscrição | `Subscription` |
-| Pagamento / Estorno | `Payment` / `Refund` |
+| Pagamento / Estorno | `Payment` / reversal (a `Payment` with `reversalOf` set; never `Refund`) |
 | Falta | `NO_SHOW` |
 | Evento | `Event` |
 | Pedido de adesão | `JoinRequest` |
@@ -256,3 +258,42 @@ are domain exceptions extending a common `BusinessRuleException`, carrying struc
 are formatted in `Europe/Lisbon` as `dd/MM/yyyy HH:mm`, never raw UTC. Invariant and programming errors (invalid
 reconstruct data, null arguments) use English messages and are never shown to users - they map
 to a generic error.
+
+## 13. Administration rules that span aggregates
+
+The admin use cases (issue #25) keep these cross-aggregate rules in the application layer, each next to the lock
+that makes it safe under concurrency:
+
+- **Last administrator.** An association must keep one active administrator. Every attempt that can remove one
+  (deactivating a member, revoking ADMIN) starts with `AdminGuard.serialise`: `AssociationRepository.findByIdForUpdate`
+  takes the **association row** lock *before any member is loaded*, which queues such attempts one after the other.
+  `AdminGuard.requireAnotherActiveAdmin` then counts with a fresh scalar query (`MemberRepository.findActiveAdminIds`,
+  ids rather than entities). Locking the administrators' own rows is not enough: under READ COMMITTED the role rows are
+  judged against an old snapshot and Hibernate hands back entities already loaded, so two removals could each count the
+  other's administrator as the one that stays (reproduced; the race tests in `AdminFlowIntegrationTest` cover revoke vs
+  revoke, revoke vs deactivate and deactivate vs deactivate). **The future erasure use case must go through the same
+  guard**: `Member.anonymise` drops every role, so erasing the last administrator would otherwise orphan the association.
+- **Venues.** `Venue` is an aggregate root, but `training_groups.venue_id` has no foreign key (V4 is applied). Creating a
+  group and deleting a venue both start with `VenueRepository.findByIdForUpdate`, so a venue is never deleted under a group
+  being created; deleting is refused while an ACTIVE group runs there (`VenueInUseException`).
+- **Group and plan configuration.** What an aggregate cannot check alone lives in the domain where it can: coach eligibility
+  is `Member.canCoach()` / `requireCanCoach()` (also used by session generation) and level ownership is
+  `Association.requireLevels`. Editing a group is refused first when it is archived.
+- **Plan assignment** authorises the administrator, then locks the member's row (as booking does), so two assignments cannot
+  both pass the RN-16 overlap check; a deactivated member is refused. The subscription snapshots the plan's terms **and
+  price**, so editing a plan never changes what existing subscriptions owe.
+- **Payments are append-only (RN-19).** `Payment` has no version, `PaymentRepository` offers only `findById`,
+  `findBySubscription` and `add`, the JPA entity is `@Immutable` and database triggers refuse any `UPDATE`, `DELETE` or
+  `TRUNCATE` and the insert of a reversal of a reversal. A reversal is a second `Payment` with `reversalOf` set (positive
+  amount, counted negatively); a unique constraint allows one reversal per payment and a composite foreign key keeps it on the
+  same subscription. A payment cannot be dated after today in Lisbon. `PaymentLedger` (domain service) decides amounts and
+  status from the subscription's own price; `PaymentSettling` saves the subscription *first* (its row lock and version
+  serialise concurrent payments or reversals of one subscription) and adds the payment second. The adapter turns only the
+  constraints that mean "lost a race" (second reversal, cross-subscription reversal, existing id) into
+  `PaymentModifiedConcurrentlyException`; any other violation is rethrown as a data-integrity error.
+- **Payment status.** PENDING -> OVERDUE is an administrator's decision (`MarkSubscriptionOverdue`); OVERDUE blocks booking
+  (RN-18). PAID goes back to PENDING only through a reversal.
+- **Join requests.** A partial unique index allows one PENDING request per (association, email); the use case answers a
+  duplicate (pending request or existing member) with one generic `JoinRequestNotPossibleException`.
+- **Lists** (`MyPlan`, `ListSubscriptionsByPaymentStatus`) load members and plans in one batch (`findByIds`) rather than
+  one query per row; a row whose member cannot be loaded is logged by id and left out instead of failing the list.

@@ -21,6 +21,11 @@ final class Permissions {
         return actor.isActive() && actor.hasRole(MemberRole.ADMIN);
     }
 
+    /** An active administrator or an active coach of the association (the coach's powers are limited by the use case that grants them). */
+    static boolean isAdminOrCoach(Member actor) {
+        return isAdmin(actor) || (actor.isActive() && actor.hasRole(MemberRole.COACH));
+    }
+
     /** An administrator, or the coach of this very session (the session's coach, who still holds the COACH role). */
     static boolean isStaffOf(Member actor, Session session) {
         return isAdmin(actor)
@@ -29,6 +34,12 @@ final class Permissions {
 
     static void requireAdmin(Member actor, String action) {
         if (!isAdmin(actor)) {
+            throw new NotAllowedException(action);
+        }
+    }
+
+    static void requireAdminOrCoach(Member actor, String action) {
+        if (!isAdminOrCoach(actor)) {
             throw new NotAllowedException(action);
         }
     }

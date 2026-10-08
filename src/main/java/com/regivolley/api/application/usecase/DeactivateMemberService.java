@@ -33,7 +33,7 @@ import java.util.function.Consumer;
  * US-08. An administrator deactivates a member; their history stays, their future bookings go.
  *
  * <p>Step one stores the INACTIVE member (skipped if already inactive, so a run that stopped halfway can
- * be repeated). Then each session where they still hold a seat or a waitlist place is handled in its own
+ * be repeated). The last active administrator cannot be deactivated ({@link AdminGuard}). Then each session where they still hold a seat or a waitlist place is handled in its own
  * transaction with its own retries: the session decides whether it still takes cancellations and cancels
  * the booking <em>by the association</em> (never late, credit refundable; the waitlist is promoted, charged
  * and notified like for any cancellation) - this service only loads and calls. A session that fails even
@@ -53,6 +53,7 @@ public class DeactivateMemberService implements DeactivateMemberUseCase {
     private final AssociationRepository associations;
     private final BookingCanceller canceller;
     private final Notifier notifier;
+    private final AdminGuard adminGuard;
     private final UnitOfWork unitOfWork;
     private final Clock clock;
 
@@ -66,6 +67,7 @@ public class DeactivateMemberService implements DeactivateMemberUseCase {
         this.canceller = new BookingCanceller(sessions, subscriptions, new SeatPromoter(members, subscriptions, groups),
                 new CreditRefunder(subscriptions), clock);
         this.notifier = notifier;
+        this.adminGuard = new AdminGuard(associations, members);
         this.unitOfWork = new UnitOfWork(transactions);
         this.clock = clock;
     }
@@ -97,10 +99,17 @@ public class DeactivateMemberService implements DeactivateMemberUseCase {
 
     private Member deactivate(DeactivateMemberCommand command) {
         AssociationId associationId = command.actor().associationId();
+        adminGuard.serialise(associationId);
         Member actor = Lookups.member(members, associationId, command.actor().memberId());
         Permissions.requireAdmin(actor, "deactivate members");
         Member target = Lookups.member(members, associationId, command.memberId());
-        return target.status() == MemberStatus.ACTIVE ? members.save(target.deactivate()) : target;
+        if (target.status() != MemberStatus.ACTIVE) {
+            return target;
+        }
+        if (Permissions.isAdmin(target)) {
+            adminGuard.requireAnotherActiveAdmin(associationId, target.id());
+        }
+        return members.save(target.deactivate());
     }
 
     /** Whether a booking was cancelled; false when the session no longer takes cancellations or the member has none. */

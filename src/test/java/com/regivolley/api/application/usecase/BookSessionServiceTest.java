@@ -236,7 +236,7 @@ class BookSessionServiceTest {
         // Arrange
         Subscription overdue = Data.unlimited(association, member);
         overdue = Subscription.reconstruct(overdue.id(), overdue.associationId(), overdue.memberId(), overdue.planId(),
-                overdue.terms(), overdue.startDate(), overdue.endDate(), PaymentStatus.OVERDUE, overdue.usages(), 0L);
+                overdue.terms(), overdue.price(), overdue.startDate(), overdue.endDate(), PaymentStatus.OVERDUE, overdue.usages(), 0L);
         memberHolds(overdue);
         Executable act = () -> useCase.execute(command());
 

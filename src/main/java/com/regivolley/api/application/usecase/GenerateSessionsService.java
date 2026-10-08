@@ -7,7 +7,6 @@ import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
-import com.regivolley.api.domain.model.valueobject.MemberRole;
 import com.regivolley.api.domain.model.valueobject.SessionGenerationPolicy;
 import com.regivolley.api.domain.model.valueobject.TrainingGroupId;
 import com.regivolley.api.domain.repository.AssociationRepository;
@@ -95,8 +94,7 @@ public class GenerateSessionsService implements GenerateSessionsUseCase {
 
     private boolean hasUsableCoach(Association association, TrainingGroup group) {
         return members.findById(association.id(), group.coachId())
-                .filter(Member::isActive)
-                .filter(coach -> coach.hasRole(MemberRole.COACH))
+                .filter(Member::canCoach)
                 .isPresent();
     }
 

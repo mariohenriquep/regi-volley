@@ -37,6 +37,8 @@ class SubscriptionRepositoryAdapterTest extends AbstractPostgresIntegrationTest 
     private AssociationRepository associations;
     @Autowired
     private EntityManager entityManager;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private Association newAssociation() {
         return associations.save(Fixtures.association());
@@ -208,5 +210,47 @@ class SubscriptionRepositoryAdapterTest extends AbstractPostgresIntegrationTest 
         assertThat(visibleToB).isFalse();
         assertThat(memberAsB).isEmpty();
         assertThat(subscriptions.findByMember(a.id(), member)).extracting(Subscription::id).containsExactly(ofA.id());
+    }
+
+    @Test
+    void findByPaymentStatusReturnsOnlyThatStatusOfThatAssociationOldestEndFirst() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        Plan plan = Fixtures.monthlyNPerWeek(a.id());
+        Subscription later = subscriptions.save(Fixtures.subscription(plan, MemberId.generate(), "2026-11-01").markOverdue());
+        Subscription earlier = subscriptions.save(Fixtures.subscription(plan, MemberId.generate(), "2026-10-01").markOverdue());
+        subscriptions.save(Fixtures.subscription(plan, MemberId.generate(), "2026-10-01"));
+        subscriptions.save(Fixtures.subscription(plan, MemberId.generate(), "2026-10-01").markPaid());
+        subscriptions.save(Fixtures.subscription(Fixtures.monthlyNPerWeek(b.id()), MemberId.generate(), "2026-10-01").markOverdue());
+        flushAndClear();
+
+        // Act
+        List<Subscription> overdue = subscriptions.findByPaymentStatus(a.id(), PaymentStatus.OVERDUE);
+
+        // Assert
+        assertThat(overdue).extracting(Subscription::id).containsExactly(earlier.id(), later.id());
+        assertThat(subscriptions.findByPaymentStatus(a.id(), PaymentStatus.PENDING)).hasSize(1);
+        assertThat(subscriptions.findByPaymentStatus(b.id(), PaymentStatus.PAID)).isEmpty();
+    }
+
+    @Test
+    void theSoldPriceIsStoredAndNotFollowingLaterPlanEdits() {
+        // Arrange
+        Association association = newAssociation();
+        Plan plan = Fixtures.pack(association.id(), Set.of());
+        Subscription sold = subscriptions.save(Fixtures.subscription(plan, MemberId.generate(), "2026-10-01"));
+        flushAndClear();
+        Plan repriced = plan.edit(plan.name(), plan.terms(), com.regivolley.api.domain.model.valueobject.Money.ofCents(9900), 90);
+
+        // Act
+        Subscription loaded = subscriptions.findById(association.id(), sold.id()).orElseThrow();
+        Subscription renewal = subscriptions.save(Fixtures.subscription(repriced, MemberId.generate(), "2026-10-01"));
+
+        // Assert
+        assertThat(loaded.price()).isEqualTo(plan.price());
+        assertThat(renewal.price()).isEqualTo(repriced.price());
+        assertThat(jdbc.queryForObject("select price_cents from subscriptions where id = ?", Long.class, sold.id().value()))
+                .isEqualTo(4500L);
     }
 }

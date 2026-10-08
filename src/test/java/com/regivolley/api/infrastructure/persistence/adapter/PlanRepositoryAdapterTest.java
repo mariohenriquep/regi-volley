@@ -141,4 +141,25 @@ class PlanRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         assertThat(ex.planId()).isEqualTo(stored.id());
         assertThat(plans.findById(association.id(), stored.id()).orElseThrow().name()).isEqualTo("Renamed");
     }
+
+    @Test
+    void findByIdsReturnsTheRequestedPlansOfThatAssociationOnly() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        Plan one = plans.save(Fixtures.pack(a.id(), Set.of()));
+        Plan two = plans.save(Fixtures.monthlyNPerWeek(a.id()));
+        plans.save(Fixtures.pack(a.id(), Set.of()));
+        Plan foreign = plans.save(Fixtures.pack(b.id(), Set.of()));
+        entityManager.flush();
+        entityManager.clear();
+
+        // Act
+        var found = plans.findByIds(a.id(), java.util.List.of(one.id(), two.id(), foreign.id()));
+
+        // Assert
+        assertThat(found).extracting(Plan::id).containsExactlyInAnyOrder(one.id(), two.id());
+        assertThat(plans.findByIds(b.id(), java.util.List.of(one.id()))).isEmpty();
+        assertThat(plans.findByIds(a.id(), java.util.List.of())).isEmpty();
+    }
 }

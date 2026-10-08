@@ -3,6 +3,8 @@ package com.regivolley.api.infrastructure.persistence.adapter;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.TrainingGroupId;
+import com.regivolley.api.domain.model.valueobject.TrainingGroupStatus;
+import com.regivolley.api.domain.model.valueobject.VenueId;
 import com.regivolley.api.domain.repository.TrainingGroupRepository;
 import com.regivolley.api.infrastructure.persistence.entity.TrainingGroupJpaEntity;
 import com.regivolley.api.infrastructure.persistence.mapper.TrainingGroupPersistenceMapper;
@@ -39,6 +41,13 @@ public class TrainingGroupRepositoryAdapter implements TrainingGroupRepository {
         return groups.findAllByAssociationIdOrderByNameAscIdAsc(associationId.value()).stream()
                 .map(TrainingGroupPersistenceMapper::toDomain)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean existsActiveWithVenue(AssociationId associationId, VenueId venueId) {
+        return groups.existsByAssociationIdAndVenueIdAndStatus(associationId.value(), venueId.value(),
+                TrainingGroupStatus.ACTIVE.name());
     }
 
     @Override

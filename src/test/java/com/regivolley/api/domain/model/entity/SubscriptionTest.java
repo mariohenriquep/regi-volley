@@ -79,7 +79,7 @@ class SubscriptionTest {
 
     private static Subscription inStatus(Subscription base, PaymentStatus status) {
         return Subscription.reconstruct(base.id(), base.associationId(), base.memberId(), base.planId(),
-                base.terms(), base.startDate(), base.endDate(), status, base.usages(), base.version());
+                base.terms(), base.price(), base.startDate(), base.endDate(), status, base.usages(), base.version());
     }
 
     /** Consumes one place per instant, each for a fresh booking. */
@@ -122,10 +122,42 @@ class SubscriptionTest {
         }
 
         @Test
+        void keepsThePriceThePlanHadWhenItWasAssignedEvenIfThePlanChangesLater() {
+            // Arrange
+            Plan plan = pack(10, 90);
+            Subscription subscription = Subscription.create(plan, MEMBER, LocalDate.parse("2026-10-01"), List.of());
+            Plan repriced = plan.edit(plan.name(), plan.terms(), Money.ofCents(9900), 90);
+
+            // Act
+            Subscription renewal = Subscription.renew(repriced, subscription, List.of(subscription), LocalDate.parse("2026-12-30"));
+
+            // Assert
+            assertThat(subscription.price()).isEqualTo(PRICE);
+            assertThat(renewal.price()).isEqualTo(Money.ofCents(9900));
+            assertThat(subscription.markPaid().price()).isEqualTo(PRICE);
+            assertThat(subscription.consume(BookingId.generate(), lisbon("2026-10-14T20:00")).price()).isEqualTo(PRICE);
+        }
+
+        @Test
+        void aSubscriptionNeedsAPrice() {
+            // Arrange
+            Executable act = () -> Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
+                    PlanId.generate(), PlanTerms.monthlyUnlimited(Set.of()), null, LocalDate.parse("2026-10-01"),
+                    LocalDate.parse("2026-10-31"), PaymentStatus.PAID, List.of(), 0L);
+
+            // Act
+            NullPointerException ex = assertThrows(NullPointerException.class, act);
+
+            // Assert
+            assertThat(ex.getMessage()).contains("price");
+        }
+
+        @Test
         void everyChangeKeepsTheVersionTheSubscriptionWasLoadedWith() {
             // Arrange
             Subscription loaded = Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
-                    PlanId.generate(), PlanTerms.pack(5, Set.of()), LocalDate.parse("2026-10-01"),
+                    PlanId.generate(), PlanTerms.pack(5, Set.of()), Money.ofCents(4500),
+                    LocalDate.parse("2026-10-01"),
                     LocalDate.parse("2026-12-29"), PaymentStatus.PENDING, List.of(), 4L);
             BookingId booking = BookingId.generate();
 
@@ -143,7 +175,8 @@ class SubscriptionTest {
         void reconstructRejectsANegativeVersion() {
             // Arrange
             Executable act = () -> Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
-                    PlanId.generate(), PlanTerms.monthlyUnlimited(Set.of()), LocalDate.parse("2026-10-01"),
+                    PlanId.generate(), PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000),
+                    LocalDate.parse("2026-10-01"),
                     LocalDate.parse("2026-10-31"), PaymentStatus.PAID, List.of(), -1L);
 
             // Act
@@ -200,7 +233,7 @@ class SubscriptionTest {
         }
 
         private Subscription reconstruct(PlanTerms terms, String start, String end, List<CreditUsage> usages) {
-            return Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER, PlanId.generate(), terms,
+            return Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER, PlanId.generate(), terms, Money.ofCents(3000),
                     LocalDate.parse(start), LocalDate.parse(end), PaymentStatus.PAID, usages, 0L);
         }
 
@@ -291,10 +324,10 @@ class SubscriptionTest {
             // Arrange
             PlanTerms terms = PlanTerms.monthlyUnlimited(Set.of());
             LocalDate start = LocalDate.parse("2026-10-01");
-            Executable noId = () -> Subscription.reconstruct(null, ASSOCIATION, MEMBER, PlanId.generate(), terms,
+            Executable noId = () -> Subscription.reconstruct(null, ASSOCIATION, MEMBER, PlanId.generate(), terms, Money.ofCents(3000),
                     start, start, PaymentStatus.PAID, List.of(), 0L);
             Executable noStatus = () -> Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
-                    PlanId.generate(), terms, start, start, null, List.of(), 0L);
+                    PlanId.generate(), terms, Money.ofCents(3000), start, start, null, List.of(), 0L);
 
             // Act
             NullPointerException id = assertThrows(NullPointerException.class, noId);
@@ -854,6 +887,36 @@ class SubscriptionTest {
             assertThat(paid.endDate()).isEqualTo(used.endDate());
         }
 
+        @Test
+        void aPaidSubscriptionGoesBackToPendingWhenItsPaymentIsReversed() {
+            // Arrange
+            Subscription paid = consumeAll(subscribe(pack(3, 90), "2026-10-01"), "2026-10-14T20:00").markPaid();
+
+            // Act
+            Subscription reopened = paid.reopenPayment();
+
+            // Assert
+            assertThat(reopened.paymentStatus()).isEqualTo(PaymentStatus.PENDING);
+            assertThat(reopened.usages()).isEqualTo(paid.usages());
+            assertThat(reopened.id()).isEqualTo(paid.id());
+            assertThat(reopened.version()).isEqualTo(paid.version());
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = PaymentStatus.class, names = {"PENDING", "OVERDUE"})
+        void onlyAPaidSubscriptionCanBeReopened(PaymentStatus from) {
+            // Arrange
+            Subscription subscription = inStatus(subscribe(unlimited(), "2026-10-01"), from);
+            Executable act = subscription::reopenPayment;
+
+            // Act
+            InvalidPaymentStatusTransitionException ex = assertThrows(InvalidPaymentStatusTransitionException.class, act);
+
+            // Assert
+            assertThat(ex.from()).isEqualTo(from);
+            assertThat(ex.to()).isEqualTo(PaymentStatus.PENDING);
+        }
+
         static Stream<Arguments> illegalTransitions() {
             return Stream.of(
                     Arguments.of(PaymentStatus.PAID, PaymentStatus.PAID),
@@ -1392,7 +1455,8 @@ class SubscriptionTest {
                     new CreditUsage(BookingId.generate(), LocalDate.parse("2026-10-12")),
                     new CreditUsage(BookingId.generate(), LocalDate.parse("2026-10-18")));
             Executable act = () -> Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
-                    PlanId.generate(), PlanTerms.monthlyNPerWeek(1, Set.of()), LocalDate.parse("2026-10-01"),
+                    PlanId.generate(), PlanTerms.monthlyNPerWeek(1, Set.of()), Money.ofCents(3000),
+                    LocalDate.parse("2026-10-01"),
                     LocalDate.parse("2026-10-31"), PaymentStatus.PAID, sameWeek, 0L);
 
             // Act
@@ -1411,7 +1475,8 @@ class SubscriptionTest {
 
             // Act
             Subscription subscription = Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
-                    PlanId.generate(), PlanTerms.monthlyNPerWeek(1, Set.of()), LocalDate.parse("2026-10-01"),
+                    PlanId.generate(), PlanTerms.monthlyNPerWeek(1, Set.of()), Money.ofCents(3000),
+                    LocalDate.parse("2026-10-01"),
                     LocalDate.parse("2026-10-31"), PaymentStatus.PAID, adjacentWeeks, 0L);
 
             // Assert

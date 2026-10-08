@@ -21,5 +21,7 @@ interface TrainingGroupJpaRepository extends JpaRepository<TrainingGroupJpaEntit
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<TrainingGroupJpaEntity> findForUpdateByIdAndAssociationId(UUID id, UUID associationId);
 
+    boolean existsByAssociationIdAndVenueIdAndStatus(UUID associationId, UUID venueId, String status);
+
     List<TrainingGroupJpaEntity> findAllByAssociationIdOrderByNameAscIdAsc(UUID associationId);
 }

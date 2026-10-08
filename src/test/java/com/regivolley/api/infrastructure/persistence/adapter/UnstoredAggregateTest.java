@@ -141,7 +141,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association a = association();
         Subscription fresh = Fixtures.subscription(Fixtures.pack(a.id(), Set.of()), MemberId.generate(), "2026-10-01");
-        Subscription loaded = Subscription.reconstruct(fresh.id(), a.id(), fresh.memberId(), fresh.planId(), fresh.terms(),
+        Subscription loaded = Subscription.reconstruct(fresh.id(), a.id(), fresh.memberId(), fresh.planId(), fresh.terms(), fresh.price(),
                 fresh.startDate(), fresh.endDate(), PaymentStatus.PENDING, List.of(), 5L);
         Executable act = () -> subscriptions.save(loaded);
 

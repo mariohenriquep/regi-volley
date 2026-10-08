@@ -2,6 +2,7 @@ package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.DeactivateMemberCommand;
 import com.regivolley.api.application.result.MemberDeactivated;
+import com.regivolley.api.domain.exception.LastAdministratorException;
 import com.regivolley.api.domain.exception.MemberNotFoundException;
 import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.exception.SessionModifiedConcurrentlyException;
@@ -80,6 +81,7 @@ class DeactivateMemberServiceTest {
         useCase = new DeactivateMemberService(sessions, members, associations, groups, subscriptions, transactions,
                 notifier, Data.CLOCK);
         lenient().when(associations.findById(association.id())).thenReturn(Optional.of(association));
+        lenient().when(associations.findByIdForUpdate(association.id())).thenReturn(Optional.of(association));
         lenient().when(groups.findById(association.id(), group.id())).thenReturn(Optional.of(group));
         lenient().when(sessions.save(any(Session.class))).thenAnswer(returnsFirstArg());
         lenient().when(subscriptions.save(any(Subscription.class))).thenAnswer(returnsFirstArg());
@@ -134,6 +136,67 @@ class DeactivateMemberServiceTest {
         assertThat(savedSessions.getAllValues()).allSatisfy(session ->
                 assertThat(Data.bookingOf(session, target).cancellationKind()).hasValue(CancellationKind.BY_ASSOCIATION));
         verify(subscriptions, times(2)).save(any(Subscription.class));
+    }
+
+    @Test
+    void theLastActiveAdministratorCannotBeDeactivatedNotEvenByThemselves() {
+        // Arrange
+        Member loneAdmin = Data.admin(association);
+        knows(loneAdmin);
+        when(members.findActiveAdminIds(association.id())).thenReturn(List.of(loneAdmin.id()));
+        Executable act = () -> useCase.execute(new DeactivateMemberCommand(Data.actor(loneAdmin), loneAdmin.id()));
+
+        // Act
+        assertThrows(LastAdministratorException.class, act);
+
+        // Assert
+        verify(members, never()).save(any(Member.class));
+        verifyNoInteractions(sessions);
+    }
+
+    @Test
+    void deactivatingTakesTheAssociationLockBeforeLoadingAnyMember() {
+        // Arrange
+        // (the default target is a plain member)
+
+        // Act
+        useCase.execute(deactivate(admin));
+
+        // Assert
+        var order = org.mockito.Mockito.inOrder(associations, members);
+        order.verify(associations).findByIdForUpdate(association.id());
+        order.verify(members).findById(association.id(), admin.id());
+    }
+
+    @Test
+    void anAdministratorCanBeDeactivatedWhileAnotherOneStays() {
+        // Arrange
+        Member leaving = Data.admin(association);
+        knows(leaving);
+        when(members.findActiveAdminIds(association.id())).thenReturn(List.of(admin.id(), leaving.id()));
+        storedWithBookingsOf(leaving);
+
+        // Act
+        MemberDeactivated result = useCase.execute(new DeactivateMemberCommand(Data.actor(admin), leaving.id()));
+
+        // Assert
+        assertThat(result.member().status()).isEqualTo(MemberStatus.INACTIVE);
+        verify(members).save(any(Member.class));
+    }
+
+    @Test
+    void deactivatingAnAlreadyInactiveAdministratorNeedsNoGuard() {
+        // Arrange
+        Member gone = Data.admin(association).deactivate();
+        knows(gone);
+        storedWithBookingsOf(gone);
+
+        // Act
+        MemberDeactivated result = useCase.execute(new DeactivateMemberCommand(Data.actor(admin), gone.id()));
+
+        // Assert
+        assertThat(result.member().status()).isEqualTo(MemberStatus.INACTIVE);
+        verify(members, never()).findActiveAdminIds(any());
     }
 
     @Test

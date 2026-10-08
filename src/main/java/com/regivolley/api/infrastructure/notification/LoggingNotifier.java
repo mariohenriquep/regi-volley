@@ -1,6 +1,7 @@
 package com.regivolley.api.infrastructure.notification;
 
 import com.regivolley.api.domain.model.valueobject.AssociationId;
+import com.regivolley.api.domain.model.valueobject.JoinRequestId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.model.valueobject.SessionId;
 import com.regivolley.api.domain.port.Notifier;
@@ -34,5 +35,16 @@ public class LoggingNotifier implements Notifier {
     public void noShowLimitReached(AssociationId associationId, MemberId memberId, int noShowsThisMonth) {
         LOG.info("Notification due: no-show limit reached, to the member and the administrators "
                 + "(association={}, member={}, noShows={})", associationId, memberId, noShowsThisMonth);
+    }
+
+    @Override
+    public void memberApproved(AssociationId associationId, MemberId memberId) {
+        LOG.info("Notification due: join request approved, welcome to the new member (association={}, member={})",
+                associationId, memberId);
+    }
+
+    @Override
+    public void joinRequestRejected(AssociationId associationId, JoinRequestId requestId) {
+        LOG.info("Notification due: join request rejected (association={}, request={})", associationId, requestId);
     }
 }

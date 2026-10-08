@@ -14,6 +14,8 @@ import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /** {@link MemberRepository} on Spring Data JPA. Nothing here logs a name, email or phone. */
@@ -38,10 +40,26 @@ public class MemberRepositoryAdapter implements MemberRepository {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<Member> findByIds(AssociationId associationId, Collection<MemberId> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return members.findByAssociationIdAndIdIn(associationId.value(), ids.stream().map(MemberId::value).toList())
+                .stream().map(MemberPersistenceMapper::toDomain).toList();
+    }
+
+    @Override
     @Transactional
     public Optional<Member> findByIdForUpdate(AssociationId associationId, MemberId id) {
         return members.findForUpdateByIdAndAssociationId(id.value(), associationId.value())
                 .map(MemberPersistenceMapper::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<MemberId> findActiveAdminIds(AssociationId associationId) {
+        return members.findActiveAdminIds(associationId.value()).stream().map(MemberId::new).toList();
     }
 
     @Override
