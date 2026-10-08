@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -291,6 +292,123 @@ class JavaSourceFileTest {
             // Assert
             assertThat(source.kind()).isEqualTo(JavaSourceFile.TypeKind.NONE);
             assertThat(source.typeName()).isEmpty();
+        }
+    }
+
+    @Nested
+    class SecurityRelevantShape {
+
+        @Test
+        void nimbusReferencesAreTracked() {
+            // Arrange
+            String content = "package a;\nimport com.nimbusds.jose.jwk.ECKey;\nclass A {}\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("A.java", content);
+
+            // Assert
+            assertThat(source.referencesInto(Set.of("com.nimbusds"))).containsExactly("com.nimbusds.jose.jwk.ECKey");
+        }
+
+        @Test
+        void detectsAConstructorCall() {
+            // Arrange
+            String content = "package a;\nclass A { Object o = new Actor(a, b); }\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("A.java", content);
+
+            // Assert
+            assertThat(source.instantiates("Actor")).isTrue();
+        }
+
+        @Test
+        void detectsAQualifiedConstructorCall() {
+            // Arrange
+            String content = "package a;\nclass A { Object o = new com.regivolley.api.application.command.Actor (a, b); }\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("A.java", content);
+
+            // Assert
+            assertThat(source.instantiates("Actor")).isTrue();
+        }
+
+        @Test
+        void detectsAConstructorReference() {
+            // Arrange
+            String content = "package a;\nclass A { java.util.function.BiFunction<X, Y, Actor> f = Actor::new; }\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("A.java", content);
+
+            // Assert
+            assertThat(source.instantiates("Actor")).isTrue();
+        }
+
+        @Test
+        void aMentionInACommentOrStringOrAFieldIsNotAnInstantiation() {
+            // Arrange
+            String content = "package a;\n/** new Actor(x) */\nclass A { // new Actor(y)\n Actor field; String s = \"new Actor(\"; }\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("A.java", content);
+
+            // Assert
+            assertThat(source.instantiates("Actor")).isFalse();
+        }
+
+        @Test
+        void aDifferentTypeWithTheSameSuffixIsNotTheActor() {
+            // Arrange
+            String content = "package a;\nclass A { Object o = new AuthenticatedActor(a); Object p = new Actors(); Object q = AuthenticatedActor::new; }\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("A.java", content);
+
+            // Assert
+            assertThat(source.instantiates("Actor")).isFalse();
+        }
+
+        @Test
+        void readsTheComponentNamesOfARecordWithAnnotatedComponents() {
+            // Arrange
+            String content = "package a;\nrecord CreateRequest(@NotBlank @Size(max = 5) String name,\n"
+                    + "  List<String> levelNames, UUID associationId) {}\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("CreateRequest.java", content);
+
+            // Assert
+            assertThat(source.recordComponentNames()).containsExactly("name", "levelNames", "associationId");
+        }
+
+        @Test
+        void readsNestedRecordsToo() {
+            // Arrange
+            String content = "package a;\nrecord OrderRequest(String name, List<Line> lines) {\n"
+                    + "  record Line(int quantity, java.util.UUID tenantId) {}\n}\n";
+
+            // Act
+            Map<String, List<String>> records = JavaSourceFile.parse("OrderRequest.java", content).recordComponents();
+
+            // Assert
+            assertThat(records).containsOnlyKeys("OrderRequest", "Line");
+            assertThat(records.get("OrderRequest")).containsExactly("name", "lines");
+            assertThat(records.get("Line")).containsExactly("quantity", "tenantId");
+        }
+
+        @Test
+        void aTypeThatIsNotARecordHasNoComponents() {
+            // Arrange
+            String content = "package a;\nclass A { void f(String x) {} }\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("A.java", content);
+
+            // Assert
+            assertThat(source.recordComponentNames()).isEmpty();
+            assertThat(source.recordComponents()).isEmpty();
         }
     }
 }

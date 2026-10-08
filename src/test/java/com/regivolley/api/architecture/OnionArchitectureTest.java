@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -36,6 +37,9 @@ class OnionArchitectureTest {
     private static final String WEB = INFRASTRUCTURE + ".web";
     private static final String WEB_DTOS = WEB + ".dto";
     private static final String WEB_MAPPERS = WEB + ".mapper";
+    private static final String WEB_CONTROLLERS = WEB + ".controller";
+    private static final String WEB_EXCEPTIONS = WEB + ".exception";
+    private static final String SECURITY = INFRASTRUCTURE + ".security";
 
     private static final String MODEL = DOMAIN + ".model";
     private static final String ENTITIES = MODEL + ".entity";
@@ -374,6 +378,197 @@ class OnionArchitectureTest {
 
         // Assert
         assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void nimbusStaysInTheSecurityPackage() {
+        // Arrange
+        Set<String> forbidden = Set.of("com.nimbusds");
+
+        // Act
+        List<String> violations = sources.stream()
+                .filter(source -> !source.residesIn(SECURITY))
+                .flatMap(source -> describe(source, forbidden).stream())
+                .toList();
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void springSecurityStaysInTheSecurityPackageExceptForTheTwoExceptionsTheAdviceTranslates() {
+        // Arrange
+        Set<String> forbidden = Set.of("org.springframework.security");
+
+        // Act
+        List<String> violations = sources.stream()
+                .filter(source -> !source.residesIn(SECURITY) && !source.residesIn(WEB_EXCEPTIONS))
+                .flatMap(source -> describe(source, forbidden).stream())
+                .toList();
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void theExceptionAdviceImportsOnlyTheTwoSpringSecurityExceptionsItTranslates() {
+        // Arrange - a 403/401 thrown from inside a handler must keep its status instead of becoming a 500
+        Set<String> allowed = Set.of("org.springframework.security.access.AccessDeniedException",
+                "org.springframework.security.core.AuthenticationException");
+
+        // Act
+        List<String> violations = sources.stream()
+                .filter(source -> source.residesIn(WEB_EXCEPTIONS))
+                .flatMap(source -> source.referencesInto(Set.of("org.springframework.security")).stream()
+                        .filter(reference -> !allowed.contains(reference))
+                        .map(reference -> source.name() + " -> " + reference))
+                .toList();
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void anActorIsConstructedByExactlyOneClassTheAuthenticatedActor() {
+        // Arrange - the caller's identity must come from a verified token and nowhere else (threat model D-6)
+        String actor = "Actor";
+
+        // Act
+        List<String> constructors = sources.stream()
+                .filter(source -> source.instantiates(actor))
+                .map(source -> source.packageName() + "." + source.typeName())
+                .toList();
+
+        // Assert - exactly one: proves exclusivity, and that the check is not passing vacuously
+        assertThat(constructors).containsExactly(SECURITY + ".AuthenticatedActor");
+    }
+
+    @Test
+    void controllersLiveOnlyInTheWebControllerPackage() {
+        // Arrange
+        String suffix = "Controller";
+
+        // Act
+        List<String> violations = typesIn(BASE, source -> source.typeName().endsWith(suffix) && !source.residesIn(WEB_CONTROLLERS));
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void exceptionMappingLivesOnlyInTheWebExceptionPackage() {
+        // Arrange
+        String suffix = "ExceptionHandler";
+
+        // Act
+        List<String> violations = typesIn(BASE, source -> source.typeName().endsWith(suffix) && !source.residesIn(WEB_EXCEPTIONS));
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void servletFiltersLiveOnlyInTheSecurityPackage() {
+        // Arrange - by what they are, not by what they are called
+        Set<String> filterTypes = Set.of("jakarta.servlet.Filter", "org.springframework.web.filter");
+
+        // Act
+        List<String> violations = sources.stream()
+                .filter(source -> !source.residesIn(SECURITY))
+                .flatMap(source -> describe(source, filterTypes).stream())
+                .toList();
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void thePrincipalResolverLivesOnlyInTheSecurityPackage() {
+        // Arrange
+        String suffix = "PrincipalResolver";
+
+        // Act
+        List<String> violations = typesIn(BASE, source -> source.typeName().endsWith(suffix) && !source.residesIn(SECURITY));
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void theWebLayerNeverTouchesPersistence() {
+        // Arrange - controllers translate HTTP to use cases and back (architecture.md section 6); data access is not theirs
+        Set<String> forbidden = Set.of(PERSISTENCE, DOMAIN + ".repository", "jakarta.persistence", "org.springframework.data");
+
+        // Act
+        List<String> violations = violations(WEB, forbidden);
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void noWebInputRecordCarriesATenantRoleOrVersionField() {
+        // Arrange - the tenant comes from the token, never from the client (threat model D-12, rule 2); only *Response
+        // records may name them (a response says who the caller is, it does not accept it)
+        Set<String> forbidden = Set.of("associationId", "tenantId", "roles", "version");
+
+        // Act
+        List<String> violations = dtoRecordViolations(sources, forbidden);
+
+        // Assert
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void theWebInputRecordRuleReallyChecksTheRealDtos() {
+        // Arrange
+        Set<String> checked = sources.stream()
+                .filter(source -> source.residesIn(WEB_DTOS))
+                .flatMap(source -> source.recordComponents().keySet().stream())
+                .filter(name -> !name.endsWith("Response"))
+                .collect(Collectors.toSet());
+
+        // Act
+        boolean seesTheErrorBody = checked.contains("ApiError");
+
+        // Assert - guards against the rule passing because it looked at nothing
+        assertThat(seesTheErrorBody).isTrue();
+    }
+
+    @Test
+    void theWebInputRecordRuleCatchesTopLevelAndNestedOffenders() {
+        // Arrange
+        JavaSourceFile topLevel = JavaSourceFile.parse("web/dto/EvilRequest.java",
+                "package com.regivolley.api.infrastructure.web.dto;\nrecord EvilRequest(String name, java.util.UUID associationId) {}\n");
+        JavaSourceFile nested = JavaSourceFile.parse("web/dto/OrderPayload.java",
+                "package com.regivolley.api.infrastructure.web.dto;\nrecord OrderPayload(String name, java.util.List<Line> lines) {\n"
+                        + "  record Line(int quantity, java.util.UUID tenantId) {}\n}\n");
+        JavaSourceFile response = JavaSourceFile.parse("web/dto/WhoResponse.java",
+                "package com.regivolley.api.infrastructure.web.dto;\nrecord WhoResponse(java.util.UUID associationId) {}\n");
+
+        // Act
+        List<String> violations = dtoRecordViolations(List.of(topLevel, nested, response), Set.of("associationId", "tenantId"));
+
+        // Assert
+        assertThat(violations).hasSize(2);
+        assertThat(violations).anyMatch(v -> v.contains("EvilRequest") && v.contains("associationId"));
+        assertThat(violations).anyMatch(v -> v.contains("Line") && v.contains("tenantId"));
+    }
+
+    private static List<String> dtoRecordViolations(List<JavaSourceFile> files, Set<String> forbiddenComponents) {
+        List<String> violations = new ArrayList<>();
+        for (JavaSourceFile source : files) {
+            if (!source.residesIn(WEB_DTOS)) {
+                continue;
+            }
+            source.recordComponents().forEach((record, components) -> {
+                if (!record.endsWith("Response")) {
+                    components.stream().filter(forbiddenComponents::contains)
+                            .forEach(component -> violations.add(record + " has a component named " + component));
+                }
+            });
+        }
+        return violations;
     }
 
     private static boolean isImmutableShape(JavaSourceFile source) {

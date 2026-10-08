@@ -26,15 +26,53 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  # Hardening (docs/security/threat-model-rest-api.md section 7): no file uploads, no request details in logs, and a body
+  # with a field we do not know is a 400, never silently dropped (mass assignment, M3).
+  servlet:
+    multipart:
+      enabled: false
+  mvc:
+    log-request-details: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
 regi-volley:
   session-generation:
     # Daily generation of the coming weeks' sessions (US-10); idempotent. Tests switch it off.
     enabled: ${SESSION_GENERATION_ENABLED:true}
     cron: ${SESSION_GENERATION_CRON:0 0 3 * * *}
 
+  security:
+    jwt:
+      # ES256 keys (threat model D-1, D-2), from the environment or the platform secret store, never from the repo.
+      # JWT_SIGNING_KEY: the active private key (JWK JSON, or PKCS#8 PEM preceded by a `kid: <id>` line).
+      # JWT_VERIFICATION_KEYS: the public keys, JWK Set JSON or X.509 PEM blocks each preceded by `kid: <id>`; always
+      # includes the active key's public half. Profile dev/test with nothing set: an ephemeral key pair is generated.
+      signing-key: ${JWT_SIGNING_KEY:}
+      verification-keys: ${JWT_VERIFICATION_KEYS:}
+    cors:
+      # Honoured under profile `dev` only (production is same-origin): the one local PWA origin, e.g. http://localhost:5173.
+      allowed-origin: ${CORS_ALLOWED_ORIGIN:}
+
 server:
   port: ${SERVER_PORT:8080}
+  # Nothing about an error leaves in a body (threat model E1); ErrorPageController writes the generic one.
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+    include-exception: never
+  max-http-request-header-size: 8KB
+  tomcat:
+    # What Tomcat reads and discards after a request was refused early (413, 411, 401), before it closes the connection.
+    max-swallow-size: 128KB
 
 logging:
+  pattern:
+    # The request id on every line, so a log line can be tied to the response a client saw.
+    level: "%5p [%X{requestId:-}]"
   level:
     com.regivolley.api: INFO
+    # Spring's own handler logs the exception message, which for a rejected body or parameter quotes the input (E2).
+    org.springframework.web.servlet.mvc.support.DefaultHandlerExceptionResolver: ERROR
