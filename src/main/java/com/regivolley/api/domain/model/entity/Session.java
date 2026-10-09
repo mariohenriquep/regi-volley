@@ -354,6 +354,11 @@ public final class Session implements AggregateRoot {
         return waitlistOf(bookings);
     }
 
+    /** The bookings that hold a seat - CONFIRMED, ATTENDED or NO_SHOW - in the order they were made; the waitlist and cancelled bookings are not part of it. */
+    public List<Booking> seatHolders() {
+        return bookings.stream().filter(b -> b.status().holdsSeat()).toList();
+    }
+
     /** 1-based position of the member in the waitlist, empty if they aren't waitlisted. */
     public OptionalInt waitlistPosition(MemberId memberId) {
         List<Booking> waitlist = waitlist();

@@ -17,6 +17,12 @@ public enum RateLimitRule {
     JOIN_IP(5, Duration.ofHours(1), Keys.IP),
     /** Keyed by association and email together ({@link RateLimiter#joinKey}). */
     JOIN_EMAIL(3, Duration.ofDays(1), Keys.EMAIL),
+    /** An administrator re-sending one member's activation link, keyed by association and member ({@link RateLimiter#memberKey}). */
+    ACTIVATION_RESEND(3, Duration.ofHours(1), Keys.MEMBER),
+    /** All of one association's activation-link resends together, keyed by the association id (taken only for an authenticated administrator). */
+    ASSOCIATION_RESEND(30, Duration.ofHours(1), Keys.TENANT),
+    /** Link mails an administrator triggered to one address, across associations ({@link RateLimiter#emailKey}). */
+    LINK_MAIL_PER_ADDRESS(6, Duration.ofHours(1), Keys.EMAIL),
     REFRESH_IP(60, Duration.ofMinutes(1), Keys.IP),
     PUBLIC_PAGE_IP(120, Duration.ofMinutes(1), Keys.IP),
     /** Activation and reset-confirmation: generous, since the tokens are 256-bit secrets; it only bounds hashing and lookups per address. */
@@ -44,6 +50,8 @@ public enum RateLimitRule {
         static final long EMAIL = 20_000;
         static final long IP = 100_000;
         static final long USER = 50_000;
+        static final long MEMBER = 20_000;
+        static final long TENANT = 20_000;
     }
 
     public int capacity() {

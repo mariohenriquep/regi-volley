@@ -64,7 +64,7 @@ public class RequestPasswordResetService implements RequestPasswordResetUseCase 
     public Void execute(RequestPasswordResetCommand command) {
         String email = command.email();
         throttle.checkPasswordResetRequest(email);
-        background.run(() -> {
+        background.run(BackgroundWork.Lane.ACCOUNT_MAIL, () -> {
             try {
                 process(email);
             } catch (RuntimeException e) {

@@ -54,6 +54,7 @@ class RouteInventoryTest extends AbstractSecuredWebTest {
             Map.entry("POST /api/v1/sessions/{sessionId}/cancellation", Access.AUTHENTICATED),
             Map.entry("PUT /api/v1/sessions/{sessionId}/capacity", Access.AUTHENTICATED),
             Map.entry("PUT /api/v1/sessions/{sessionId}/attendance", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/sessions/{sessionId}/roster", Access.AUTHENTICATED),
             // the administrator
             Map.entry("POST /api/v1/levels", Access.AUTHENTICATED),
             Map.entry("PUT /api/v1/levels/{levelId}", Access.AUTHENTICATED),
@@ -75,6 +76,7 @@ class RouteInventoryTest extends AbstractSecuredWebTest {
             Map.entry("DELETE /api/v1/members/{memberId}/roles/{role}", Access.AUTHENTICATED),
             Map.entry("POST /api/v1/members/{memberId}/deactivation", Access.AUTHENTICATED),
             Map.entry("POST /api/v1/members/{memberId}/subscriptions", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/members/{memberId}/activation-links", Access.AUTHENTICATED),
             Map.entry("GET /api/v1/subscriptions", Access.AUTHENTICATED),
             Map.entry("GET /api/v1/subscriptions/export", Access.AUTHENTICATED),
             Map.entry("POST /api/v1/subscriptions/{subscriptionId}/overdue-marking", Access.AUTHENTICATED),

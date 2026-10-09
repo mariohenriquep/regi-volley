@@ -52,8 +52,8 @@ path, query or body value, and another association's id answers like one that do
 | Visitor (no token) | `GET /public/associations/{shortName}` (public page), `POST /public/associations` (register an association), `POST /public/associations/{shortName}/join-requests` (always `202 RECEIVED`) |
 | Credentials | `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/activate`, `/auth/password-reset-requests`, `/auth/password-resets` (public); `POST /auth/logout-all`, `GET /me` |
 | Member | `GET /sessions?weekOf=`, `POST /sessions/{id}/bookings`, `POST /sessions/{id}/bookings/{bookingId}/cancellation`, `GET /me/plan`, `GET /me/history` |
-| Coach / admin of a session | `POST /sessions/{id}/cancellation`, `PUT /sessions/{id}/capacity`, `PUT /sessions/{id}/attendance` |
-| Administrator | `/levels`, `/venues`, `/training-groups`, `/plans`, `/join-requests` (list, approve, reject), `/members/{id}` (level, roles, deactivation, subscriptions), `/subscriptions` (list by payment status, CSV export, overdue-marking, payments), `/payments/{id}/reversal` |
+| Coach / admin of a session | `GET /sessions/{id}/roster` (who is in the session, with the booking ids and display names only), `POST /sessions/{id}/cancellation`, `PUT /sessions/{id}/capacity`, `PUT /sessions/{id}/attendance` |
+| Administrator | `/levels`, `/venues`, `/training-groups`, `/plans`, `/join-requests` (list, approve, reject), `/members/{id}` (level, roles, deactivation, subscriptions, `activation-links`: re-send an activation link, always `202 RECEIVED`), `/subscriptions` (list by payment status, CSV export, overdue-marking, payments), `/payments/{id}/reversal` |
 
 A quick tour against a local instance (`dev` profile; the activation link of a new association is only logged by reference until the
 SMTP adapter exists, so the end-to-end journey is exercised by `ApiJourneyIntegrationTest`):

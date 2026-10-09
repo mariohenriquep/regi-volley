@@ -4,6 +4,7 @@ import com.regivolley.api.application.usecase.BookSessionUseCase;
 import com.regivolley.api.application.usecase.CancelBookingUseCase;
 import com.regivolley.api.application.usecase.CancelSessionUseCase;
 import com.regivolley.api.application.usecase.ChangeSessionCapacityUseCase;
+import com.regivolley.api.application.usecase.GetSessionRosterUseCase;
 import com.regivolley.api.application.usecase.ListBookableSessionsUseCase;
 import com.regivolley.api.application.usecase.MarkAttendanceUseCase;
 import com.regivolley.api.infrastructure.security.AuthenticatedActor;
@@ -18,6 +19,7 @@ import com.regivolley.api.infrastructure.web.dto.ChangeCapacityRequest;
 import com.regivolley.api.infrastructure.web.dto.MarkAttendanceRequest;
 import com.regivolley.api.infrastructure.web.dto.PlausibleDate;
 import com.regivolley.api.infrastructure.web.dto.SessionCancelledResponse;
+import com.regivolley.api.infrastructure.web.dto.SessionRosterResponse;
 import com.regivolley.api.infrastructure.web.mapper.BookingWebMapper;
 import com.regivolley.api.infrastructure.web.mapper.SessionWebMapper;
 import jakarta.validation.Valid;
@@ -52,16 +54,19 @@ public class SessionController {
     private final CancelSessionUseCase cancelSession;
     private final ChangeSessionCapacityUseCase changeCapacity;
     private final MarkAttendanceUseCase markAttendance;
+    private final GetSessionRosterUseCase getRoster;
 
     public SessionController(ListBookableSessionsUseCase listBookableSessions, BookSessionUseCase bookSession,
                              CancelBookingUseCase cancelBooking, CancelSessionUseCase cancelSession,
-                             ChangeSessionCapacityUseCase changeCapacity, MarkAttendanceUseCase markAttendance) {
+                             ChangeSessionCapacityUseCase changeCapacity, MarkAttendanceUseCase markAttendance,
+                             GetSessionRosterUseCase getRoster) {
         this.listBookableSessions = listBookableSessions;
         this.bookSession = bookSession;
         this.cancelBooking = cancelBooking;
         this.cancelSession = cancelSession;
         this.changeCapacity = changeCapacity;
         this.markAttendance = markAttendance;
+        this.getRoster = getRoster;
     }
 
     /** The sessions the caller may book in the Lisbon week (Monday to Sunday) that contains {@code weekOf}; this week when it is absent. */
@@ -94,6 +99,12 @@ public class SessionController {
     public CapacityChangedResponse capacity(@CurrentActor AuthenticatedActor caller, @PathVariable UUID sessionId,
                                             @Valid @RequestBody ChangeCapacityRequest body) {
         return SessionWebMapper.toResponse(changeCapacity.execute(SessionWebMapper.capacityCommand(caller.actor(), sessionId, body)));
+    }
+
+    /** Who is in the session, with the booking ids attendance is marked with: for the session's coach or an administrator (US-17). */
+    @GetMapping("/{sessionId}/roster")
+    public SessionRosterResponse roster(@CurrentActor AuthenticatedActor caller, @PathVariable UUID sessionId) {
+        return SessionWebMapper.toResponse(getRoster.execute(SessionWebMapper.rosterQuery(caller.actor(), sessionId)));
     }
 
     @PutMapping("/{sessionId}/attendance")

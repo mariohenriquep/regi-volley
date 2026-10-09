@@ -4,6 +4,7 @@ import com.regivolley.api.application.identity.AccountLink;
 import com.regivolley.api.application.identity.AccountLinkPurpose;
 import com.regivolley.api.application.identity.Membership;
 import com.regivolley.api.application.identity.UserAccount;
+import com.regivolley.api.application.identity.UserStatus;
 import com.regivolley.api.application.port.AccountLinkMailer;
 import com.regivolley.api.application.port.AccountProvisioner;
 import com.regivolley.api.application.port.EmailLinkStore;
@@ -29,7 +30,7 @@ import java.time.Instant;
  *
  * <p>Idempotent: asking again for the same member creates nothing twice and issues a fresh link, superseding the old one. Two
  * provisionings racing to create the same account, or the same link, are resolved by the database and repeated. A member already
- * confirmed gets nothing; a member that belongs to another account is refused.
+ * confirmed, or an account that is disabled, gets nothing; a member that belongs to another account is refused.
  */
 @Service
 public class AccountProvisionerService implements AccountProvisioner {
@@ -62,7 +63,7 @@ public class AccountProvisionerService implements AccountProvisioner {
     public void provision(AssociationId associationId, MemberId memberId, EmailAddress email) {
         Issued issued = Conflicts.retrying(transactions, () -> inTransaction(associationId, memberId, email));
         if (issued == null) {
-            LOG.info("Nothing to send, the membership is already active: association={} member={}", associationId, memberId);
+            LOG.info("Nothing to send, the membership is already active or the account is disabled: association={} member={}", associationId, memberId);
             return;
         }
         mailer.send(issued.account().email(), AccountLinkPurpose.ACTIVATION, issued.link());
@@ -76,6 +77,10 @@ public class AccountProvisionerService implements AccountProvisioner {
         if (membership != null && (existing == null || !membership.userId().equals(existing.id()))) {
             // Checked before anything is created: this member is already tied to a different account.
             throw new IllegalStateException("The member already belongs to another account");
+        }
+        if (existing != null && existing.status() != UserStatus.ACTIVE) {
+            // A disabled account is never given a membership or mailed a link: nothing would be allowed to sign in with it anyway.
+            return null;
         }
         UserAccount user = existing != null ? existing : users.insert(UserAccount.create(email, secrets.newSecret(), now));
         if (membership == null) {
