@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.model.valueobject;
 
-import com.regivolley.api.domain.exception.InvalidPlanException;
+import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.shared.ValueObject;
 
 import java.util.Objects;
@@ -39,7 +39,7 @@ public record PlanTerms(PlanType type, Integer sessionsPerWeek, Integer credits,
             case SINGLE_SESSION -> {
                 requireAbsent(sessionsPerWeek, "sessionsPerWeek", type);
                 if (credits == null || credits != 1) {
-                    throw new InvalidPlanException("A SINGLE_SESSION plan has exactly one credit");
+                    throw new InvalidFieldException("credits", "A SINGLE_SESSION plan has exactly one credit");
                 }
             }
         }
@@ -71,13 +71,13 @@ public record PlanTerms(PlanType type, Integer sessionsPerWeek, Integer credits,
 
     private static void requireAbsent(Integer value, String field, PlanType type) {
         if (value != null) {
-            throw new InvalidPlanException("A " + type + " plan has no " + field);
+            throw new InvalidFieldException(field, "A " + type + " plan has no " + field);
         }
     }
 
     private static void requirePositive(Integer value, String field, PlanType type) {
         if (value == null || value < 1) {
-            throw new InvalidPlanException("A " + type + " plan needs " + field + " of at least 1");
+            throw new InvalidFieldException(field, "A " + type + " plan needs " + field + " of at least 1");
         }
     }
 }

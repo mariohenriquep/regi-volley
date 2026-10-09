@@ -46,7 +46,7 @@ class MemberFactoryTest {
     private static final Instant JOINED = Instant.parse("2026-10-07T20:00:00Z");
 
     private static JoinRequest pending() {
-        return JoinRequestFactory.create(ASSOCIATION.id(), CONTACT, true, "2026-10", REQUEST_CLOCK);
+        return JoinRequestFactory.create(ASSOCIATION.id(), CONTACT, GdprConsent.record(true, "2026-10", REQUEST_CLOCK), REQUEST_CLOCK);
     }
 
     private static final Instant LATER = Instant.parse("2026-10-20T18:30:00Z");

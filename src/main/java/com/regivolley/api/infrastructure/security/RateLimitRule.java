@@ -20,7 +20,9 @@ public enum RateLimitRule {
     REFRESH_IP(60, Duration.ofMinutes(1), Keys.IP),
     PUBLIC_PAGE_IP(120, Duration.ofMinutes(1), Keys.IP),
     /** Activation and reset-confirmation: generous, since the tokens are 256-bit secrets; it only bounds hashing and lookups per address. */
-    LINK_TOKEN_IP(30, Duration.ofHours(1), Keys.IP);
+    LINK_TOKEN_IP(30, Duration.ofHours(1), Keys.IP),
+    /** Every authenticated route together (U7): a valid user hammering booking or history. Keyed by the user id, taken from the verified token. */
+    USER(300, Duration.ofMinutes(1), Keys.USER);
 
     private final int capacity;
     private final Duration window;
@@ -41,6 +43,7 @@ public enum RateLimitRule {
     private static final class Keys {
         static final long EMAIL = 20_000;
         static final long IP = 100_000;
+        static final long USER = 50_000;
     }
 
     public int capacity() {

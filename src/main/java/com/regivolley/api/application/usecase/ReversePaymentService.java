@@ -8,6 +8,8 @@ import com.regivolley.api.domain.model.entity.Payment;
 import com.regivolley.api.domain.repository.MemberRepository;
 import com.regivolley.api.domain.repository.PaymentRepository;
 import com.regivolley.api.domain.repository.SubscriptionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -20,6 +22,8 @@ import java.time.Clock;
  */
 @Service
 public class ReversePaymentService implements ReversePaymentUseCase {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ReversePaymentService.class);
 
     private final PaymentSettling settling;
     private final PaymentRepository payments;
@@ -36,7 +40,7 @@ public class ReversePaymentService implements ReversePaymentUseCase {
 
     @Override
     public PaymentReversed execute(ReversePaymentCommand command) {
-        return unitOfWork.retrying(() -> {
+        PaymentReversed reversed = unitOfWork.retrying(() -> {
             var associationId = command.actor().associationId();
             Member admin = settling.requireAdmin(command.actor(), "reverse payments");
             Payment original = Lookups.payment(payments, associationId, command.paymentId());
@@ -44,5 +48,10 @@ public class ReversePaymentService implements ReversePaymentUseCase {
                     ledger -> ledger.reverse(original.id(), admin.id(), clock));
             return new PaymentReversed(settled.payment(), settled.subscription(), settled.ledger().outstanding());
         });
+        // Audit line (threat model M5), by id only.
+        LOG.info("Payment reversed: associationId={} subscriptionId={} paymentId={} reversalId={} reversedBy={}",
+                reversed.reversal().associationId(), reversed.reversal().subscriptionId(), command.paymentId(), reversed.reversal().id(),
+                command.actor().memberId());
+        return reversed;
     }
 }

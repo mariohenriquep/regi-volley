@@ -27,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @PersistenceTest
 class SubscriptionRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
 
+    private static final java.time.LocalDate EVER_SO_EARLY = java.time.LocalDate.parse("2000-01-01");
+    private static final java.time.LocalDate EVER_SO_LATE = java.time.LocalDate.parse("2100-12-31");
     private static final Instant SESSION_1 = Instant.parse("2026-10-12T19:00:00Z");
     private static final Instant SESSION_2 = Instant.parse("2026-10-14T19:00:00Z");
     private static final Instant SESSION_3 = Instant.parse("2026-10-19T19:00:00Z");
@@ -226,12 +228,33 @@ class SubscriptionRepositoryAdapterTest extends AbstractPostgresIntegrationTest 
         flushAndClear();
 
         // Act
-        List<Subscription> overdue = subscriptions.findByPaymentStatus(a.id(), PaymentStatus.OVERDUE);
+        List<Subscription> overdue = subscriptions.findByPaymentStatus(a.id(), PaymentStatus.OVERDUE, EVER_SO_EARLY, EVER_SO_LATE);
 
         // Assert
         assertThat(overdue).extracting(Subscription::id).containsExactly(earlier.id(), later.id());
-        assertThat(subscriptions.findByPaymentStatus(a.id(), PaymentStatus.PENDING)).hasSize(1);
-        assertThat(subscriptions.findByPaymentStatus(b.id(), PaymentStatus.PAID)).isEmpty();
+        assertThat(subscriptions.findByPaymentStatus(a.id(), PaymentStatus.PENDING, EVER_SO_EARLY, EVER_SO_LATE)).hasSize(1);
+        assertThat(subscriptions.findByPaymentStatus(b.id(), PaymentStatus.PAID, EVER_SO_EARLY, EVER_SO_LATE)).isEmpty();
+    }
+
+    @Test
+    void findByPaymentStatusKeepsOnlySubscriptionsEndingInsideTheWindowBoundsIncluded() {
+        // Arrange
+        Association a = newAssociation();
+        Plan plan = Fixtures.monthlyNPerWeek(a.id());
+        Subscription tooOld = subscriptions.save(Fixtures.subscription(plan, MemberId.generate(), "2020-01-01").markOverdue());
+        Subscription inside = subscriptions.save(Fixtures.subscription(plan, MemberId.generate(), "2026-10-01").markOverdue());
+        Subscription tooNew = subscriptions.save(Fixtures.subscription(plan, MemberId.generate(), "2031-01-01").markOverdue());
+        flushAndClear();
+
+        // Act
+        List<Subscription> window = subscriptions.findByPaymentStatus(a.id(), PaymentStatus.OVERDUE, java.time.LocalDate.parse("2026-10-01"),
+                java.time.LocalDate.parse("2026-12-31"));
+        List<Subscription> exactEnd = subscriptions.findByPaymentStatus(a.id(), PaymentStatus.OVERDUE, inside.endDate(), inside.endDate());
+
+        // Assert
+        assertThat(window).extracting(Subscription::id).containsExactly(inside.id());
+        assertThat(exactEnd).extracting(Subscription::id).containsExactly(inside.id());
+        assertThat(tooOld.id()).isNotEqualTo(tooNew.id());
     }
 
     @Test

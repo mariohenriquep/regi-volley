@@ -2,6 +2,7 @@ package com.regivolley.api.domain.service;
 
 import com.regivolley.api.domain.factory.AssociationFactory;
 import com.regivolley.api.domain.factory.JoinRequestFactory;
+import com.regivolley.api.domain.model.valueobject.GdprConsent;
 import com.regivolley.api.domain.factory.MemberFactory;
 import com.regivolley.api.domain.factory.PlanFactory;
 import com.regivolley.api.domain.factory.SubscriptionFactory;
@@ -50,8 +51,7 @@ class MemberBookingEligibilityTest {
     private static final Instant SESSION_START = Instant.parse("2026-10-14T19:00:00Z");
 
     private static Member newMember() {
-        JoinRequest request = JoinRequestFactory.create(ASSOCIATION.id(),
-                ContactDetails.of("Ana Silva", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, "2026-10", CLOCK);
+        JoinRequest request = JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("Ana Silva", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), GdprConsent.record(true, "2026-10", CLOCK), CLOCK);
         return MemberFactory.fromApprovedJoinRequest(ASSOCIATION, request.approve(COACH, CLOCK));
     }
 

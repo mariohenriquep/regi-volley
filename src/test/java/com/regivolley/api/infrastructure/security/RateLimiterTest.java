@@ -9,6 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -53,7 +54,7 @@ class RateLimiterTest {
     @ParameterizedTest
     @CsvSource({
             "LOGIN_EMAIL, 5, PT15M", "LOGIN_IP, 30, PT10M", "RESET_EMAIL, 3, PT1H", "RESET_IP, 10, PT1H", "REGISTER_IP, 3, PT1H",
-            "JOIN_IP, 5, PT1H", "JOIN_EMAIL, 3, PT24H", "REFRESH_IP, 60, PT1M", "PUBLIC_PAGE_IP, 120, PT1M", "LINK_TOKEN_IP, 30, PT1H"})
+            "JOIN_IP, 5, PT1H", "JOIN_EMAIL, 3, PT24H", "REFRESH_IP, 60, PT1M", "PUBLIC_PAGE_IP, 120, PT1M", "LINK_TOKEN_IP, 30, PT1H", "USER, 300, PT1M"})
     void theTermsAreTheOnesOfTheThreatModel(RateLimitRule rule, int capacity, Duration window) {
         // Arrange
         // (the parameters)
@@ -256,5 +257,23 @@ class RateLimiterTest {
         // Assert
         assertThat(capacity).isEqualTo(30);
         assertThat(rule.window()).isEqualTo(Duration.ofHours(1));
+    }
+
+    @Test
+    void worksOnTheProductionClockWhichTicksInMicroseconds() {
+        // Arrange - ClockConfig's clock: Clock.tick(systemUTC, 1 microsecond); its millis() divides by zero, so the meter must not use it
+        Clock production = Clock.tick(Clock.systemUTC(), Duration.ofNanos(1_000));
+        RateLimiter onProductionClock = new RateLimiter(production);
+
+        // Act
+        onProductionClock.check(RateLimitRule.LOGIN_EMAIL, "key");
+        Executable afterTheCapacity = () -> {
+            for (int i = 0; i < RateLimitRule.LOGIN_EMAIL.capacity(); i++) {
+                onProductionClock.check(RateLimitRule.LOGIN_EMAIL, "key");
+            }
+        };
+
+        // Assert
+        assertThrows(RateLimitExceededException.class, afterTheCapacity);
     }
 }

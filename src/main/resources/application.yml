@@ -43,6 +43,11 @@ regi-volley:
     enabled: ${SESSION_GENERATION_ENABLED:true}
     cron: ${SESSION_GENERATION_CRON:0 0 3 * * *}
 
+  join-request-purge:
+    # Daily erasure (anonymisation) of join requests left undecided for 30 days: RGPD data minimisation. Tests switch it off.
+    enabled: ${JOIN_REQUEST_PURGE_ENABLED:true}
+    cron: ${JOIN_REQUEST_PURGE_CRON:0 30 3 * * *}
+
   security:
     jwt:
       # ES256 keys (threat model D-1, D-2), from the environment or the platform secret store, never from the repo.

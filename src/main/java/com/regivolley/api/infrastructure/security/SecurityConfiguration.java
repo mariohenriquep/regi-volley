@@ -12,6 +12,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.header.HeaderWriterFilter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
@@ -104,6 +105,7 @@ public class SecurityConfiguration {
                 .addFilterBefore(new RequestIdFilter(), DisableEncodeUrlFilter.class)
                 .addFilterAfter(new RequestSizeLimitFilter(writer), HeaderWriterFilter.class)
                 .addFilterAfter(new RateLimitFilter(rateLimiter, writer), RequestSizeLimitFilter.class)
+                .addFilterAfter(new UserRateLimitFilter(rateLimiter, writer), BearerTokenAuthenticationFilter.class)
                 .addFilterAfter(new CookieEndpointGuardFilter(writer, webOrigins(allowedOrigin, webOrigin)), RateLimitFilter.class)
                 .addFilterBefore(new SuppressedEndpointsFilter(writer), CorsFilter.class);
         return http.build();

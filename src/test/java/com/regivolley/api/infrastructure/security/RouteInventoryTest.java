@@ -29,16 +29,57 @@ class RouteInventoryTest extends AbstractSecuredWebTest {
     enum Access { PUBLIC, AUTHENTICATED }
 
     /** "METHOD pattern" (ANY when the mapping names no method) to who may call it. */
-    static final Map<String, Access> CLASSIFICATION = Map.of(
-            "GET /api/v1/me", Access.AUTHENTICATED,
-            "POST /api/v1/auth/login", Access.PUBLIC,
-            "POST /api/v1/auth/refresh", Access.PUBLIC,
-            "POST /api/v1/auth/logout", Access.PUBLIC,
-            "POST /api/v1/auth/logout-all", Access.AUTHENTICATED,
-            "POST /api/v1/auth/activate", Access.PUBLIC,
-            "POST /api/v1/auth/password-reset-requests", Access.PUBLIC,
-            "POST /api/v1/auth/password-resets", Access.PUBLIC,
-            "ANY /error", Access.PUBLIC);
+    static final Map<String, Access> CLASSIFICATION = Map.ofEntries(
+            // identity and credentials (26a, 26b)
+            Map.entry("GET /api/v1/me", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/auth/login", Access.PUBLIC),
+            Map.entry("POST /api/v1/auth/refresh", Access.PUBLIC),
+            Map.entry("POST /api/v1/auth/logout", Access.PUBLIC),
+            Map.entry("POST /api/v1/auth/logout-all", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/auth/activate", Access.PUBLIC),
+            Map.entry("POST /api/v1/auth/password-reset-requests", Access.PUBLIC),
+            Map.entry("POST /api/v1/auth/password-resets", Access.PUBLIC),
+            Map.entry("ANY /error", Access.PUBLIC),
+            // the visitor (26c)
+            Map.entry("GET /api/v1/public/associations/{shortName}", Access.PUBLIC),
+            Map.entry("POST /api/v1/public/associations", Access.PUBLIC),
+            Map.entry("POST /api/v1/public/associations/{shortName}/join-requests", Access.PUBLIC),
+            // the member
+            Map.entry("GET /api/v1/me/plan", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/me/history", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/sessions", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/sessions/{sessionId}/bookings", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/sessions/{sessionId}/bookings/{bookingId}/cancellation", Access.AUTHENTICATED),
+            // the staff of a session
+            Map.entry("POST /api/v1/sessions/{sessionId}/cancellation", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/sessions/{sessionId}/capacity", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/sessions/{sessionId}/attendance", Access.AUTHENTICATED),
+            // the administrator
+            Map.entry("POST /api/v1/levels", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/levels/{levelId}", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/levels/order", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/levels/entry-level", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/venues", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/venues/{venueId}", Access.AUTHENTICATED),
+            Map.entry("DELETE /api/v1/venues/{venueId}", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/training-groups", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/training-groups/{groupId}", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/training-groups/{groupId}/archival", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/plans", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/plans/{planId}", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/join-requests", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/join-requests/{requestId}/approval", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/join-requests/{requestId}/rejection", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/members/{memberId}/level", Access.AUTHENTICATED),
+            Map.entry("PUT /api/v1/members/{memberId}/roles/{role}", Access.AUTHENTICATED),
+            Map.entry("DELETE /api/v1/members/{memberId}/roles/{role}", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/members/{memberId}/deactivation", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/members/{memberId}/subscriptions", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/subscriptions", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/subscriptions/export", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/subscriptions/{subscriptionId}/overdue-marking", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/subscriptions/{subscriptionId}/payments", Access.AUTHENTICATED),
+            Map.entry("POST /api/v1/payments/{paymentId}/reversal", Access.AUTHENTICATED));
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")

@@ -22,17 +22,14 @@ public final class JoinRequestFactory {
     }
 
     /**
-     * A new PENDING request (US-05) with a generated id, at version 0. The consent is stamped now, by the server clock.
+     * A new PENDING request (US-05) with a generated id, at version 0, made at the clock's instant.
      *
-     * @param consentAccepted whether the person ticked the RGPD consent
-     * @param policyVersion   the version of the privacy policy they were shown
-     * @throws com.regivolley.api.domain.exception.ConsentRequiredException if the consent was not accepted
+     * @param consent the RGPD consent already recorded ({@code GdprConsent.record}, which refuses a missing consent): the caller records
+     *                it before anything is looked up, so a refusal cannot depend on stored data (threat model P1)
      */
-    public static JoinRequest create(AssociationId associationId, ContactDetails contact, boolean consentAccepted,
-                                     String policyVersion, Clock clock) {
+    public static JoinRequest create(AssociationId associationId, ContactDetails contact, GdprConsent consent, Clock clock) {
         Objects.requireNonNull(clock, "clock must not be null");
         Instant now = clock.instant();
-        GdprConsent consent = GdprConsent.record(consentAccepted, policyVersion, now);
         return new JoinRequest(JoinRequestId.generate(), associationId, contact, consent,
                 JoinRequestStatus.PENDING, now, null, null, null, null, 0L);
     }

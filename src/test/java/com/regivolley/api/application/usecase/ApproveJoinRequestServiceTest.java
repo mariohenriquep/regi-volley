@@ -9,6 +9,7 @@ import com.regivolley.api.domain.exception.JoinRequestNotFoundException;
 import com.regivolley.api.domain.exception.MemberEmailAlreadyUsedException;
 import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.factory.JoinRequestFactory;
+import com.regivolley.api.domain.model.valueobject.GdprConsent;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Member;
@@ -70,7 +71,7 @@ class ApproveJoinRequestServiceTest {
         association = Data.association();
         admin = Data.admin(association);
         request = JoinRequestFactory.create(association.id(), ContactDetails.of("Rita Costa", EmailAddress.of("rita@example.com"),
-                PhoneNumber.of("912345678")), true, "2026-01", Data.CLOCK);
+                PhoneNumber.of("912345678")), GdprConsent.record(true, "2026-01", Data.CLOCK), Data.CLOCK);
         useCase = new ApproveJoinRequestService(associations, members, joinRequests, transactions, notifier, provisioner, Data.CLOCK);
         lenient().when(associations.findById(association.id())).thenReturn(Optional.of(association));
         lenient().when(members.findById(association.id(), admin.id())).thenReturn(Optional.of(admin));
@@ -118,7 +119,7 @@ class ApproveJoinRequestServiceTest {
     @Test
     void aRequestOfAnotherAssociationIsNotFound() {
         // Arrange
-        JoinRequest foreign = JoinRequestFactory.create(Data.association().id(), request.contact(), true, "2026-01", Data.CLOCK);
+        JoinRequest foreign = JoinRequestFactory.create(Data.association().id(), request.contact(), GdprConsent.record(true, "2026-01", Data.CLOCK), Data.CLOCK);
         Executable act = () -> useCase.execute(new ApproveJoinRequestCommand(Data.actor(admin), foreign.id()));
 
         // Act

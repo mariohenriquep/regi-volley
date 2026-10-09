@@ -1,5 +1,6 @@
 package com.regivolley.api.domain.factory;
 
+import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.InvalidPlanException;
 import com.regivolley.api.domain.model.entity.Plan;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
@@ -151,10 +152,10 @@ class PlanFactoryTest {
             Executable act = () -> PlanFactory.create(ASSOCIATION, name, PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
 
             // Act
-            InvalidPlanException ex = assertThrows(InvalidPlanException.class, act);
+            InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
 
             // Assert
-            assertThat(ex.getMessage()).contains("name");
+            assertThat(ex.field()).isEqualTo("name");
         }
 
         @Test
@@ -215,9 +216,10 @@ class PlanFactoryTest {
             Executable act = () -> new PlanTerms(type, perWeek, credits, Set.of());
 
             // Act
-            InvalidPlanException ex = assertThrows(InvalidPlanException.class, act);
+            InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
 
             // Assert
+            assertThat(ex.field()).isIn("sessionsPerWeek", "credits");
             assertThat(ex.getMessage()).isNotBlank();
         }
 
@@ -253,10 +255,10 @@ class PlanFactoryTest {
             Executable act = () -> PlanFactory.create(ASSOCIATION, "Plan", terms, PRICE, validityDays);
 
             // Act
-            InvalidPlanException ex = assertThrows(InvalidPlanException.class, act);
+            InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
 
             // Assert
-            assertThat(ex.getMessage()).contains("validityDays");
+            assertThat(ex.field()).isEqualTo("validityDays");
         }
     }
 }

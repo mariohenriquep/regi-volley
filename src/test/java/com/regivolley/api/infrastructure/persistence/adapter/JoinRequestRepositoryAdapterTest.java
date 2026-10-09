@@ -1,6 +1,7 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
 import com.regivolley.api.domain.factory.JoinRequestFactory;
+import com.regivolley.api.domain.model.valueobject.GdprConsent;
 import com.regivolley.api.domain.model.valueobject.PhoneNumber;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
@@ -138,6 +139,45 @@ class JoinRequestRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void theListOfPendingRequestsIsCappedAtTheHundredOldest() {
+        // Arrange
+        Association association = newAssociation();
+        for (int i = 0; i < JoinRequestRepository.MAX_PENDING_LISTED + 1; i++) {
+            requests.save(Fixtures.joinRequest(association.id(), "Person" + i, NOW.plusSeconds(i)));
+        }
+        flushAndClear();
+
+        // Act
+        List<JoinRequest> pending = requests.findPending(association.id());
+
+        // Assert
+        assertThat(pending).hasSize(JoinRequestRepository.MAX_PENDING_LISTED);
+        assertThat(pending.get(0).requestedAt()).isEqualTo(NOW);
+        assertThat(pending.get(pending.size() - 1).requestedAt()).isEqualTo(NOW.plusSeconds(JoinRequestRepository.MAX_PENDING_LISTED - 1));
+    }
+
+    @Test
+    void pendingRequestsOlderThanTheCutoffAreFoundOldestFirstWithinTheLimitAndOnlyForThatAssociation() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        JoinRequest oldest = requests.save(Fixtures.joinRequest(a.id(), "Oldest", NOW));
+        JoinRequest old = requests.save(Fixtures.joinRequest(a.id(), "Old", NOW.plusSeconds(10)));
+        requests.save(Fixtures.joinRequest(a.id(), "Fresh", NOW.plusSeconds(100)));
+        requests.save(Fixtures.joinRequest(a.id(), "Decided", NOW).reject(MemberId.generate(), null, Fixtures.at(NOW.plusSeconds(1))));
+        requests.save(Fixtures.joinRequest(b.id(), "OtherTenant", NOW));
+        flushAndClear();
+
+        // Act
+        List<JoinRequest> stale = requests.findPendingRequestedBefore(a.id(), NOW.plusSeconds(50), 10);
+        List<JoinRequest> limited = requests.findPendingRequestedBefore(a.id(), NOW.plusSeconds(50), 1);
+
+        // Assert
+        assertThat(stale).extracting(JoinRequest::id).containsExactly(oldest.id(), old.id());
+        assertThat(limited).extracting(JoinRequest::id).containsExactly(oldest.id());
+    }
+
+    @Test
     void requestsAreInvisibleToAnotherAssociationByIdAndInThePendingList() {
         // Arrange
         Association a = newAssociation();
@@ -194,8 +234,7 @@ class JoinRequestRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     }
 
     private JoinRequest requestFrom(Association association, String email) {
-        return JoinRequestFactory.create(association.id(), ContactDetails.of("Rita", EmailAddress.of(email), PhoneNumber.of("912345678")),
-                true, "2026-01", Fixtures.at(NOW));
+        return JoinRequestFactory.create(association.id(), ContactDetails.of("Rita", EmailAddress.of(email), PhoneNumber.of("912345678")), GdprConsent.record(true, "2026-01", Fixtures.at(NOW)), Fixtures.at(NOW));
     }
 
     @Test

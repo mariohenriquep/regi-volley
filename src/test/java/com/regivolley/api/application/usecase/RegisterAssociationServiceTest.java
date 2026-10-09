@@ -215,4 +215,18 @@ class RegisterAssociationServiceTest {
         // Assert
         verifyNoInteractions(provisioner);
     }
+
+    @Test
+    void everyInputRefusalComesBeforeTheShortNameIsLookedUp() {
+        // Arrange - a taken short name must not mask (or be masked by) an invalid input: the input is judged first, from the input alone
+        lenient().when(associations.existsByShortName(ShortName.of("volley-club"))).thenReturn(true);
+        Executable noConsent = () -> useCase.execute(command("volley-club", false));
+
+        // Act
+        assertThrows(ConsentRequiredException.class, noConsent);
+
+        // Assert
+        verify(associations, never()).existsByShortName(any(ShortName.class));
+        verifyNoInteractions(members, provisioner);
+    }
 }

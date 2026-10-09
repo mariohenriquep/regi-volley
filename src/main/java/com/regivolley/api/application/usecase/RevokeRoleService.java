@@ -6,6 +6,8 @@ import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.valueobject.MemberRole;
 import com.regivolley.api.domain.repository.AssociationRepository;
 import com.regivolley.api.domain.repository.MemberRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -16,6 +18,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RevokeRoleService implements RevokeRoleUseCase {
+
+    private static final Logger LOG = LoggerFactory.getLogger(RevokeRoleService.class);
 
     private final MemberRepository members;
     private final AdminGuard adminGuard;
@@ -29,7 +33,11 @@ public class RevokeRoleService implements RevokeRoleUseCase {
 
     @Override
     public Member execute(RevokeRoleCommand command) {
-        return unitOfWork.retrying(() -> attempt(command));
+        Member revoked = unitOfWork.retrying(() -> attempt(command));
+        // Audit line (threat model M5), by id only.
+        LOG.info("Role revoked: associationId={} memberId={} role={} revokedBy={}", revoked.associationId(), revoked.id(), command.role(),
+                command.actor().memberId());
+        return revoked;
     }
 
     private Member attempt(RevokeRoleCommand command) {

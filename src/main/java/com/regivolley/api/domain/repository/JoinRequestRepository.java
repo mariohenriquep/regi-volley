@@ -7,6 +7,7 @@ import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.JoinRequestId;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,8 +19,17 @@ public interface JoinRequestRepository {
     /** The request of this association still awaiting a decision from that email, if any (US-05 duplicate check). */
     Optional<JoinRequest> findPendingByEmail(AssociationId associationId, EmailAddress email);
 
-    /** The requests still awaiting a decision, oldest first (US-06). */
+    /** How many pending requests one listing returns at most (threat model M7, S1). */
+    int MAX_PENDING_LISTED = 100;
+
+    /** The requests still awaiting a decision, oldest first, at most {@link #MAX_PENDING_LISTED} (US-06). */
     List<JoinRequest> findPending(AssociationId associationId);
+
+    /**
+     * Up to {@code limit} requests of this association still pending that were made before {@code cutoff}, oldest first: what the
+     * scheduled purge anonymises for data minimisation (RGPD).
+     */
+    List<JoinRequest> findPendingRequestedBefore(AssociationId associationId, Instant cutoff, int limit);
 
     /**
      * Inserts a new request or updates an existing one, and returns it as stored, with its new version (each

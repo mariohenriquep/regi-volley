@@ -83,7 +83,7 @@ public final class Fixtures {
     }
 
     public static JoinRequest joinRequest(AssociationId associationId, String name, Instant requestedAt) {
-        return JoinRequestFactory.create(associationId, contact(name), true, "2026-01", at(requestedAt));
+        return JoinRequestFactory.create(associationId, contact(name), GdprConsent.record(true, "2026-01", at(requestedAt)), at(requestedAt));
     }
 
     public static WeeklySlot slot(DayOfWeek day, int hour, int minutes) {

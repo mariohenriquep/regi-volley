@@ -6,7 +6,7 @@ import com.regivolley.api.application.command.RenameLevelCommand;
 import com.regivolley.api.application.command.ReorderLevelsCommand;
 import com.regivolley.api.domain.exception.AssociationModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.DuplicateLevelNameException;
-import com.regivolley.api.domain.exception.InvalidAssociationException;
+import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.LevelNotFoundException;
 import com.regivolley.api.domain.exception.MemberNotFoundException;
 import com.regivolley.api.domain.exception.NotAllowedException;
@@ -143,7 +143,7 @@ class LevelServicesTest {
                 List.of(id("Advanced"), id("Beginner"))));
 
         // Act
-        assertThrows(InvalidAssociationException.class, act);
+        assertThrows(InvalidFieldException.class, act);
 
         // Assert
         verify(associations, never()).save(any(Association.class));

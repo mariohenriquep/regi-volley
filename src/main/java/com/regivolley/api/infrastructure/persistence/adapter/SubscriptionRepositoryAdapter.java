@@ -13,6 +13,7 @@ import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -50,9 +51,10 @@ public class SubscriptionRepositoryAdapter implements SubscriptionRepository {
 
     @Override
     @Transactional(readOnly = true)
-    public List<Subscription> findByPaymentStatus(AssociationId associationId, PaymentStatus status) {
-        return subscriptions.findByAssociationIdAndPaymentStatusOrderByEndDateAscIdAsc(
-                        associationId.value(), status.name()).stream()
+    public List<Subscription> findByPaymentStatus(AssociationId associationId, PaymentStatus status, LocalDate endingFrom,
+                                                  LocalDate endingTo) {
+        return subscriptions.findByAssociationIdAndPaymentStatusAndEndDateBetweenOrderByEndDateAscIdAsc(
+                        associationId.value(), status.name(), endingFrom, endingTo).stream()
                 .map(SubscriptionPersistenceMapper::toDomain)
                 .toList();
     }

@@ -12,9 +12,11 @@ import com.regivolley.api.infrastructure.persistence.mapper.JoinRequestPersisten
 import com.regivolley.api.domain.exception.JoinRequestModifiedConcurrentlyException;
 import jakarta.persistence.EntityManager;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -51,7 +53,16 @@ public class JoinRequestRepositoryAdapter implements JoinRequestRepository {
     @Transactional(readOnly = true)
     public List<JoinRequest> findPending(AssociationId associationId) {
         return requests.findByAssociationIdAndStatusOrderByRequestedAtAscIdAsc(
-                        associationId.value(), JoinRequestStatus.PENDING.name()).stream()
+                        associationId.value(), JoinRequestStatus.PENDING.name(), PageRequest.of(0, MAX_PENDING_LISTED)).stream()
+                .map(JoinRequestPersistenceMapper::toDomain)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<JoinRequest> findPendingRequestedBefore(AssociationId associationId, Instant cutoff, int limit) {
+        return requests.findByAssociationIdAndStatusAndRequestedAtBeforeOrderByRequestedAtAscIdAsc(
+                        associationId.value(), JoinRequestStatus.PENDING.name(), cutoff, PageRequest.of(0, limit)).stream()
                 .map(JoinRequestPersistenceMapper::toDomain)
                 .toList();
     }

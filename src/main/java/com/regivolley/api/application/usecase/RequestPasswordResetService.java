@@ -8,7 +8,7 @@ import com.regivolley.api.application.identity.UserAccount;
 import com.regivolley.api.application.identity.UserStatus;
 import com.regivolley.api.application.port.AccountLinkMailer;
 import com.regivolley.api.application.port.BackgroundWork;
-import com.regivolley.api.application.port.CredentialAttemptThrottle;
+import com.regivolley.api.application.port.AttemptThrottle;
 import com.regivolley.api.application.port.EmailLinkStore;
 import com.regivolley.api.application.port.MembershipStore;
 import com.regivolley.api.application.port.SecretGenerator;
@@ -43,12 +43,12 @@ public class RequestPasswordResetService implements RequestPasswordResetUseCase 
     private final MembershipStore memberships;
     private final EmailLinkIssuer links;
     private final AccountLinkMailer mailer;
-    private final CredentialAttemptThrottle throttle;
+    private final AttemptThrottle throttle;
     private final BackgroundWork background;
     private final TransactionRunner transactions;
 
     public RequestPasswordResetService(UserAccountStore users, MembershipStore memberships, EmailLinkStore links, SecretGenerator secrets,
-                                       AccountLinkMailer mailer, CredentialAttemptThrottle throttle, BackgroundWork background,
+                                       AccountLinkMailer mailer, AttemptThrottle throttle, BackgroundWork background,
                                        TransactionRunner transactions, Clock clock) {
         this.users = users;
         this.memberships = memberships;

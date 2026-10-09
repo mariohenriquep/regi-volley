@@ -4,6 +4,7 @@ import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.InvalidJoinRequestStatusTransitionException;
 import com.regivolley.api.domain.factory.AssociationFactory;
 import com.regivolley.api.domain.factory.JoinRequestFactory;
+import com.regivolley.api.domain.model.valueobject.GdprConsent;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.JoinRequestId;
@@ -38,7 +39,7 @@ class JoinRequestTest {
     private static final MemberId ADMIN = MemberId.generate();
 
     private static JoinRequest pending() {
-        return JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("  Ana Silva ", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, "2026-10", REQUEST_CLOCK);
+        return JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("  Ana Silva ", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), GdprConsent.record(true, "2026-10", REQUEST_CLOCK), REQUEST_CLOCK);
     }
 
     @Nested

@@ -14,6 +14,8 @@ import com.regivolley.api.application.exception.RateLimitExceededException;
 import com.regivolley.api.application.exception.ServiceBusyException;
 import com.regivolley.api.application.result.SessionTokens;
 import com.regivolley.api.domain.exception.InvalidFieldException;
+import com.regivolley.api.domain.exception.ShortNameNotFoundException;
+import com.regivolley.api.domain.model.valueobject.ShortName;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -650,9 +652,9 @@ class AuthEndpointsWebTest extends AbstractSecuredWebTest {
 
     @Test
     void registeringAnAssociationIsLimitedToThreeAnHourPerAddress() throws Exception {
-        // Arrange - the controller arrives in 26c; the filter already guards the route
+        // Arrange - an empty body is a 400 from the controller; the filter counts the call before the body is even read
         for (int i = 0; i < RateLimitRule.REGISTER_IP.capacity(); i++) {
-            mockMvc.perform(jsonPost("/api/v1/public/associations", "{}")).andExpect(status().isNotFound());
+            mockMvc.perform(jsonPost("/api/v1/public/associations", "{}")).andExpect(status().isBadRequest());
         }
 
         // Act
@@ -680,7 +682,7 @@ class AuthEndpointsWebTest extends AbstractSecuredWebTest {
     void joinRequestsAreLimitedToFiveAnHourPerAddressAcrossAssociations() throws Exception {
         // Arrange
         for (int i = 0; i < RateLimitRule.JOIN_IP.capacity(); i++) {
-            mockMvc.perform(jsonPost("/api/v1/public/associations/club-" + i + "/join-requests", "{}")).andExpect(status().isNotFound());
+            mockMvc.perform(jsonPost("/api/v1/public/associations/club-" + i + "/join-requests", "{}")).andExpect(status().isBadRequest());
         }
 
         // Act
@@ -738,6 +740,7 @@ class AuthEndpointsWebTest extends AbstractSecuredWebTest {
     @Test
     void thePublicPageIsLimitedPerAddress() throws Exception {
         // Arrange
+        when(getPublicAssociationUseCase.execute(any())).thenThrow(new ShortNameNotFoundException(ShortName.of("some-club")));
         for (int i = 0; i < RateLimitRule.PUBLIC_PAGE_IP.capacity(); i++) {
             mockMvc.perform(get("/api/v1/public/associations/some-club").with(fromClient())).andExpect(status().isNotFound());
         }

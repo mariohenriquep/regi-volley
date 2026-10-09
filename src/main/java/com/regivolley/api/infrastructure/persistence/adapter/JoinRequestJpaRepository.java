@@ -3,8 +3,10 @@ package com.regivolley.api.infrastructure.persistence.adapter;
 import com.regivolley.api.infrastructure.persistence.entity.JoinRequestJpaEntity;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,5 +25,8 @@ interface JoinRequestJpaRepository extends JpaRepository<JoinRequestJpaEntity, U
 
     Optional<JoinRequestJpaEntity> findByAssociationIdAndEmailAndStatus(UUID associationId, String email, String status);
 
-    List<JoinRequestJpaEntity> findByAssociationIdAndStatusOrderByRequestedAtAscIdAsc(UUID associationId, String status);
+    List<JoinRequestJpaEntity> findByAssociationIdAndStatusOrderByRequestedAtAscIdAsc(UUID associationId, String status, Pageable page);
+
+    List<JoinRequestJpaEntity> findByAssociationIdAndStatusAndRequestedAtBeforeOrderByRequestedAtAscIdAsc(UUID associationId, String status,
+                                                                                                    Instant cutoff, Pageable page);
 }

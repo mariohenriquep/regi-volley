@@ -80,19 +80,20 @@ never appears in `domain/`.
 | Repository ports (interfaces only, one per aggregate root) | `domain.repository` |
 | Other outbound ports (e.g. `Notifier`) | `domain.port` |
 | Use case interface (`*UseCase`) + implementation (`*Service`) and their package-private helpers (`UnitOfWork`, `SeatPromoter`, ...) | `application.usecase` |
-| Outbound ports the application owns that are not about the domain (`TransactionRunner`, the credential `*Store`s, `PasswordHasher`, `AccessTokenIssuer`, `PrincipalVerifier`, `CredentialAttemptThrottle`, `SecretGenerator`, `BackgroundWork`, `CommonPasswordList`, `AccountLinkMailer`, `AccountProvisioner`, `CredentialsEraser`); interfaces only, no Spring | `application.port` |
+| Outbound ports the application owns that are not about the domain (`TransactionRunner`, the credential `*Store`s, `PasswordHasher`, `AccessTokenIssuer`, `PrincipalVerifier`, `AttemptThrottle`, `SecretGenerator`, `BackgroundWork`, `CommonPasswordList`, `AccountLinkMailer`, `AccountProvisioner`, `CredentialsEraser`); interfaces only, no Spring | `application.port` |
 | Application-owned credential vocabulary: `UserAccount`, `Membership`, `RefreshToken`, `EmailLink`, `AccessToken`, `AccountLink`, their status enums and lifetimes (`RefreshTokenPolicy`, `EmailLinkPolicy`); plain Java, no Spring (an architecture rule) | `application.identity` |
 | Exceptions the application raises for its own refusals (`InvalidCredentialsException`, `InvalidRefreshTokenException`, `InvalidLinkException`, `RateLimitExceededException`, `ServiceBusyException`, `AccountAlreadyExistsException`, `LinkAlreadyIssuedException`) | `application.exception` |
 | Use case input records | `application.command` |
 | Use case output records | `application.result` |
-| REST controllers | `infrastructure.web.controller` |
-| Request/response DTOs, error shape | `infrastructure.web.dto` |
+| REST controllers, one per resource (`PublicAssociationController`, `SessionController`, `LevelController`, `VenueController`, `TrainingGroupController`, `PlanController`, `JoinRequestController`, `MemberAdminController`, `MemberSelfController`, `SubscriptionController`, `PaymentController`, plus `AuthController` and `MeController`) | `infrastructure.web.controller` |
+| Request/response DTOs, error shape (records: `*Request` in, `*Response` out, nested `*View` records inside a response; `MemberRoleName`, `PaymentStatusName`, `PlanTypeName`, `PaymentMethodName`, `AttendanceMarkName` are the wire spellings of the enums a client names, each mapped to the domain's by an exhaustive `switch`; `PlausibleDate` bounds a client's dates) | `infrastructure.web.dto` |
 | `@RestControllerAdvice` exception mapping (`*ExceptionHandler`) | `infrastructure.web.exception` |
-| Domain ↔ DTO translation (`*WebMapper`) | `infrastructure.web.mapper` |
+| Domain ↔ DTO translation (`*WebMapper`: request → command, result → response; the only place a path UUID becomes a typed id, so controllers name no domain type) and the CSV rendering of the payment list (`SubscriptionCsvWebMapper`) | `infrastructure.web.mapper` |
+| Public read model of an association (`PublicAssociationPage` and its parts, an explicit whitelist) | `application.result` |
 | JPA entities (`*JpaEntity`) | `infrastructure.persistence.entity` |
 | Spring Data repository interfaces (`*JpaRepository`, package-private) and repository port implementations (adapters) | `infrastructure.persistence.adapter` |
 | Entity ↔ domain translation (`*PersistenceMapper`) | `infrastructure.persistence.mapper` |
-| Spring Security configuration, filters (`*Filter`), entry point / access-denied handler, JWT keys, decoder and issuer, `PrincipalResolver`, `AuthenticatedActor`, `SecurityAccountLookup` (the per-request account read that `persistence.adapter` implements), the JWT adapters (`JwtAccessTokenIssuer`), the password and secret adapters (`Argon2PasswordHasher`, `SecureSecretGenerator`, `BundledCommonPasswordList`), `RateLimiter` and its filter, the cookie guard, `ExecutorBackgroundWork` | `infrastructure.security` |
+| Spring Security configuration, filters (`*Filter`), entry point / access-denied handler, JWT keys, decoder and issuer, `PrincipalResolver`, `AuthenticatedActor`, `SecurityAccountLookup` (the per-request account read that `persistence.adapter` implements), the JWT adapters (`JwtAccessTokenIssuer`), the password and secret adapters (`Argon2PasswordHasher`, `SecureSecretGenerator`, `BundledCommonPasswordList`), `RateLimiter` and its two filters (`RateLimitFilter` per IP, `UserRateLimitFilter` per authenticated user), the cookie guard, `ExecutorBackgroundWork` | `infrastructure.security` |
 | Notification sending (adapter for `Notifier`; logs ids only until the email adapter of Phase 2) | `infrastructure.notification` |
 | `TransactionRunner` implementation (`REQUIRES_NEW` template) | `infrastructure.persistence.adapter` |
 | Spring `@Configuration` beans that are not security (clock, scheduler, the start-up guard on the database secret) | `infrastructure.config` |
@@ -234,10 +235,13 @@ Identical to task-manager-api:
 - **Application** — JUnit 5 + Mockito, ports mocked, no Spring context.
 - **Persistence** — `@DataJpaTest` + Testcontainers (real PostgreSQL), extending
   `AbstractPostgresIntegrationTest`.
-- **Web** — `@WebMvcTest` + MockMvc, use cases mocked (the `*UseCase` interfaces, never the services). Security and error-mapping tests use the **real filter chain**,
+- **Web** — `@WebMvcTest` + MockMvc, use cases mocked (the `*UseCase` interfaces, never the services): one test class per controller for the happy path, the validation 400s and the captured command, and `EndpointErrorMappingWebTest` over every authenticated route for 401/403/404/409/422/500. Security and error-mapping tests use the **real filter chain**,
   advice and controllers (`AbstractSecuredWebTest`: `@WebMvcTest` importing `SecurityConfiguration`, a mocked
   `MemberRepository` and the in-memory `SecurityAccountLookup`); test-only controllers live outside `com.regivolley.api`
   and are `@Import`ed so they never enter the route inventory.
+- **API integration** (`src/test/java/.../integration`) — `@SpringBootTest` + Testcontainers over the whole HTTP stack, every set-up step done through the public API
+  (`AbstractApiIntegrationTest`): the cross-tenant IDOR matrix, the registration-to-booking journey, the public endpoints'
+  uniformity and rate limits, the CSV export, log hygiene over a journey, the last seat over HTTP, and the OpenAPI contract (§14).
 - **Architecture** — plain JUnit 5 (`OnionArchitectureTest`, see §1).
 - **Assertions** — JUnit `assertThrows` for code that must throw, AssertJ `assertThat` for
   everything else; no `assertThatThrownBy`. When a use case throws, verify nothing was saved.
@@ -319,7 +323,7 @@ erasure against a stale edit, and approve against reject.
 
 The design and its reasoning are in [`security/threat-model-rest-api.md`](security/threat-model-rest-api.md) (decision ids
 `D-n`); this section says what the code does. Issue #26 is delivered in three steps: 26a (the security foundation, #30),
-26b (credentials and sessions: users, login, refresh, links, rate limits, #31), 26c (controllers for the use cases).
+26b (credentials and sessions: users, login, refresh, links, rate limits, #31), 26c (controllers for the use cases, #32, section 14).
 
 - **Infrastructure** (`infrastructure.security`): the filter chain, token verification and issuing, and the mapping from a
   token to the caller. The domain never sees any of it.
@@ -394,7 +398,7 @@ code), which login and refresh ask. There is no deny-all fallback any more: with
 `application.usecase`, with commands in `application.command` and `SessionTokens` as the result. The services know no security
 framework: they use the credential models in `application.identity` and the ports in `application.port` (`UserAccountStore`,
 `MembershipStore`, `RefreshTokenStore`, `EmailLinkStore`, `PasswordHasher`, `AccessTokenIssuer`, `PrincipalVerifier`,
-`CredentialAttemptThrottle`, `SecretGenerator`, `BackgroundWork`, `CommonPasswordList`, `AccountLinkMailer`, `TransactionRunner`),
+`AttemptThrottle`, `SecretGenerator`, `BackgroundWork`, `CommonPasswordList`, `AccountLinkMailer`, `TransactionRunner`),
 which `persistence.adapter`, `infrastructure.security` and `infrastructure.notification` implement. `infrastructure.security` keeps
 what is security machinery: the filters, `RateLimiter`, `PrincipalResolver` (also the `PrincipalVerifier`), the JWT code, the hasher
 and secret adapters, `SecurityAccountLookup`. Transactions go through `TransactionRunner`.
@@ -431,7 +435,7 @@ more than one confirmed membership; exactly one hash is verified in every case (
 check), and the reason goes to the audit log by id with the client address truncated (IPv4 /24, IPv6 /48; `ClientAddresses`).
 Password-reset requests always answer 202 `{"status":"RECEIVED"}`; the work (lookup, link, mail) runs through `BackgroundWork` (a small
 bounded executor) so response time says nothing. Join and registration need no email lookup (D-14 and the founder-only-unique
-email), so there is nothing to enumerate; their controllers are 26c.
+email), so there is nothing to enumerate: `PublicAssociationController` answers `202 {"status":"RECEIVED"}` to a join request whatever happened to it and registration echoes only the short name the visitor typed (§14).
 
 **Emailed links** (D-11, `EmailLinkIssuer`, `CredentialLinkConsumer`). `email_link` holds the SHA-256 of a 256-bit token, a purpose
 (`ACTIVATION` 7 days, `PASSWORD_RESET` 30 minutes), an optional membership and `consumed_at`; a newer link of the same membership
@@ -462,19 +466,21 @@ second instance would need a shared store, risk R5), on the injected `Clock`. Pe
 and before any hash: login 30 / 10 min, refresh 60 / min, activation and reset confirmation 30 / h (one bucket), password-reset
 requests 10 / h, `POST /public/associations` 3 / h, join requests 5 / h, the public page 120 / min. The key is the address as
 `RateLimiter.addressKey` makes it: IPv4 whole, IPv6 by its /64 (a subscriber owns a /64, so rotating inside it must not give a fresh
-bucket), IPv4-mapped IPv6 as the IPv4. Per email hash through the `CredentialAttemptThrottle` port (`RateLimitingAttemptThrottle`):
+bucket), IPv4-mapped IPv6 as the IPv4. Per email hash through the `AttemptThrottle` port (`RateLimitingAttemptThrottle`):
 login 5 / 15 min, reset 3 / h (unknown emails count the same); `RateLimiter.joinKey` serves the 3 / day per (association, email) join
-limit that the 26c controller will take. The answer is 429 with `Retry-After` and no hard lock-out. **Client address:**
+limit, taken by `SubmitJoinRequestService` through `AttemptThrottle.checkJoinRequest` before anything is looked up and for every outcome. The answer is 429 with `Retry-After` and no hard lock-out. **Client address:**
 `getRemoteAddr()` only. `server.forward-headers-strategy` is `none` (`FORWARD_HEADERS_STRATEGY`), so `X-Forwarded-For` is ignored;
 behind a known proxy set `native` *and* `server.tomcat.remoteip.internal-proxies` to that proxy (Tomcat's default trusts every
-private range). The authenticated per-user limit (U7) arrives with the 26c endpoints.
+private range). **Order of checks on a join request:** every refusal that depends on the input alone (the short name, the contact details, the RGPD consent, the policy version) comes *before* the throttle and before any lookup, because a refusal placed after the member / pending lookup would tell a stranger which addresses are known (P1). A text that cannot be a short name is a 404 like an unknown one. Registration validates the whole input before it looks at the short name.
+
+**Per user (U7):** `UserRateLimitFilter` sits right after the bearer token was verified and resolved and allows 300 calls a minute per user id (`RateLimitRule.USER`) over every authenticated route; a request without a valid token never reaches it and spends no one's budget.
 
 **Errors** (`ApiExceptionHandler`, `infrastructure.web.exception`). One body `{code, message, requestId[, fields]}`.
 403 `NotAllowedException`; 404 every `*NotFoundException` (also another tenant's id: same body, no id echoed); 202
 `{"status":"RECEIVED"}` for `JoinRequestNotPossibleException` (D-14); 409 `ShortNameAlreadyTaken`, `MemberEmailAlreadyUsed`,
 `LastAdministrator`, `DuplicateBooking` and any `AggregateModifiedConcurrentlyException`; 401 `INVALID_CREDENTIALS` (login) and
 `UNAUTHENTICATED` (refresh); 400 `INVALID_LINK`; 429 `TOO_MANY_REQUESTS` and 503 `SERVICE_BUSY`, both with `Retry-After`; 422 every other
-`BusinessRuleException` with its own English message (`InvalidFieldException` also names its field); 400 malformed,
+`BusinessRuleException` with its own English message (`InvalidFieldException` also names its field); whatever a client can type is checked by the aggregates with `InvalidFieldException` (a plan whose terms do not fit its type, a level order that is not a permutation), so an `Invalid*Exception` invariant reaching the advice is a stored-data or programming error and stays a generic 500; 400 malformed,
 invalid or unknown-property input with field names only, never values; 404/405/406/415 for the other Spring MVC errors;
 500 for everything else, logging the exception class and the place it was thrown, never its message. Spring Security's
 `AccessDeniedException`/`AuthenticationException` thrown inside a handler keep their 403/401. Errors raised in the filter
@@ -534,3 +540,85 @@ that makes it safe under concurrency:
   duplicate (pending request or existing member) with one generic `JoinRequestNotPossibleException`.
 - **Lists** (`MyPlan`, `ListSubscriptionsByPaymentStatus`) load members and plans in one batch (`findByIds`) rather than
   one query per row; a row whose member cannot be loaded is logged by id and left out instead of failing the list.
+
+## 14. REST API (issue #32, step 26c)
+
+Every use case of Phase 1 is reachable over HTTP except `GenerateSessions` / `GenerateSessionsForAllAssociations`, which the scheduler runs
+(a client-triggered generation would need an `Actor` and an admin check; threat model section 2). Controllers follow the request flow of
+section 1: they take the caller with `@CurrentActor`, hand path ids and the request record to a `*WebMapper` that builds the command, call
+a `*UseCase` and map the result back; they hold no rule, no role check and no tenant logic.
+
+**Conventions.** Resource-oriented paths under `/api/v1`. The tenant is never in a path, query or body: it is the token's (D-12), a
+request record has no `associationId`/`tenantId`/`roles`/`version` (an architecture rule) and an unknown JSON property is a 400. An id in a
+path is the *target* of an operation and is resolved inside the caller's association, so another association's id answers exactly like one
+that does not exist (404, same body, id not echoed); `CrossTenantIdorMatrixIntegrationTest` compares the two for every route. A state change
+that is not a plain update is a noun under the resource (`/cancellation`, `/deactivation`, `/approval`, `/archival`, `/reversal`, `/overdue-marking`), a role is
+a sub-resource (`PUT`/`DELETE .../roles/{role}`), money is in cents, times are ISO-8601 UTC instants, weekly schedules are Lisbon local
+`HH:mm`. Statuses: 201 for a created resource, 202 for "received", 204 for a delete, 200 otherwise. The status is written once, with `@ResponseStatus`; a `ResponseEntity` appears only for a 200 that sets a header (login and refresh set the cookie, the CSV export sets its download headers), and the three handlers that need a header with another status (registration's `Location`, the cookie-clearing `logout` and `logout-all`) set it on the `HttpServletResponse`. `Location` is sent only where a `GET` exists for it - today only the new association's public page - so no link points at a missing route;
+errors are the one `ApiError` body (section 11). Lists return a JSON array.
+
+| Method and path | Auth | Use case |
+|---|---|---|
+| `GET /public/associations/{shortName}` | public | `GetPublicAssociation` (US-24): name, locality, contact email, levels, active groups with schedule and venue, venues; no ids, no person |
+| `POST /public/associations` | public | `RegisterAssociation` (US-01): `201 {"shortName"}` only, whatever the founder's email already was |
+| `POST /public/associations/{shortName}/join-requests` | public | `SubmitJoinRequest` (US-05): `202 {"status":"RECEIVED"}` for new / already a member / pending (D-14); an input refusal (consent, contact data, policy version) is the same 400 / 422 for all three; 429 over 3 a day per (association, email) |
+| `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/activate`, `/auth/password-reset-requests`, `/auth/password-resets` | public | credentials (section 11) |
+| `POST /auth/logout-all`, `GET /me` | token | credentials, caller's ids |
+| `GET /me/plan`, `GET /me/history` | token | `MyPlan` (US-23), `MemberHistory` (US-18) |
+| `GET /sessions?weekOf=YYYY-MM-DD` | token | `ListBookableSessions` (US-13) |
+| `POST /sessions/{sessionId}/bookings` | token | `BookSession` (US-14): `201`, `CONFIRMED` or `WAITLISTED` with the place |
+| `POST /sessions/{sessionId}/bookings/{bookingId}/cancellation` | token | `CancelBooking` (US-15, US-16): late / credit refunded / how many moved up; the booking stays in the history as `CANCELLED`, so it is not a `DELETE` |
+| `POST /sessions/{sessionId}/cancellation` | coach of the session, admin | `CancelSession` (US-12) |
+| `PUT /sessions/{sessionId}/capacity` | coach of the session, admin | `ChangeSessionCapacity` (US-11) |
+| `PUT /sessions/{sessionId}/attendance` | coach of the session, admin | `MarkAttendance` (US-17) |
+| `POST /levels`, `PUT /levels/{levelId}`, `PUT /levels/order`, `PUT /levels/entry-level` | admin | `AddLevel`, `RenameLevel`, `ReorderLevels`, `ChangeEntryLevel` (US-03): each answers with the levels |
+| `POST /venues`, `PUT /venues/{venueId}`, `DELETE /venues/{venueId}` | admin | `CreateVenue`, `EditVenue`, `DeleteVenue` (US-02) |
+| `POST /training-groups`, `PUT /training-groups/{groupId}`, `POST /training-groups/{groupId}/archival` | admin | `CreateTrainingGroup`, `EditTrainingGroup`, `ArchiveTrainingGroup` (US-09) |
+| `POST /plans`, `PUT /plans/{planId}` | admin | `CreatePlan`, `EditPlan` (US-19) |
+| `GET /join-requests` | admin | `ListPendingJoinRequests` (US-06) |
+| `POST /join-requests/{requestId}/approval`, `.../rejection` | admin | `ApproveJoinRequest`, `RejectJoinRequest` (US-06) |
+| `PUT /members/{memberId}/level` | admin | `ChangeMemberLevel` (US-04) |
+| `PUT /members/{memberId}/roles/{role}`, `DELETE .../roles/{role}` | admin | `GrantRole`, `RevokeRole` (US-07) |
+| `POST /members/{memberId}/deactivation` | admin | `DeactivateMember` (US-08) |
+| `POST /members/{memberId}/subscriptions` | admin | `AssignPlan` (US-20) |
+| `GET /subscriptions?paymentStatus=&endingFrom=&endingTo=`, `GET /subscriptions/export?...` | admin | `ListSubscriptionsByPaymentStatus` (US-22), JSON or CSV; the window is on the subscription's end date, at most two years, one year either side of today by default |
+| `POST /subscriptions/{subscriptionId}/overdue-marking` | admin | `MarkSubscriptionOverdue` (RN-18) |
+| `POST /subscriptions/{subscriptionId}/payments` | admin | `RecordPayment` (US-21, RN-17) |
+| `POST /payments/{paymentId}/reversal` | admin | `ReversePayment` (RN-19) |
+
+"Admin" and "coach of the session" are decided by the use cases from the actor's `Member` (D-5), not by the web layer. `RouteInventoryTest`
+lists every route as public or authenticated and agrees with `PublicRoutes`; `EndpointErrorMappingWebTest` and
+`CrossTenantIdorMatrixIntegrationTest` each fail when an authenticated route has no row.
+
+**Public endpoints.** The public page is built from `PublicAssociationPage`, a whitelist assembled in `GetPublicAssociationService`: the
+coach and everything personal stay out (P4). The per-address limits are the filter's (register 3 / h, join 5 / h, page 120 / min); the
+per-(association, email) join limit is the service's, counted before any lookup so it cannot tell the three outcomes apart.
+
+**CSV export (US-22).** `SubscriptionCsvWebMapper` writes RFC 4180 CSV with a UTF-8 byte order mark and CRLF rows. A spreadsheet reads a
+cell as a formula by its first *real* character, skipping spaces, no-break and zero-width spaces, a byte order mark, newlines, vertical tabs
+and form feeds; so the guard looks at the first character that is none of those and, when it is `=`, `+`, `-`, `@`, a tab or a carriage
+return, prefixes the whole cell with an apostrophe (OWASP "CSV injection"; one unit test per hiding character). The response is
+`text/csv;charset=UTF-8` with `Content-Disposition: attachment`; `nosniff` and `no-store` come from the security headers. Each export logs one
+audit line: association, exporting member, status and row count, no names.
+
+**Bounded input and output (S1, S4, M7).** A date a client types (`weekOf`, `startDate`, `paidOn`, `endingFrom`, `endingTo`) must lie
+between 2000-01-01 and 2100-12-31 (`@PlausibleDate`, a 400). The payment-status list and its CSV are limited to subscriptions ending in a
+window of at most two years (`ListSubscriptionsByPaymentStatusService` checks it, the repository filters on it). The pending join requests
+are listed oldest first, at most 100 (`JoinRequestRepository.MAX_PENDING_LISTED`). Nothing else returns an unbounded list: the week, the
+history (three months) and the plan are bounded by time.
+
+**Data minimisation of join requests (S1).** A join request holds a stranger's name, email and phone, and an applicant who is never answered
+would otherwise leave them in the database for ever. `PurgeStalePendingJoinRequestsService`, triggered daily at 03:30 Lisbon time by
+`JoinRequestPurgeScheduler` (`regi-volley.join-request-purge.enabled`, off in tests), anonymises every request still pending after 30 days with
+the erasure design's own transition (`JoinRequest.anonymise`: placeholders for the contact details, closed as withdrawn, consent record and
+dates kept), one request per transaction, tenant by tenant.
+
+**Audit lines (M5).** Recording and reversing a payment, granting and revoking a role, deactivating a member and exporting the payment list each log one line with
+association, target and actor ids and nothing else (`LogHygieneJourneyIntegrationTest` proves both the lines and the absence of personal data).
+
+**OpenAPI.** `docs/api/openapi.json` is generated by springdoc from the controllers and request/response records, plus a test-only
+customiser (title, the bearer scheme, `security: []` on exactly the `PublicRoutes`, the shared error responses). springdoc is a **test-scope**
+dependency (springdoc and swagger-core are on the test classpath only, never in the packaged application): `OpenApiContractTest` switches its endpoint on in its own context, regenerates the document and fails when the committed file
+differs, so it cannot drift (`./mvnw test -Dtest=OpenApiContractTest -Dopenapi.update=true` rewrites it). The running application has no
+documentation endpoint and no swagger-core, so there is nothing to switch off in production; moving springdoc to compile scope and enabling
+it under profile `dev` is a one-line change if a live endpoint is ever wanted (its routes would then need rows in `RouteInventoryTest`).

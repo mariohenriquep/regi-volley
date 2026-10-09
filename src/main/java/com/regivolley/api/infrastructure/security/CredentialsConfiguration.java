@@ -2,7 +2,7 @@ package com.regivolley.api.infrastructure.security;
 
 import com.regivolley.api.application.port.BackgroundWork;
 import com.regivolley.api.application.port.CommonPasswordList;
-import com.regivolley.api.application.port.CredentialAttemptThrottle;
+import com.regivolley.api.application.port.AttemptThrottle;
 import com.regivolley.api.application.port.PasswordHasher;
 import com.regivolley.api.application.port.SecretGenerator;
 import org.springframework.context.annotation.Bean;
@@ -29,7 +29,7 @@ public class CredentialsConfiguration {
     }
 
     @Bean
-    public CredentialAttemptThrottle credentialAttemptThrottle(RateLimiter limiter) {
+    public AttemptThrottle credentialAttemptThrottle(RateLimiter limiter) {
         return new RateLimitingAttemptThrottle(limiter);
     }
 

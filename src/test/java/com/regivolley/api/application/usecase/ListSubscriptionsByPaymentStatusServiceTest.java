@@ -2,6 +2,7 @@ package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.ListSubscriptionsByPaymentStatusQuery;
 import com.regivolley.api.application.result.SubscriptionPaymentEntry;
+import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.factory.PlanFactory;
 import com.regivolley.api.domain.factory.SubscriptionFactory;
@@ -45,6 +46,10 @@ class ListSubscriptionsByPaymentStatusServiceTest {
     @Mock
     private SubscriptionRepository subscriptions;
 
+    /** The default window around "today" (Lisbon, 12 Oct 2026): one year back, one year ahead, on the day a subscription ends. */
+    private static final LocalDate FROM = LocalDate.parse("2025-10-12");
+    private static final LocalDate TO = LocalDate.parse("2027-10-12");
+
     private Association association;
     private Member admin;
     private ListSubscriptionsByPaymentStatusUseCase useCase;
@@ -53,7 +58,7 @@ class ListSubscriptionsByPaymentStatusServiceTest {
     void setUp() {
         association = Data.association();
         admin = Data.admin(association);
-        useCase = new ListSubscriptionsByPaymentStatusService(members, subscriptions);
+        useCase = new ListSubscriptionsByPaymentStatusService(members, subscriptions, Data.CLOCK);
         lenient().when(members.findById(association.id(), admin.id())).thenReturn(Optional.of(admin));
     }
 
@@ -64,7 +69,7 @@ class ListSubscriptionsByPaymentStatusServiceTest {
         when(members.findByIds(eq(association.id()), any())).thenReturn(List.of(late));
         Plan plan = PlanFactory.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
         Subscription overdue = SubscriptionFactory.create(plan, late.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
-        when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.OVERDUE)).thenReturn(List.of(overdue));
+        when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.OVERDUE, FROM, TO)).thenReturn(List.of(overdue));
 
         // Act
         List<SubscriptionPaymentEntry> entries = useCase.execute(
@@ -87,7 +92,7 @@ class ListSubscriptionsByPaymentStatusServiceTest {
         Subscription a = SubscriptionFactory.create(plan, first.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
         Subscription b = SubscriptionFactory.create(plan, missing.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
         Subscription c = SubscriptionFactory.create(plan, second.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
-        when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.OVERDUE)).thenReturn(List.of(a, b, c));
+        when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.OVERDUE, FROM, TO)).thenReturn(List.of(a, b, c));
         when(members.findByIds(eq(association.id()), any())).thenReturn(List.of(first, second));
 
         // Act
@@ -103,7 +108,7 @@ class ListSubscriptionsByPaymentStatusServiceTest {
     @Test
     void anEmptyStatusGivesAnEmptyListAndOnlyTheActorsAssociationIsQueried() {
         // Arrange
-        when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.PENDING)).thenReturn(List.of());
+        when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.PENDING, FROM, TO)).thenReturn(List.of());
 
         // Act
         List<SubscriptionPaymentEntry> entries = useCase.execute(
@@ -112,7 +117,7 @@ class ListSubscriptionsByPaymentStatusServiceTest {
         // Assert
         assertThat(entries).isEmpty();
         verify(members, never()).findByIds(any(), any());
-        verify(subscriptions).findByPaymentStatus(association.id(), PaymentStatus.PENDING);
+        verify(subscriptions).findByPaymentStatus(association.id(), PaymentStatus.PENDING, FROM, TO);
     }
 
     @Test
@@ -126,6 +131,80 @@ class ListSubscriptionsByPaymentStatusServiceTest {
         assertThrows(NotAllowedException.class, act);
 
         // Assert
-        verify(subscriptions, org.mockito.Mockito.never()).findByPaymentStatus(association.id(), PaymentStatus.OVERDUE);
+        verify(subscriptions, org.mockito.Mockito.never()).findByPaymentStatus(association.id(), PaymentStatus.OVERDUE, FROM, TO);
+    }
+
+    @Test
+    void withNoDatesTheWindowIsOneYearEitherSideOfTodayInLisbon() {
+        // Arrange
+        when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.OVERDUE, FROM, TO)).thenReturn(List.of());
+
+        // Act
+        useCase.execute(new ListSubscriptionsByPaymentStatusQuery(Data.actor(admin), PaymentStatus.OVERDUE));
+
+        // Assert
+        verify(subscriptions).findByPaymentStatus(association.id(), PaymentStatus.OVERDUE, FROM, TO);
+    }
+
+    @Test
+    void aSingleBoundGivesTheWindowOfTwoYearsFromOrUpToIt() {
+        // Arrange
+        LocalDate day = LocalDate.parse("2026-03-01");
+        when(subscriptions.findByPaymentStatus(eq(association.id()), eq(PaymentStatus.PAID), any(), any())).thenReturn(List.of());
+
+        // Act
+        useCase.execute(new ListSubscriptionsByPaymentStatusQuery(Data.actor(admin), PaymentStatus.PAID, day, null));
+        useCase.execute(new ListSubscriptionsByPaymentStatusQuery(Data.actor(admin), PaymentStatus.PAID, null, day));
+
+        // Assert
+        verify(subscriptions).findByPaymentStatus(association.id(), PaymentStatus.PAID, day, day.plusYears(2));
+        verify(subscriptions).findByPaymentStatus(association.id(), PaymentStatus.PAID, day.minusYears(2), day);
+    }
+
+    @Test
+    void anExplicitWindowIsPassedOnAsGiven() {
+        // Arrange
+        LocalDate from = LocalDate.parse("2026-01-01");
+        LocalDate to = LocalDate.parse("2027-12-31");
+        when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.PENDING, from, to)).thenReturn(List.of());
+
+        // Act
+        useCase.execute(new ListSubscriptionsByPaymentStatusQuery(Data.actor(admin), PaymentStatus.PENDING, from, to));
+
+        // Assert
+        verify(subscriptions).findByPaymentStatus(association.id(), PaymentStatus.PENDING, from, to);
+    }
+
+    @Test
+    void aWindowLongerThanTwoYearsOrBackwardsIsRefusedBeforeAnythingIsRead() {
+        // Arrange
+        LocalDate from = LocalDate.parse("2024-01-01");
+        Executable tooLong = () -> useCase.execute(new ListSubscriptionsByPaymentStatusQuery(Data.actor(admin), PaymentStatus.OVERDUE,
+                from, from.plusYears(2).plusDays(1)));
+        Executable backwards = () -> useCase.execute(new ListSubscriptionsByPaymentStatusQuery(Data.actor(admin), PaymentStatus.OVERDUE,
+                from.plusDays(1), from));
+
+        // Act
+        InvalidFieldException first = assertThrows(InvalidFieldException.class, tooLong);
+        InvalidFieldException second = assertThrows(InvalidFieldException.class, backwards);
+
+        // Assert
+        assertThat(first.field()).isEqualTo("to");
+        assertThat(second.field()).isEqualTo("from");
+        verify(subscriptions, never()).findByPaymentStatus(any(), any(), any(), any());
+    }
+
+    @Test
+    void aWindowOfExactlyTwoYearsIsAccepted() {
+        // Arrange
+        LocalDate from = LocalDate.parse("2024-01-01");
+        when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.PAID, from, from.plusYears(2))).thenReturn(List.of());
+
+        // Act
+        List<SubscriptionPaymentEntry> entries = useCase.execute(
+                new ListSubscriptionsByPaymentStatusQuery(Data.actor(admin), PaymentStatus.PAID, from, from.plusYears(2)));
+
+        // Assert
+        assertThat(entries).isEmpty();
     }
 }

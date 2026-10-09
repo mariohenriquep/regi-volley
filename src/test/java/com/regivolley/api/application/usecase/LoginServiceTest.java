@@ -9,7 +9,7 @@ import com.regivolley.api.application.exception.RateLimitExceededException;
 import com.regivolley.api.application.identity.Membership;
 import com.regivolley.api.application.identity.MembershipStatus;
 import com.regivolley.api.application.identity.UserAccount;
-import com.regivolley.api.application.port.CredentialAttemptThrottle;
+import com.regivolley.api.application.port.AttemptThrottle;
 import com.regivolley.api.application.port.PasswordHasher;
 import com.regivolley.api.application.result.SessionTokens;
 import com.regivolley.api.domain.model.entity.Member;
@@ -44,7 +44,7 @@ class LoginServiceTest {
 
     private CredentialsHarness h;
     private PasswordHasher hasher;
-    private CredentialAttemptThrottle throttle;
+    private AttemptThrottle throttle;
     private LoginService login;
     private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
     private final Logger logger = (Logger) LoggerFactory.getLogger(LoginService.class);
@@ -53,7 +53,7 @@ class LoginServiceTest {
     void setUp() {
         h = new CredentialsHarness();
         hasher = spy(h.hasher);
-        throttle = mock(CredentialAttemptThrottle.class);
+        throttle = mock(AttemptThrottle.class);
         login = new LoginService(h.stores.users, h.stores.memberships, hasher, h.verifier, throttle, h.stores.refreshTokens,
                 h.accessTokens, h.secrets, h.transactions, h.clock);
         logs.start();

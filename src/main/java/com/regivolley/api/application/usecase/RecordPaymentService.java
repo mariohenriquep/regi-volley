@@ -7,6 +7,8 @@ import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.repository.MemberRepository;
 import com.regivolley.api.domain.repository.PaymentRepository;
 import com.regivolley.api.domain.repository.SubscriptionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -19,6 +21,8 @@ import java.time.Clock;
  */
 @Service
 public class RecordPaymentService implements RecordPaymentUseCase {
+
+    private static final Logger LOG = LoggerFactory.getLogger(RecordPaymentService.class);
 
     private final PaymentSettling settling;
     private final UnitOfWork unitOfWork;
@@ -33,11 +37,15 @@ public class RecordPaymentService implements RecordPaymentUseCase {
 
     @Override
     public PaymentRecorded execute(RecordPaymentCommand command) {
-        return unitOfWork.retrying(() -> {
+        PaymentRecorded recorded = unitOfWork.retrying(() -> {
             Member admin = settling.requireAdmin(command.actor(), "record payments");
             var settled = settling.settle(command.actor().associationId(), command.subscriptionId(),
                     ledger -> ledger.record(command.amount(), command.paidOn(), command.method(), admin.id(), clock));
             return new PaymentRecorded(settled.payment(), settled.subscription(), settled.ledger().outstanding());
         });
+        // Audit line (threat model M5): who recorded what, by id only - never an amount's owner's name.
+        LOG.info("Payment recorded: associationId={} subscriptionId={} paymentId={} recordedBy={}", recorded.payment().associationId(),
+                recorded.payment().subscriptionId(), recorded.payment().id(), command.actor().memberId());
+        return recorded;
     }
 }
