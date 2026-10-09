@@ -1,0 +1,8 @@
+Hello,
+
+A member of {{association}} has reached the monthly limit of missed sessions (no-shows).
+
+Member: {{member}}
+No-shows this month: {{count}}
+
+The member was warned too. Nothing is blocked automatically; you can decide whether to follow up.

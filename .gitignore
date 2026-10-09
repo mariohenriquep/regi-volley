@@ -43,3 +43,6 @@ frontend/.vite
 # Local JWT signing keys (threat-model-rest-api.md, D-2): never committed
 *.pem
 *.jwk
+
+# Claude Code agent worktrees
+.claude/worktrees/

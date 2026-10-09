@@ -14,6 +14,8 @@ public enum RateLimitRule {
     RESET_EMAIL(3, Duration.ofHours(1), Keys.EMAIL),
     RESET_IP(10, Duration.ofHours(1), Keys.IP),
     REGISTER_IP(3, Duration.ofHours(1), Keys.IP),
+    /** Per founder's email (hashed): every registration mails that address an activation link, so it must not be floodable from many addresses (#35, #40). */
+    REGISTER_EMAIL(3, Duration.ofDays(1), Keys.EMAIL),
     JOIN_IP(5, Duration.ofHours(1), Keys.IP),
     /** Keyed by association and email together ({@link RateLimiter#joinKey}). */
     JOIN_EMAIL(3, Duration.ofDays(1), Keys.EMAIL),

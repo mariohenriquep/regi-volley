@@ -62,4 +62,55 @@ class RateLimitingAttemptThrottleTest {
         // Assert - no exception: a token is back
         assertThat(clock.instant()).isAfter(Instant.parse("2026-10-13T09:00:00Z"));
     }
+
+    @Test
+    void theFourthRegistrationOfTheDayForOneFoundersEmailIsRefusedWhateverTheCaseOfTheEmail() {
+        // Arrange
+        throttle.checkRegistration("ana@example.com");
+        throttle.checkRegistration("ANA@example.com");
+        throttle.checkRegistration(" ana@example.com ");
+        Executable act = () -> throttle.checkRegistration("ana@example.com");
+
+        // Act
+        RateLimitExceededException ex = assertThrows(RateLimitExceededException.class, act);
+
+        // Assert
+        assertThat(ex.retryAfterSeconds()).isBetween(1L, Duration.ofDays(1).toSeconds());
+    }
+
+    @Test
+    void registrationsOfOtherEmailsAreCountedApartAndTheBucketRefillsAfterADay() {
+        // Arrange
+        for (int i = 0; i < 3; i++) {
+            throttle.checkRegistration("ana@example.com");
+        }
+        throttle.checkRegistration("rita@example.com");
+        clock.advance(Duration.ofDays(1).plusSeconds(1));
+
+        // Act
+        throttle.checkRegistration("ana@example.com");
+
+        // Assert - no exception: another email was never affected, and a token is back
+        Executable stillCounted = () -> {
+            throttle.checkRegistration("ana@example.com");
+            throttle.checkRegistration("ana@example.com");
+            throttle.checkRegistration("ana@example.com");
+        };
+        assertThrows(RateLimitExceededException.class, stillCounted);
+    }
+
+    @Test
+    void theRegistrationBudgetIsNotTheResetBudgetOfTheSameEmail() {
+        // Arrange
+        for (int i = 0; i < 3; i++) {
+            throttle.checkRegistration("ana@example.com");
+        }
+
+        // Act
+        throttle.checkPasswordResetRequest("ana@example.com");
+
+        // Assert - no exception: the keys are hashed per rule, in separate caches
+        Executable registrationStillRefused = () -> throttle.checkRegistration("ana@example.com");
+        assertThrows(RateLimitExceededException.class, registrationStillRefused);
+    }
 }

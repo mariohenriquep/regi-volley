@@ -1,0 +1,9 @@
+Hello,
+
+The session you were signed up for was cancelled.
+
+Association: {{association}}
+Session: {{when}} (Lisbon time)
+Reason given: {{reason}}
+
+Your booking was cancelled with it, and any credit it used was given back.

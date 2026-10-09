@@ -94,13 +94,13 @@ never appears in `domain/`.
 | Spring Data repository interfaces (`*JpaRepository`, package-private) and repository port implementations (adapters) | `infrastructure.persistence.adapter` |
 | Entity ↔ domain translation (`*PersistenceMapper`) | `infrastructure.persistence.mapper` |
 | Spring Security configuration, filters (`*Filter`), entry point / access-denied handler, JWT keys, decoder and issuer, `PrincipalResolver`, `AuthenticatedActor`, `SecurityAccountLookup` (the per-request account read that `persistence.adapter` implements), the JWT adapters (`JwtAccessTokenIssuer`), the password and secret adapters (`Argon2PasswordHasher`, `SecureSecretGenerator`, `BundledCommonPasswordList`), `RateLimiter` and its two filters (`RateLimitFilter` per IP, `UserRateLimitFilter` per authenticated user), the cookie guard, `ExecutorBackgroundWork` | `infrastructure.security` |
-| Notification sending (adapter for `Notifier`; logs ids only until the email adapter of Phase 2) | `infrastructure.notification` |
+| Notification sending: `SmtpNotifier` (adapter for `Notifier`) and `SmtpAccountLinkMailer` (adapter for `AccountLinkMailer`; account links, section 11 *Emailed links*), their machinery (`MailDispatcher` asynchronous bounded sender with retries and `PermanentMailFailure` the "do not retry" mark, `MailDelivery` the MIME message over `JavaMailSender`, `MailTemplates` + `NoticeKind` + `MailContent` the text / HTML rendering, `MailLinks`, `MailFormats`) and the stand-ins `LoggingNotifier` / `LoggingAccountLinkMailer` (log ids and link references only), active when no SMTP host is configured (profiles `dev` / `test` only) | `infrastructure.notification` |
 | `TransactionRunner` implementation (`REQUIRES_NEW` template) | `infrastructure.persistence.adapter` |
-| Spring `@Configuration` beans that are not security (clock, scheduler, the start-up guard on the database secret) | `infrastructure.config` |
+| Spring `@Configuration` beans that are not security (clock, schedulers, the start-up guard on the database secret and the mail settings, `MailConfiguration` choosing the SMTP or the logging adapters, `MailSettings` the SMTP environment) | `infrastructure.config` |
 | The credential `*Store` adapters and `SecurityAccountLookupAdapter` (`*StoreAdapter`) | `infrastructure.persistence.adapter` |
 | `app_user` / `membership` / `refresh_token` / `email_link` JPA entities (`UserAccountJpaEntity`, ...) and their `*PersistenceMapper`s | `infrastructure.persistence.entity` / `.mapper` |
 | Credential endpoints (`AuthController`), its package-private `RefreshCookie` helper, the request/response records (`LoginRequest`, `AccessTokenResponse`, ...) and `AuthWebMapper` | `infrastructure.web.controller` / `.dto` / `.mapper` |
-| Mail for account links (`AccountLinkMailer` adapter; logs the link reference only until the SMTP adapter of Phase 2) | `infrastructure.notification` |
+| Email templates (`mail/<notice>.txt` / `.html` inside `mail/layout.*`, `{{placeholder}}` substitution) | `src/main/resources/mail` |
 
 A class that doesn't fit one of these rows is a signal to reconsider the design — flag it rather
 than inventing a package ad hoc. If `domain.model.entity` grows unwieldy, splitting it per
@@ -242,6 +242,10 @@ Identical to task-manager-api:
 - **API integration** (`src/test/java/.../integration`) — `@SpringBootTest` + Testcontainers over the whole HTTP stack, every set-up step done through the public API
   (`AbstractApiIntegrationTest`): the cross-tenant IDOR matrix, the registration-to-booking journey, the public endpoints'
   uniformity and rate limits, the CSV export, log hygiene over a journey, the last seat over HTTP, and the OpenAPI contract (§14).
+- **Mail** — `SmtpNotifier` / `SmtpAccountLinkMailer` are tested over a real SMTP conversation with an in-process GreenMail server
+  (`SmtpTestServer`, test scope; never a real provider) and mocked repositories: recipient, subject, text and HTML body, link, hostile
+  names, tenant scoping, retries, and a `LogCapture` proving that no token, address, name or body reaches a log. The start-up guard and
+  the SMTP / logging wiring are `ApplicationContextRunner` tests.
 - **Architecture** — plain JUnit 5 (`OnionArchitectureTest`, see §1).
 - **Assertions** — JUnit `assertThrows` for code that must throw, AssertJ `assertThat` for
   everything else; no `assertThatThrownBy`. When a use case throws, verify nothing was saved.
@@ -369,8 +373,8 @@ key brings its own. Every configuration is checked, under every profile: EC on P
 key, no private key in the verification set, the signing key's public half in the set, and a sign-then-verify probe proving
 the pair matches; any failure stops the start. Rotation is by overlap (two public keys during the access lifetime). The
 ephemeral key pair exists only under profiles `dev` and `test` and never when `prod` is active too (`prod,dev` still
-needs a key); every other profile, including none, refuses to start without one. `SecretsGuardConfiguration`
-(`infrastructure.config`, active unless `dev` or `test`) refuses a blank or the default `DB_PASSWORD`. There is no
+needs a key); every other profile, including none, refuses to start without one. `StartupGuardConfiguration`
+(`infrastructure.config`, active under `prod` and under any profile that is neither `dev` nor `test`) refuses a blank or the default `DB_PASSWORD` and an incomplete or unencrypted mail configuration (section 11, *Emailed links*). There is no
 JWKS endpoint (no second verifier yet). Key material is never logged or printed (`toString` shows kids only).
 
 **Principal** (D-5, D-6). `PrincipalResolver` runs after the signature check on **every** request and is the only code that
@@ -434,7 +438,8 @@ email, account never activated, wrong password, disabled account, membership not
 more than one confirmed membership; exactly one hash is verified in every case (a precomputed dummy hash when there is none to
 check), and the reason goes to the audit log by id with the client address truncated (IPv4 /24, IPv6 /48; `ClientAddresses`).
 Password-reset requests always answer 202 `{"status":"RECEIVED"}`; the work (lookup, link, mail) runs through `BackgroundWork` (a small
-bounded executor) so response time says nothing. Join and registration need no email lookup (D-14 and the founder-only-unique
+bounded executor) so response time says nothing; the mail itself is then a second asynchronous hop, queued on the SMTP adapter's own
+dispatcher (so a reset can be dropped at either queue when it is full, and the user asks again). Join and registration need no email lookup (D-14 and the founder-only-unique
 email), so there is nothing to enumerate: `PublicAssociationController` answers `202 {"status":"RECEIVED"}` to a join request whatever happened to it and registration echoes only the short name the visitor typed (§14).
 
 **Emailed links** (D-11, `EmailLinkIssuer`, `CredentialLinkConsumer`). `email_link` holds the SHA-256 of a 256-bit token, a purpose
@@ -449,8 +454,52 @@ rotate the stamp and revoke every refresh token; activation also confirms the me
 link is the same 400 `INVALID_LINK`. A reset requested for an account that was never activated re-sends its activation link instead.
 **Delivery:** `AccountLinkMailer.send(accountEmail, purpose, link)` mails the link to the *account's* address (`UserAccount.email()`),
 never to a member's contact address, which an administrator can edit. The clear token exists only in the `AccountLink`
-(`application.identity`) handed to the mailer; `LoggingAccountLinkMailer` logs the link's reference, never its token or the address.
-The SMTP adapter is Phase 2 and a go-live blocker.
+(`application.identity`) handed to the mailer, in the queued mail task and in the mail itself; every log line names the link by its
+reference (`LoggingAccountLinkMailer` and the SMTP path alike), never its token, the address or the body.
+
+**Email (issue #40, threat model G3).** `SmtpAccountLinkMailer` and `SmtpNotifier` (`infrastructure.notification`) implement the two
+ports over Spring's `JavaMailSender`; `MailConfiguration` (`infrastructure.config`) wires them when `SMTP_HOST` is set and the logging
+stand-ins otherwise. Settings come from the environment (`MailSettings`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY` = `STARTTLS` (default,
+*required* not opportunistic, server certificate name checked) / `TLS` / `NONE`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `MAIL_FROM`, and
+`WEB_ORIGIN` for the links). Outside `dev` and `test` the start-up guard (`StartupGuardConfiguration`) refuses to start unless host, port,
+credentials, a valid `MAIL_FROM`, an encrypted `SMTP_SECURITY` and an https `WEB_ORIGIN` are all set, naming the variables and never
+their values; under `dev` / `test` without a host the logging adapters stay. Whatever the profile, `MailSettings.structuralProblems()`
+(the one validation, used by the guard and by the sender bean) refuses a port outside 1-65535, an unknown `SMTP_SECURITY`, a malformed
+`MAIL_FROM`, and `SMTP_SECURITY=NONE` towards any host except `localhost`, a loopback address or `mailpit`; a port that does not fit the mode
+(TLS on 587, STARTTLS on 465) is logged as a warning. The send is **asynchronous and bounded**: the use cases
+still call the `Notifier` after their commit on the request thread, and the adapter only queues a task on a `MailDispatcher` (2 daemon
+threads each; account links have a queue of their own of 100 tasks, notices one of 500, so a burst of one kind cannot push out the other;
+over the bound the task is dropped and logged); the task reads the recipient through the tenant-scoped repositories (`MemberRepository`,
+`JoinRequestRepository`, `SessionRepository`, `AssociationRepository`: every call names the association, so another tenant's id resolves
+to nothing and nobody is mailed), renders and sends. A failing task is retried after 5 s, 30 s and 2 min (a waiting retry holds no thread)
+and then given up, except that a `PermanentMailFailure` (an address that does not parse, a template that cannot be filled, an SMTP 5xx
+refusal) is attempted once; the log has the task's description (ids), the attempt number and the exception *class*, never a message or stack
+trace, which can quote an address. A task that dies with an `Error` still frees its slot. The no-show warning resolves the member, the association and the active administrators (`findActiveAdminIds` +
+`findByIds`) and renders every message *before* queuing the first one, then queues one task per mailbox: a lookup that fails retries the
+whole notice with nothing sent, and a failing mailbox is retried alone, so nobody gets a second copy. The queue is in memory (a restart loses
+what waited, like the rate limiter: the user asks again).
+
+*What a message contains.* Fixed English subjects (`NoticeKind`), never a value. Bodies are plain text plus simple HTML from
+`mail/<notice>.txt|html` inside `mail/layout.*`, filled by `MailTemplates` in one pass of `{{placeholder}}` substitution (a value that
+looks like a placeholder is not expanded; a placeholder without a value fails instead of sending half a mail). Every value is data:
+control, format and line-separator characters become spaces (header injection, bidi spoofing), it is cut at 200 characters, text a mail
+client would make clickable (`://`, `www.`, `@`) is broken with a zero-width space (a visitor-chosen association name such as `Win at
+https://evil.example` cannot become a link in a mail from us; best effort, the choice is explained in the threat model section 14), and it
+is HTML-escaped in the HTML part; a link must be http(s). The two join notices end with "If you did not ask to join, ignore this message"
+because the address is whatever a stranger typed. Only the association's name, a Lisbon `dd/MM/yyyy HH:mm` date, a count and, for
+a cancellation, the coach's reason are printed; greetings are generic, because a member's or an applicant's name was typed by a visitor and
+the mail can reach an address that is not theirs. The one exception is the no-show warning to the administrators, who need to know who it
+is. The administrator's rejection reason is not passed on by the port. The recipient is parsed as exactly one mailbox (`a,b@x` cannot add
+a second), messages carry `Auto-Submitted: auto-generated`, and recipients who are deactivated, erased or anonymised are skipped, not
+retried.
+
+*Links* are `WEB_ORIGIN` + a frontend route, with the token in the **fragment** (D-11: not sent to a server, so in no access log or
+`Referer`) and percent-encoded: `/activate#token=<token>` and `/reset-password#token=<token>`. The frontend serves both routes, reads the
+fragment, removes it from the address bar (`history.replaceState`) and `POST`s the token with the new password to `/api/v1/auth/activate` or `/api/v1/auth/password-resets`. `MailSettings` is the one place that normalises the origin (no trailing slash); `MailLinks` refuses one that is not, and `NoticeKind` is the
+one mapping from a link purpose to its notice and route. Under `dev` / `test`
+an unset `WEB_ORIGIN` falls back to `http://localhost:5173`. Account links go to the account address, booking notices to the member's
+contact address, the rejection to the request's address (all resolved by id). Development reads mail in Mailpit (`docker-compose.yml`,
+README *Email*); tests use an in-process GreenMail server (test scope), never a real provider.
 
 **Provisioning** (D-11, section 6, `AccountProvisionerService`). `RegisterAssociation` (the founder) and `ApproveJoinRequest` call
 the application port `AccountProvisioner.provision(associationId, memberId, email)` after the commit (`AccountProvisioning`: a
@@ -468,7 +517,9 @@ requests 10 / h, `POST /public/associations` 3 / h, join requests 5 / h, the pub
 `RateLimiter.addressKey` makes it: IPv4 whole, IPv6 by its /64 (a subscriber owns a /64, so rotating inside it must not give a fresh
 bucket), IPv4-mapped IPv6 as the IPv4. Per email hash through the `AttemptThrottle` port (`RateLimitingAttemptThrottle`):
 login 5 / 15 min, reset 3 / h (unknown emails count the same); `RateLimiter.joinKey` serves the 3 / day per (association, email) join
-limit, taken by `SubmitJoinRequestService` through `AttemptThrottle.checkJoinRequest` before anything is looked up and for every outcome. The answer is 429 with `Retry-After` and no hard lock-out. **Client address:**
+limit, taken by `SubmitJoinRequestService` through `AttemptThrottle.checkJoinRequest` before anything is looked up and for every outcome; registration has
+3 / day per founder email hash (`checkRegistration`, `RegisterAssociationService`, taken once the input is valid and before the short name is looked up), because each registration mails that
+address an activation link and the per-IP limit alone lets many addresses flood one mailbox (#35, #40). The answer is 429 with `Retry-After` and no hard lock-out. **Client address:**
 `getRemoteAddr()` only. `server.forward-headers-strategy` is `none` (`FORWARD_HEADERS_STRATEGY`), so `X-Forwarded-For` is ignored;
 behind a known proxy set `native` *and* `server.tomcat.remoteip.internal-proxies` to that proxy (Tomcat's default trusts every
 private range). **Order of checks on a join request:** every refusal that depends on the input alone (the short name, the contact details, the RGPD consent, the policy version) comes *before* the throttle and before any lookup, because a refusal placed after the member / pending lookup would tell a stranger which addresses are known (P1). A text that cannot be a short name is a 404 like an unknown one. Registration validates the whole input before it looks at the short name.

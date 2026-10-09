@@ -16,5 +16,14 @@ services:
       timeout: 5s
       retries: 5
 
+  # Local mail catcher for development (issue #40): receives everything the app sends and delivers nothing. Never a real provider.
+  # SMTP on localhost:1025, web inbox at http://localhost:8025. Bound to the loopback interface only.
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    container_name: regi-volley-mailpit
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
 volumes:
   regi-volley-postgres-data:

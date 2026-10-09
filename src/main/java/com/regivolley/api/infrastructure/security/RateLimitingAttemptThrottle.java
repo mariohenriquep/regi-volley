@@ -2,7 +2,7 @@ package com.regivolley.api.infrastructure.security;
 
 import com.regivolley.api.application.port.AttemptThrottle;
 
-/** {@link AttemptThrottle} on the shared {@link RateLimiter}: login 5 per 15 minutes, reset 3 per hour and join 3 per day per association, per email hash. */
+/** {@link AttemptThrottle} on the shared {@link RateLimiter}: login 5 per 15 minutes, reset 3 per hour and join 3 per day per association and registration 3 per day, per email hash. */
 public class RateLimitingAttemptThrottle implements AttemptThrottle {
 
     private final RateLimiter limiter;
@@ -24,5 +24,10 @@ public class RateLimitingAttemptThrottle implements AttemptThrottle {
     @Override
     public void checkJoinRequest(String shortName, String email) {
         limiter.check(RateLimitRule.JOIN_EMAIL, RateLimiter.joinKey(shortName, email));
+    }
+
+    @Override
+    public void checkRegistration(String founderEmail) {
+        limiter.check(RateLimitRule.REGISTER_EMAIL, RateLimiter.emailKey(founderEmail));
     }
 }

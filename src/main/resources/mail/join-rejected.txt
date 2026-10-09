@@ -1,0 +1,7 @@
+Hello,
+
+Your request to join {{association}} was not approved.
+
+If you think this is a mistake, please contact the association directly.
+
+If you did not ask to join, ignore this message.

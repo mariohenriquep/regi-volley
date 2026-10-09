@@ -1,0 +1,7 @@
+Hello,
+
+Your request to join {{association}} was approved: you are now a member.
+
+If you still need to set up your access to RegiVolley, a separate message with an activation link is on its way to you.
+
+If you did not ask to join, ignore this message.
