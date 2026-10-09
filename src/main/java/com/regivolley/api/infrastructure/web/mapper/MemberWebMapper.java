@@ -4,6 +4,7 @@ import com.regivolley.api.application.command.Actor;
 import com.regivolley.api.application.command.ChangeMemberLevelCommand;
 import com.regivolley.api.application.command.DeactivateMemberCommand;
 import com.regivolley.api.application.command.GrantRoleCommand;
+import com.regivolley.api.application.command.ResendActivationLinkCommand;
 import com.regivolley.api.application.command.RevokeRoleCommand;
 import com.regivolley.api.application.result.MemberDeactivated;
 import com.regivolley.api.domain.model.entity.Member;
@@ -40,6 +41,10 @@ public final class MemberWebMapper {
 
     public static DeactivateMemberCommand deactivateCommand(Actor actor, UUID memberId) {
         return new DeactivateMemberCommand(actor, MemberId.of(memberId));
+    }
+
+    public static ResendActivationLinkCommand resendActivationCommand(Actor actor, UUID memberId) {
+        return new ResendActivationLinkCommand(actor, MemberId.of(memberId));
     }
 
     public static MemberResponse toResponse(Member member) {

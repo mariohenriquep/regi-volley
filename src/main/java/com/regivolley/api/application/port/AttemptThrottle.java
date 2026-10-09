@@ -1,5 +1,9 @@
 package com.regivolley.api.application.port;
 
+import com.regivolley.api.domain.model.valueobject.AssociationId;
+import com.regivolley.api.domain.model.valueobject.EmailAddress;
+import com.regivolley.api.domain.model.valueobject.MemberId;
+
 /**
  * Outbound port for the per-key rate limits that need the request's content, keyed by a hash of an email (alone, or with the association) (threat model D-9): login 5 per 15 minutes, password-reset requests 3 per hour, join requests 3 per day per association.
  * Keyed by a hash of the address, so it counts unknown addresses exactly like known ones. The per-IP limits belong to the web
@@ -20,4 +24,22 @@ public interface AttemptThrottle {
      * @throws com.regivolley.api.application.exception.RateLimitExceededException if this email asked this association too often
      */
     void checkJoinRequest(String shortName, String email);
+
+    /**
+     * Administrator re-sending a member's activation link: 30 per hour for the whole association (so one tenant cannot fill the
+     * resend lane or flood mailboxes) and 3 per hour for the member. Taken after the administrator is authorised and before the
+     * member is looked up, so it is counted the same for every outcome, an id of another association included.
+     *
+     * @throws com.regivolley.api.application.exception.RateLimitExceededException if the association or this member was asked for too often
+     */
+    void checkActivationLinkResend(AssociationId associationId, MemberId memberId);
+
+    /**
+     * A link about to be mailed to this address on an administrator's request: 6 per hour per address, across associations, so one
+     * mailbox cannot be bombed by administrators of several associations that all list it. Deliberately its own bucket: sharing it with
+     * password-reset requests would let anyone who can trigger resends lock the owner out of their own resets.
+     *
+     * @throws com.regivolley.api.application.exception.RateLimitExceededException if this address was mailed too often
+     */
+    void checkLinkMailAddress(EmailAddress address);
 }

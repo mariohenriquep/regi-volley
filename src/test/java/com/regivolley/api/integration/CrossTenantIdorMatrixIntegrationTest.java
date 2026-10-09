@@ -74,6 +74,7 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
             row("POST /api/v1/sessions/{sessionId}/bookings/{bookingId}/cancellation", Caller.MEMBER, "session of another association, own booking",
                     (own, other) -> "/api/v1/sessions/" + other.sessionId() + "/bookings/" + own.bookingId() + "/cancellation", (own, other) -> NO_BODY, 404),
             // the staff of a session
+            row("GET /api/v1/sessions/{sessionId}/roster", Caller.STAFF, (own, other) -> "/api/v1/sessions/" + other.sessionId() + "/roster", (own, other) -> NO_BODY),
             row("POST /api/v1/sessions/{sessionId}/cancellation", Caller.STAFF, (own, other) -> "/api/v1/sessions/" + other.sessionId() + "/cancellation",
                     (own, other) -> "{\"reason\":\"closed\"}"),
             row("PUT /api/v1/sessions/{sessionId}/capacity", Caller.STAFF, (own, other) -> "/api/v1/sessions/" + other.sessionId() + "/capacity",
@@ -128,6 +129,7 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
                     (own, other) -> "{\"levelId\":\"" + other.secondLevelId() + "\"}", 404),
             row("PUT /api/v1/members/{memberId}/roles/{role}", Caller.ADMIN, (own, other) -> "/api/v1/members/" + other.spare().memberId() + "/roles/COACH", (own, other) -> NO_BODY),
             row("DELETE /api/v1/members/{memberId}/roles/{role}", Caller.ADMIN, (own, other) -> "/api/v1/members/" + other.spare().memberId() + "/roles/MEMBER", (own, other) -> NO_BODY),
+            row("POST /api/v1/members/{memberId}/activation-links", Caller.ADMIN, (own, other) -> "/api/v1/members/" + other.spare().memberId() + "/activation-links", (own, other) -> NO_BODY),
             row("POST /api/v1/members/{memberId}/deactivation", Caller.ADMIN, (own, other) -> "/api/v1/members/" + other.spare().memberId() + "/deactivation", (own, other) -> NO_BODY),
             row("POST /api/v1/members/{memberId}/subscriptions", Caller.ADMIN, "member of another association", (own, other) -> "/api/v1/members/" + other.spare().memberId() + "/subscriptions",
                     (own, other) -> "{\"planId\":\"" + own.planId() + "\",\"startDate\":\"2027-06-01\"}", 404),

@@ -5,6 +5,7 @@ import com.regivolley.api.application.command.BookSessionCommand;
 import com.regivolley.api.application.command.CancelBookingCommand;
 import com.regivolley.api.application.command.CancelSessionCommand;
 import com.regivolley.api.application.command.ChangeSessionCapacityCommand;
+import com.regivolley.api.application.command.GetSessionRosterQuery;
 import com.regivolley.api.application.command.ListBookableSessionsQuery;
 import com.regivolley.api.application.command.MarkAttendanceCommand;
 import com.regivolley.api.application.result.AttendanceMarked;
@@ -13,6 +14,8 @@ import com.regivolley.api.application.result.CancelledBooking;
 import com.regivolley.api.application.result.CancelledSession;
 import com.regivolley.api.application.result.CapacityChanged;
 import com.regivolley.api.application.result.PlacedBooking;
+import com.regivolley.api.application.result.RosterEntry;
+import com.regivolley.api.application.result.SessionRoster;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Booking;
 import com.regivolley.api.domain.model.entity.Member;
@@ -24,6 +27,7 @@ import com.regivolley.api.domain.model.valueobject.BookingStatus;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.model.valueobject.MemberRole;
 import com.regivolley.api.domain.model.valueobject.SessionId;
+import com.regivolley.api.domain.model.valueobject.SessionStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -302,5 +306,53 @@ class SessionControllerTest extends AbstractControllerWebTest {
         empty.andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields[0]").value("entries"));
         unknownMark.andExpect(status().isBadRequest());
         verifyNoInteractions(markAttendanceUseCase);
+    }
+
+    @Test
+    void theRosterShowsSeatsAndWaitlistWithBookingIdsAndNamesOnly() throws Exception {
+        // Arrange
+        Instant start = Instant.parse("2026-10-14T19:00:00Z");
+        BookingId waiting = BookingId.generate();
+        MemberId waitingMember = MemberId.generate();
+        when(getSessionRosterUseCase.execute(any())).thenReturn(new SessionRoster(session.id(), session.trainingGroupId(), coach.id(),
+                start, start.plusSeconds(5400), 12, SessionStatus.SCHEDULED,
+                List.of(new RosterEntry(booking.id(), member.id(), "Ana Silva", BookingStatus.CONFIRMED)),
+                List.of(new RosterEntry(waiting, waitingMember, "Bruno Reis", BookingStatus.WAITLISTED))));
+
+        // Act
+        var result = authenticated(HttpMethod.GET, "/api/v1/sessions/" + session.id() + "/roster");
+
+        // Assert
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$.sessionId").value(session.id().value().toString()))
+                .andExpect(jsonPath("$.coachId").value(coach.id().value().toString()))
+                .andExpect(jsonPath("$.startsAt").value("2026-10-14T19:00:00Z"))
+                .andExpect(jsonPath("$.capacity").value(12))
+                .andExpect(jsonPath("$.status").value("SCHEDULED"))
+                .andExpect(jsonPath("$.seats[0].bookingId").value(booking.id().value().toString()))
+                .andExpect(jsonPath("$.seats[0].memberId").value(member.id().value().toString()))
+                .andExpect(jsonPath("$.seats[0].memberName").value("Ana Silva"))
+                .andExpect(jsonPath("$.seats[0].status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.waitlist[0].bookingId").value(waiting.value().toString()))
+                .andExpect(jsonPath("$.waitlist[0].status").value("WAITLISTED"))
+                .andExpect(jsonPath("$.seats[0].email").doesNotExist())
+                .andExpect(jsonPath("$.seats[0].phone").doesNotExist());
+        ArgumentCaptor<GetSessionRosterQuery> query = ArgumentCaptor.forClass(GetSessionRosterQuery.class);
+        verify(getSessionRosterUseCase).execute(query.capture());
+        assertThat(query.getValue().actor()).isEqualTo(expectedActor());
+        assertThat(query.getValue().sessionId()).isEqualTo(session.id());
+    }
+
+    @Test
+    void aRosterSessionIdThatIsNotAUuidIs400() throws Exception {
+        // Arrange
+        String path = "/api/v1/sessions/not-a-uuid/roster";
+
+        // Act
+        var result = authenticated(HttpMethod.GET, path);
+
+        // Assert
+        result.andExpect(status().isBadRequest());
+        verifyNoInteractions(getSessionRosterUseCase);
     }
 }

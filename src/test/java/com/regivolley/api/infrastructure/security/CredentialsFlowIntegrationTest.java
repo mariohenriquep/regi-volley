@@ -98,7 +98,7 @@ class CredentialsFlowIntegrationTest extends AbstractPostgresIntegrationTest {
         @Bean
         @Primary
         BackgroundWork directBackgroundWork() {
-            return Runnable::run;
+            return (lane, work) -> work.run();
         }
     }
 

@@ -14,4 +14,9 @@ public enum BookingStatus implements ValueObject {
     public boolean isActive() {
         return this == WAITLISTED || this == CONFIRMED;
     }
+
+    /** The booking took a seat in the session and kept it: CONFIRMED, and ATTENDED / NO_SHOW once marked (not WAITLISTED, not CANCELLED). */
+    public boolean holdsSeat() {
+        return this == CONFIRMED || this == ATTENDED || this == NO_SHOW;
+    }
 }

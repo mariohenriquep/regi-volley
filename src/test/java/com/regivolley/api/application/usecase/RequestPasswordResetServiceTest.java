@@ -42,7 +42,11 @@ class RequestPasswordResetServiceTest {
     private InMemoryCredentialStores.Links links;
     private RequestPasswordResetService service;
     private final List<Runnable> queued = new ArrayList<>();
-    private final BackgroundWork background = queued::add;
+    private final List<BackgroundWork.Lane> lanes = new ArrayList<>();
+    private final BackgroundWork background = (lane, work) -> {
+        lanes.add(lane);
+        queued.add(work);
+    };
 
     @BeforeEach
     void setUp() {
@@ -75,6 +79,18 @@ class RequestPasswordResetServiceTest {
         assertThat(queued).hasSize(1);
         assertThat(h.stores.links.byId).isEmpty();
         verifyNoInteractions(mailer);
+    }
+
+    @Test
+    void theWorkUsesTheAccountMailLaneThatAdministratorResendsCannotFill() {
+        // Arrange
+        h.confirmedUser();
+
+        // Act
+        request(CredentialsHarness.EMAIL);
+
+        // Assert
+        assertThat(lanes).containsExactly(BackgroundWork.Lane.ACCOUNT_MAIL);
     }
 
     @Test

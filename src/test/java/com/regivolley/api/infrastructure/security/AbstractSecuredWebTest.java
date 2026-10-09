@@ -20,6 +20,7 @@ import com.regivolley.api.application.usecase.DeleteVenueUseCase;
 import com.regivolley.api.application.usecase.EditPlanUseCase;
 import com.regivolley.api.application.usecase.EditTrainingGroupUseCase;
 import com.regivolley.api.application.usecase.EditVenueUseCase;
+import com.regivolley.api.application.usecase.GetSessionRosterUseCase;
 import com.regivolley.api.application.usecase.GrantRoleUseCase;
 import com.regivolley.api.application.usecase.ListBookableSessionsUseCase;
 import com.regivolley.api.application.usecase.ListSubscriptionsByPaymentStatusUseCase;
@@ -31,6 +32,7 @@ import com.regivolley.api.application.usecase.RecordPaymentUseCase;
 import com.regivolley.api.application.usecase.RegisterAssociationUseCase;
 import com.regivolley.api.application.usecase.RejectJoinRequestUseCase;
 import com.regivolley.api.application.usecase.RenameLevelUseCase;
+import com.regivolley.api.application.usecase.ResendActivationLinkUseCase;
 import com.regivolley.api.application.usecase.ReorderLevelsUseCase;
 import com.regivolley.api.application.usecase.ReversePaymentUseCase;
 import com.regivolley.api.application.usecase.RevokeRoleUseCase;
@@ -134,6 +136,8 @@ public abstract class AbstractSecuredWebTest {
     @MockitoBean
     protected EditVenueUseCase editVenueUseCase;
     @MockitoBean
+    protected GetSessionRosterUseCase getSessionRosterUseCase;
+    @MockitoBean
     protected GrantRoleUseCase grantRoleUseCase;
     @MockitoBean
     protected ListBookableSessionsUseCase listBookableSessionsUseCase;
@@ -157,6 +161,8 @@ public abstract class AbstractSecuredWebTest {
     protected RenameLevelUseCase renameLevelUseCase;
     @MockitoBean
     protected ReorderLevelsUseCase reorderLevelsUseCase;
+    @MockitoBean
+    protected ResendActivationLinkUseCase resendActivationLinkUseCase;
     @MockitoBean
     protected ReversePaymentUseCase reversePaymentUseCase;
     @MockitoBean

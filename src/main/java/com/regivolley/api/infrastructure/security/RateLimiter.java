@@ -3,6 +3,8 @@ package com.regivolley.api.infrastructure.security;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.regivolley.api.application.exception.RateLimitExceededException;
+import com.regivolley.api.domain.model.valueobject.AssociationId;
+import com.regivolley.api.domain.model.valueobject.MemberId;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
 import io.github.bucket4j.TimeMeter;
@@ -88,6 +90,11 @@ public class RateLimiter {
     /** The key for the per-(association, email) join limit. */
     public static String joinKey(String shortName, String email) {
         return SecureTokens.sha256(normalise(shortName) + '\n' + normalise(email));
+    }
+
+    /** The key for per-member limits: SHA-256 of the association and the member, so the same member id in another association is another key. */
+    public static String memberKey(AssociationId associationId, MemberId memberId) {
+        return SecureTokens.sha256(associationId + "\n" + memberId);
     }
 
     private Bucket newBucket(RateLimitRule rule) {

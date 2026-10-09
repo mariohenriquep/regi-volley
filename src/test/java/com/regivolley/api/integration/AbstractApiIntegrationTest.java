@@ -66,7 +66,7 @@ public abstract class AbstractApiIntegrationTest extends AbstractPostgresIntegra
         @Bean
         @Primary
         BackgroundWork directBackgroundWork() {
-            return Runnable::run;
+            return (lane, work) -> work.run();
         }
     }
 

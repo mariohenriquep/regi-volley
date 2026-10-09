@@ -5,10 +5,13 @@ import com.regivolley.api.application.command.AttendanceEntry;
 import com.regivolley.api.application.command.AttendanceMark;
 import com.regivolley.api.application.command.CancelSessionCommand;
 import com.regivolley.api.application.command.ChangeSessionCapacityCommand;
+import com.regivolley.api.application.command.GetSessionRosterQuery;
 import com.regivolley.api.application.command.MarkAttendanceCommand;
 import com.regivolley.api.application.result.AttendanceMarked;
 import com.regivolley.api.application.result.CancelledSession;
 import com.regivolley.api.application.result.CapacityChanged;
+import com.regivolley.api.application.result.RosterEntry;
+import com.regivolley.api.application.result.SessionRoster;
 import com.regivolley.api.domain.model.entity.Booking;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.valueobject.BookingId;
@@ -21,6 +24,7 @@ import com.regivolley.api.infrastructure.web.dto.ChangeCapacityRequest;
 import com.regivolley.api.infrastructure.web.dto.MarkAttendanceRequest;
 import com.regivolley.api.infrastructure.web.dto.SessionCancelledResponse;
 import com.regivolley.api.infrastructure.web.dto.SessionResponse;
+import com.regivolley.api.infrastructure.web.dto.SessionRosterResponse;
 
 import java.util.UUID;
 
@@ -41,6 +45,22 @@ public final class SessionWebMapper {
     public static MarkAttendanceCommand attendanceCommand(Actor actor, UUID sessionId, MarkAttendanceRequest body) {
         return new MarkAttendanceCommand(actor, SessionId.of(sessionId), body.entries().stream()
                 .map(entry -> new AttendanceEntry(BookingId.of(entry.bookingId()), toDomain(entry.mark()))).toList());
+    }
+
+    public static GetSessionRosterQuery rosterQuery(Actor actor, UUID sessionId) {
+        return new GetSessionRosterQuery(actor, SessionId.of(sessionId));
+    }
+
+    public static SessionRosterResponse toResponse(SessionRoster roster) {
+        return new SessionRosterResponse(roster.sessionId().value(), roster.trainingGroupId().value(), roster.coachId().value(),
+                roster.startsAt(), roster.endsAt(), roster.capacity(), roster.status().name(),
+                roster.seats().stream().map(SessionWebMapper::toResponse).toList(),
+                roster.waitlist().stream().map(SessionWebMapper::toResponse).toList());
+    }
+
+    private static SessionRosterResponse.EntryView toResponse(RosterEntry entry) {
+        return new SessionRosterResponse.EntryView(entry.bookingId().value(), entry.memberId().value(), entry.memberName(),
+                entry.status().name());
     }
 
     public static SessionResponse toResponse(Session session) {

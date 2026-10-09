@@ -246,4 +246,34 @@ class AccountProvisionerServiceTest {
         // Assert
         assertThat(h.stores.links.byId).containsKey(reference);
     }
+
+    @Test
+    void aDisabledAccountGetsNoMembershipAndNoLink() {
+        // Arrange
+        UserAccount disabled = h.pendingUser();
+        h.stores.memberships.byId.clear();
+        h.stores.users.disable(disabled.id());
+
+        // Act
+        provisioner.provision(h.association.id(), h.member.id(), email);
+
+        // Assert
+        verifyNoInteractions(mailer);
+        assertThat(h.stores.memberships.byId).isEmpty();
+        assertThat(h.stores.links.byId).isEmpty();
+    }
+
+    @Test
+    void aPendingMembershipOfADisabledAccountGetsNoNewLink() {
+        // Arrange
+        UserAccount disabled = h.pendingUser();
+        h.stores.users.disable(disabled.id());
+
+        // Act
+        provisioner.provision(h.association.id(), h.member.id(), email);
+
+        // Assert
+        verifyNoInteractions(mailer);
+        assertThat(h.stores.links.byId).isEmpty();
+    }
 }
