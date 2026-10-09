@@ -7,6 +7,7 @@ import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.model.valueobject.PaymentStatus;
 import com.regivolley.api.domain.model.valueobject.SubscriptionId;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,8 +19,11 @@ public interface SubscriptionRepository {
     /** All subscriptions of the member, oldest period first (overlap check, balance, eligibility). */
     List<Subscription> findByMember(AssociationId associationId, MemberId memberId);
 
-    /** The association's subscriptions in that payment status, those ending first first (US-22: who is overdue). */
-    List<Subscription> findByPaymentStatus(AssociationId associationId, PaymentStatus status);
+    /**
+     * The association's subscriptions in that payment status whose end date lies in {@code [endingFrom, endingTo]} (both included), those
+     * ending first first (US-22: who is overdue). The window keeps the list, and the CSV made from it, bounded.
+     */
+    List<Subscription> findByPaymentStatus(AssociationId associationId, PaymentStatus status, LocalDate endingFrom, LocalDate endingTo);
 
     /**
      * Inserts a new subscription or updates an existing one with its usages, and returns it as stored,

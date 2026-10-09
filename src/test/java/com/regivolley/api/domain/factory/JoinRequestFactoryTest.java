@@ -74,7 +74,7 @@ class JoinRequestFactoryTest {
     }
 
     private static JoinRequest pending() {
-        return JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("  Ana Silva ", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, "2026-10", REQUEST_CLOCK);
+        return JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("  Ana Silva ", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), GdprConsent.record(true, "2026-10", REQUEST_CLOCK), REQUEST_CLOCK);
     }
 
     @Test
@@ -105,7 +105,7 @@ class JoinRequestFactoryTest {
     @Test
     void requiresTheRgpdConsent() {
         // Arrange
-        Executable act = () -> JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), false, "2026-10", REQUEST_CLOCK);
+        Executable act = () -> JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), GdprConsent.record(false, "2026-10", REQUEST_CLOCK), REQUEST_CLOCK);
 
         // Act
         ConsentRequiredException ex = assertThrows(ConsentRequiredException.class, act);
@@ -117,7 +117,7 @@ class JoinRequestFactoryTest {
     @Test
     void requiresThePolicyVersionTheConsentRefersTo() {
         // Arrange
-        Executable act = () -> JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, " ", REQUEST_CLOCK);
+        Executable act = () -> JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), GdprConsent.record(true, " ", REQUEST_CLOCK), REQUEST_CLOCK);
 
         // Act
         InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
@@ -131,7 +131,7 @@ class JoinRequestFactoryTest {
     @ValueSource(strings = {"  "})
     void requiresAName(String name) {
         // Arrange
-        Executable act = () -> JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of(name, EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, "2026-10", REQUEST_CLOCK);
+        Executable act = () -> JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of(name, EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), GdprConsent.record(true, "2026-10", REQUEST_CLOCK), REQUEST_CLOCK);
 
         // Act
         InvalidFieldException ex = assertThrows(InvalidFieldException.class, act);
@@ -141,17 +141,16 @@ class JoinRequestFactoryTest {
     }
 
     @Test
-    void readsTheClockOnceSoTheConsentAndTheRequestShareAnInstant() {
+    void keepsTheConsentTheCallerRecordedAndStampsTheRequestWithTheClock() {
         // Arrange
-        Clock ticking = new TickingClock(REQUESTED);
+        GdprConsent consent = new GdprConsent(REQUESTED.minusSeconds(5), "2026-10");
 
         // Act
-        JoinRequest request = JoinRequestFactory.create(ASSOCIATION.id(),
-                ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")),
-                true, "2026-10", ticking);
+        JoinRequest request = JoinRequestFactory.create(ASSOCIATION.id(), ContactDetails.of("Ana", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), consent, REQUEST_CLOCK);
 
         // Assert
-        assertThat(request.consent().givenAt()).isEqualTo(request.requestedAt());
+        assertThat(request.consent()).isEqualTo(consent);
+        assertThat(request.requestedAt()).isEqualTo(REQUESTED);
     }
 
     @Nested
@@ -183,7 +182,7 @@ class JoinRequestFactoryTest {
                     new GdprConsent(REQUESTED, "2026-10"), JoinRequestStatus.PENDING, REQUESTED, null, null, null, null, -1L);
 
             // Act
-            JoinRequest created = JoinRequestFactory.create(ASSOCIATION.id(), CONTACT, true, "2026-10", REQUEST_CLOCK);
+            JoinRequest created = JoinRequestFactory.create(ASSOCIATION.id(), CONTACT, GdprConsent.record(true, "2026-10", REQUEST_CLOCK), REQUEST_CLOCK);
             InvalidJoinRequestException ex = assertThrows(InvalidJoinRequestException.class, negative);
 
             // Assert

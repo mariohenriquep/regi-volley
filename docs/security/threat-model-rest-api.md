@@ -381,3 +381,33 @@ for one pilot association.
   15 minutes the old key is gone). An HSM/KMS-backed signer is out of proportion for one pilot.
 - **R5** Rate-limit state is in memory and per instance.
 - **R6** Real onboarding cannot happen until the SMTP adapter exists (G3).
+
+## 13. Delivery notes for 26c (issue #32)
+
+What was built against this model, and where it differs.
+
+- **Delivered:** controllers, DTOs and web mappers for every Phase 1 use case (architecture.md section 14); the public page, registration and
+  join request with uniform answers (P1, D-14); the per-(association, email) join limit (3 / day) and the authenticated per-user limit
+  (U7, 300 / min); the route inventory, error-mapping and cross-tenant IDOR matrices (10.1, 10.5, 10.6), enumeration uniformity (10.7),
+  rate limits (10.8), log capture over a whole HTTP journey (10.9), the last seat over HTTP (10.11) and the audit lines of M5.
+- **Deviations:**
+  1. Input an aggregate refuses is an `InvalidFieldException` (422, naming the field): a plan whose terms do not fit its type, a blank plan
+     name, and a level order that is not a permutation of the levels (`levelIds`). The IDOR matrix showed the last one was a 500 a client could
+     trigger with another association's level id. Every `Invalid*Exception` invariant stays a generic 500 (section 7 is unchanged); only
+     reconstitution invariants (for example a negative version) still throw them.
+  2. Registration answers `201 {"shortName"}` and nothing else (no ids), so the answer cannot differ with the founder's email (D-10). A taken
+     short name is still a 409 (public information).
+  3. M7 (page size at most 100) is met by bounding the two lists that could grow instead of paginating them: pending join requests are capped
+     at 100 oldest first, and the payment-status list and CSV are limited to a window of at most two years on the subscription's end date.
+  4. `POST /members/{id}/activation-links` (admin re-sends an activation link, section 6 and P7) was not built: no use case exists for it yet.
+  5. There is no way over HTTP to read a session's roster, so a coach cannot learn the booking ids that `PUT /sessions/{id}/attendance`
+     needs. No use case reads a session by id; it is the first follow-up for the attendance screen.
+  6. The OpenAPI document is generated at build time (springdoc in test scope) and committed; the application serves no documentation
+     endpoint, so "off under `prod`" holds by construction (section 7, HTTP hygiene).
+- **Added after review:** every refusal that depends on the input alone now precedes the throttle and every lookup in `SubmitJoinRequestService`
+  (it used to follow the member / pending lookup, which made a missing consent an enumeration oracle, P1); join requests undecided after 30 days
+  are anonymised daily (S1); dates a client types are bounded to 2000 to 2100 (S4); the CSV guard looks past invisible leading characters (S3);
+  the IDOR matrix covers mixed own / foreign ids, a coach caller, the credential tables in its fingerprint and the notifier and mailer (S2).
+- **Found by the new tests and fixed:** `RateLimiter` read `Clock.millis()`, which throws `ArithmeticException` on the production clock
+  (`Clock.tick(systemUTC, 1 microsecond)`), so every rate-limited call would have been a 500 outside the tests (which use a fixed clock). The
+  meter now reads `instant()`.

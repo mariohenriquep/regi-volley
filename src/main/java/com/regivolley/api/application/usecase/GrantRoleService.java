@@ -4,11 +4,15 @@ import com.regivolley.api.application.command.GrantRoleCommand;
 import com.regivolley.api.application.port.TransactionRunner;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.repository.MemberRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /** An administrator gives a member a role. Granting a role the member already holds changes nothing. */
 @Service
 public class GrantRoleService implements GrantRoleUseCase {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GrantRoleService.class);
 
     private final MemberRepository members;
     private final UnitOfWork unitOfWork;
@@ -20,7 +24,11 @@ public class GrantRoleService implements GrantRoleUseCase {
 
     @Override
     public Member execute(GrantRoleCommand command) {
-        return unitOfWork.retrying(() -> attempt(command));
+        Member granted = unitOfWork.retrying(() -> attempt(command));
+        // Audit line (threat model M5), by id only.
+        LOG.info("Role granted: associationId={} memberId={} role={} grantedBy={}", granted.associationId(), granted.id(), command.role(),
+                command.actor().memberId());
+        return granted;
     }
 
     private Member attempt(GrantRoleCommand command) {

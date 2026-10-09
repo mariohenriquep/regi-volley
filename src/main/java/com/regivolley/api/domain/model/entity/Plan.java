@@ -1,5 +1,6 @@
 package com.regivolley.api.domain.model.entity;
 
+import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.InvalidPlanException;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.LevelId;
@@ -47,14 +48,14 @@ public final class Plan implements AggregateRoot {
             throw new InvalidPlanException("The version must not be negative");
         }
         if (name == null || name.isBlank()) {
-            throw new InvalidPlanException("A plan needs a name");
+            throw new InvalidFieldException("name", "A plan needs a name");
         }
         boolean needsValidity = terms.type() == PlanType.PACK || terms.type() == PlanType.SINGLE_SESSION;
         if (needsValidity && (validityDays == null || validityDays < 1)) {
-            throw new InvalidPlanException("A " + terms.type() + " plan needs validityDays of at least 1");
+            throw new InvalidFieldException("validityDays", "A " + terms.type() + " plan needs validityDays of at least 1");
         }
         if (!needsValidity && validityDays != null) {
-            throw new InvalidPlanException("A " + terms.type() + " plan has no validityDays: it lasts one month");
+            throw new InvalidFieldException("validityDays", "A " + terms.type() + " plan has no validityDays: it lasts one month");
         }
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.associationId = Objects.requireNonNull(associationId, "associationId must not be null");

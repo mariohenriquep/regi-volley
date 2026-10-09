@@ -10,7 +10,7 @@ import com.regivolley.api.application.identity.EmailLinkPolicy;
 import com.regivolley.api.application.identity.UserAccount;
 import com.regivolley.api.application.port.AccountLinkMailer;
 import com.regivolley.api.application.port.BackgroundWork;
-import com.regivolley.api.application.port.CredentialAttemptThrottle;
+import com.regivolley.api.application.port.AttemptThrottle;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,7 +38,7 @@ class RequestPasswordResetServiceTest {
 
     private CredentialsHarness h;
     private AccountLinkMailer mailer;
-    private CredentialAttemptThrottle throttle;
+    private AttemptThrottle throttle;
     private InMemoryCredentialStores.Links links;
     private RequestPasswordResetService service;
     private final List<Runnable> queued = new ArrayList<>();
@@ -48,7 +48,7 @@ class RequestPasswordResetServiceTest {
     void setUp() {
         h = new CredentialsHarness();
         mailer = mock(AccountLinkMailer.class);
-        throttle = mock(CredentialAttemptThrottle.class);
+        throttle = mock(AttemptThrottle.class);
         links = spy(h.stores.links);
         service = new RequestPasswordResetService(h.stores.users, h.stores.memberships, links, h.secrets, mailer, throttle, background,
                 h.transactions, h.clock);

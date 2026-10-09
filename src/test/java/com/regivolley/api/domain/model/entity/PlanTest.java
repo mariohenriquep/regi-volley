@@ -1,6 +1,6 @@
 package com.regivolley.api.domain.model.entity;
 
-import com.regivolley.api.domain.exception.InvalidPlanException;
+import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.factory.PlanFactory;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.LevelId;
@@ -58,12 +58,12 @@ class PlanTest {
             Executable blankName = () -> plan.edit(" ", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
 
             // Act
-            InvalidPlanException validity = assertThrows(InvalidPlanException.class, noValidity);
-            InvalidPlanException name = assertThrows(InvalidPlanException.class, blankName);
+            InvalidFieldException validity = assertThrows(InvalidFieldException.class, noValidity);
+            InvalidFieldException name = assertThrows(InvalidFieldException.class, blankName);
 
             // Assert
-            assertThat(validity.getMessage()).contains("validityDays");
-            assertThat(name.getMessage()).contains("name");
+            assertThat(validity.field()).isEqualTo("validityDays");
+            assertThat(name.field()).isEqualTo("name");
         }
     }
 

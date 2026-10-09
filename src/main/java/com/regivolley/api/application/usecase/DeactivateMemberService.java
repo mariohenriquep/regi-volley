@@ -94,6 +94,9 @@ public class DeactivateMemberService implements DeactivateMemberUseCase {
                         deactivated.id(), session.id(), e.getClass().getSimpleName());
             }
         }
+        // Audit line (threat model M5), by id only.
+        LOG.info("Member deactivated: associationId={} memberId={} deactivatedBy={} bookingsCancelled={} sessionsFailed={}", associationId,
+                deactivated.id(), command.actor().memberId(), cancelled, failed.size());
         return new MemberDeactivated(deactivated, cancelled, failed);
     }
 

@@ -2,7 +2,7 @@ package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.CreatePlanCommand;
 import com.regivolley.api.application.command.EditPlanCommand;
-import com.regivolley.api.domain.exception.InvalidPlanException;
+import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.LevelNotFoundException;
 import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.exception.PlanModifiedConcurrentlyException;
@@ -113,7 +113,7 @@ class PlanServicesTest {
                 PlanTerms.pack(10, Set.of()), Money.ofCents(4500), null));
 
         // Act
-        assertThrows(InvalidPlanException.class, act);
+        assertThrows(InvalidFieldException.class, act);
 
         // Assert
         verify(plans, never()).save(any(Plan.class));

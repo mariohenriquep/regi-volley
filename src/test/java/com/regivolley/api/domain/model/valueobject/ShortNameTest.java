@@ -91,4 +91,22 @@ class ShortNameTest {
         // Assert
         assertThat(ex.field()).isEqualTo("short name");
     }
+
+    @Test
+    void tryOfNormalisesAValidTextAndIsEmptyForOneThatCannotBeAShortName() {
+        // Arrange
+        // (the texts)
+
+        // Act
+        var valid = ShortName.tryOf("  Club-Voley ");
+        var wrongCharacters = ShortName.tryOf("not a name!");
+        var tooLong = ShortName.tryOf("a".repeat(41));
+        var none = ShortName.tryOf(null);
+
+        // Assert
+        assertThat(valid).contains(ShortName.of("club-voley"));
+        assertThat(wrongCharacters).isEmpty();
+        assertThat(tooLong).isEmpty();
+        assertThat(none).isEmpty();
+    }
 }

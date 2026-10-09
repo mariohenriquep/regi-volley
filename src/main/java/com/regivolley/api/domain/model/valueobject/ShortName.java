@@ -4,6 +4,7 @@ import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.shared.ValueObject;
 
 import java.util.Locale;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -33,6 +34,15 @@ public record ShortName(String value) implements ValueObject {
             throw new InvalidFieldException("short name", "The short name is required");
         }
         return new ShortName(raw.trim().toLowerCase(Locale.ROOT));
+    }
+
+    /** The short name a visitor addressed, or empty when the text cannot be one (so it names no association). */
+    public static Optional<ShortName> tryOf(String raw) {
+        try {
+            return Optional.of(of(raw));
+        } catch (InvalidFieldException e) {
+            return Optional.empty();
+        }
     }
 
     @Override

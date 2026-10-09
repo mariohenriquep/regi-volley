@@ -7,7 +7,7 @@ import com.regivolley.api.application.identity.Membership;
 import com.regivolley.api.application.identity.UserAccount;
 import com.regivolley.api.application.identity.UserStatus;
 import com.regivolley.api.application.port.AccessTokenIssuer;
-import com.regivolley.api.application.port.CredentialAttemptThrottle;
+import com.regivolley.api.application.port.AttemptThrottle;
 import com.regivolley.api.application.port.MembershipStore;
 import com.regivolley.api.application.port.PasswordHasher;
 import com.regivolley.api.application.port.PrincipalVerifier;
@@ -51,13 +51,13 @@ public class LoginService implements LoginUseCase {
     private final MembershipStore memberships;
     private final PasswordHasher hasher;
     private final PrincipalVerifier verifier;
-    private final CredentialAttemptThrottle throttle;
+    private final AttemptThrottle throttle;
     private final SessionIssuer sessions;
     private final TransactionRunner transactions;
     private final Clock clock;
 
     public LoginService(UserAccountStore users, MembershipStore memberships, PasswordHasher hasher, PrincipalVerifier verifier,
-                        CredentialAttemptThrottle throttle, RefreshTokenStore refreshTokens, AccessTokenIssuer accessTokens,
+                        AttemptThrottle throttle, RefreshTokenStore refreshTokens, AccessTokenIssuer accessTokens,
                         SecretGenerator secrets, TransactionRunner transactions, Clock clock) {
         this.users = users;
         this.memberships = memberships;

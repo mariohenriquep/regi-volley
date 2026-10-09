@@ -64,7 +64,9 @@ import java.util.List;
  *   <li>400 malformed, invalid or unknown-property input (names of fields, never rejected values) and the other
  *       Spring MVC errors through {@link ResponseEntityExceptionHandler} (404, 405, 406, 415, ...);</li>
  *   <li>500 everything else: a generic body, and a log line with the exception class and the place it was thrown, never its
- *       message (it may quote data).</li>
+ *       message (it may quote data). That includes the {@code Invalid*Exception} invariants (a bad stored row, a programming error):
+ *       input a client can type is checked by the aggregates with {@code InvalidFieldException} (422) instead, so an invariant
+ *       exception reaching here is ours to fix, never the client's.</li>
  * </ul>
  *
  * Spring picks the handler whose exception type is nearest, so {@code NotAllowedException} wins over the generic

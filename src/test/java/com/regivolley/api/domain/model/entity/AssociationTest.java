@@ -164,14 +164,15 @@ class AssociationTest {
                     List.of(beginner, idOf(association, "Intermediate"), LevelId.generate()));
 
             // Act
-            InvalidAssociationException missingEx = assertThrows(InvalidAssociationException.class, missing);
-            InvalidAssociationException repeatedEx = assertThrows(InvalidAssociationException.class, repeated);
-            InvalidAssociationException foreignEx = assertThrows(InvalidAssociationException.class, foreign);
+            InvalidFieldException missingEx = assertThrows(InvalidFieldException.class, missing);
+            InvalidFieldException repeatedEx = assertThrows(InvalidFieldException.class, repeated);
+            InvalidFieldException foreignEx = assertThrows(InvalidFieldException.class, foreign);
 
             // Assert
             assertThat(missingEx.getMessage()).contains("every level exactly once");
             assertThat(repeatedEx.getMessage()).contains("every level exactly once");
             assertThat(foreignEx.getMessage()).contains("every level exactly once");
+            assertThat(foreignEx.field()).isEqualTo("levelIds");
         }
 
         @Test

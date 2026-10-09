@@ -25,6 +25,7 @@ import com.regivolley.api.infrastructure.web.dto.LoginRequest;
 import com.regivolley.api.infrastructure.web.dto.ResetPasswordRequest;
 import com.regivolley.api.infrastructure.web.mapper.AuthWebMapper;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Clock;
@@ -83,42 +85,41 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@CookieValue(name = RefreshCookie.NAME, required = false) String refreshToken) {
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(@CookieValue(name = RefreshCookie.NAME, required = false) String refreshToken, HttpServletResponse response) {
         logout.execute(new LogoutCommand(refreshToken));
-        return noContentClearingCookie();
+        response.addHeader(HttpHeaders.SET_COOKIE, RefreshCookie.clear());
     }
 
     @PostMapping("/logout-all")
-    public ResponseEntity<Void> logoutAll(@CurrentActor AuthenticatedActor caller) {
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logoutAll(@CurrentActor AuthenticatedActor caller, HttpServletResponse response) {
         logoutAll.execute(new LogoutAllCommand(caller.userId()));
-        return noContentClearingCookie();
+        response.addHeader(HttpHeaders.SET_COOKIE, RefreshCookie.clear());
     }
 
     @PostMapping("/activate")
-    public ResponseEntity<Void> activate(@Valid @RequestBody ActivateAccountRequest body) {
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void activate(@Valid @RequestBody ActivateAccountRequest body) {
         activateAccount.execute(new ActivateAccountCommand(body.token(), body.password()));
-        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/password-reset-requests")
-    public ResponseEntity<AcknowledgementResponse> requestPasswordReset(@Valid @RequestBody ForgotPasswordRequest body) {
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public AcknowledgementResponse requestPasswordReset(@Valid @RequestBody ForgotPasswordRequest body) {
         requestPasswordReset.execute(new RequestPasswordResetCommand(body.email()));
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(AcknowledgementResponse.received());
+        return AcknowledgementResponse.received();
     }
 
     @PostMapping("/password-resets")
-    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest body) {
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetPassword(@Valid @RequestBody ResetPasswordRequest body) {
         resetPassword.execute(new ResetPasswordCommand(body.token(), body.password()));
-        return ResponseEntity.noContent().build();
     }
 
     private ResponseEntity<AccessTokenResponse> withSession(SessionTokens tokens) {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, RefreshCookie.issue(tokens.refreshToken(), tokens.refreshExpiresAt(), clock))
                 .body(AuthWebMapper.toResponse(tokens));
-    }
-
-    private static ResponseEntity<Void> noContentClearingCookie() {
-        return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, RefreshCookie.clear()).build();
     }
 }

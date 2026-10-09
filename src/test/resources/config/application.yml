@@ -2,8 +2,19 @@
 regi-volley:
   session-generation:
     enabled: false
+  join-request-purge:
+    enabled: false
 
 spring:
   profiles:
     # Profile `test` (like `dev`) may generate an ephemeral JWT key pair; every other profile must configure keys.
     active: test
+
+springdoc:
+  # springdoc is a test-scope dependency only (it generates docs/api/openapi.json for OpenApiContractTest): the document endpoint
+  # is off everywhere and that one test switches it on for its own context. Keys sorted, so the file is stable.
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+  writer-with-order-by-keys: true

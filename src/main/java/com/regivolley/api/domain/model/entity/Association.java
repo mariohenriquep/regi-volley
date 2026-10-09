@@ -2,6 +2,7 @@ package com.regivolley.api.domain.model.entity;
 
 import com.regivolley.api.domain.exception.DuplicateLevelNameException;
 import com.regivolley.api.domain.exception.InvalidAssociationException;
+import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.LevelNotFoundException;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.BookingPolicy;
@@ -171,12 +172,13 @@ public final class Association implements AggregateRoot {
     /**
      * Sets the order of all levels, most basic first (US-03).
      *
-     * @throws InvalidAssociationException unless {@code orderedLevelIds} lists every level exactly once
+     * @throws InvalidFieldException unless {@code orderedLevelIds} lists every level exactly once; the order comes from the client, so
+     *                                this is a rule violation it can fix (422), not an invariant of the aggregate
      */
     public Association reorderLevels(List<LevelId> orderedLevelIds) {
         Objects.requireNonNull(orderedLevelIds, "orderedLevelIds must not be null");
         if (orderedLevelIds.size() != levels.size() || !new HashSet<>(orderedLevelIds).equals(levelIds())) {
-            throw new InvalidAssociationException("Reordering must list every level exactly once");
+            throw new InvalidFieldException("levelIds", "Reordering must list every level exactly once");
         }
         List<Level> updated = new ArrayList<>();
         for (int position = 0; position < orderedLevelIds.size(); position++) {
