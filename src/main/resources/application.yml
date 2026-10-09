@@ -51,12 +51,20 @@ regi-volley:
       # includes the active key's public half. Profile dev/test with nothing set: an ephemeral key pair is generated.
       signing-key: ${JWT_SIGNING_KEY:}
       verification-keys: ${JWT_VERIFICATION_KEYS:}
+    # The web origin (scheme://host[:port], no path) that may call the two cookie endpoints (/auth/refresh, /auth/logout) besides
+    # the API's own origin (threat model D-7a). Set it when TLS ends at a proxy and the app sees plain http, e.g. https://app.example.org.
+    web-origin: ${WEB_ORIGIN:}
     cors:
       # Honoured under profile `dev` only (production is same-origin): the one local PWA origin, e.g. http://localhost:5173.
       allowed-origin: ${CORS_ALLOWED_ORIGIN:}
 
 server:
   port: ${SERVER_PORT:8080}
+  # Where the client address for rate limiting comes from (threat model D-9). `none`: the connection's own address, and
+  # X-Forwarded-For is ignored - the only safe choice while nothing trusted sits in front, because otherwise any client could
+  # pick a fresh rate-limit bucket by lying. Behind a known reverse proxy set FORWARD_HEADERS_STRATEGY=native AND
+  # server.tomcat.remoteip.internal-proxies to that proxy's address (Tomcat's default trusts every private range).
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:none}
   # Nothing about an error leaves in a body (threat model E1); ErrorPageController writes the generic one.
   error:
     include-message: never

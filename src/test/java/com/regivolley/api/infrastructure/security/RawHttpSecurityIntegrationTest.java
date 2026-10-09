@@ -1,5 +1,7 @@
 package com.regivolley.api.infrastructure.security;
 
+import com.regivolley.api.application.port.AccessTokenIssuer;
+
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.repository.MemberRepository;
@@ -41,6 +43,7 @@ class RawHttpSecurityIntegrationTest extends AbstractPostgresIntegrationTest {
     @TestConfiguration
     static class Accounts {
         @Bean
+        @org.springframework.context.annotation.Primary
         InMemorySecurityAccountLookup accountLookup() {
             return new InMemorySecurityAccountLookup();
         }

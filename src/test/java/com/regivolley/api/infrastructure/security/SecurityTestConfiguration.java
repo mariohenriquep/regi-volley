@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Primary;
 
 import java.time.Clock;
 
-/** The collaborators the web security slice needs: a fixed clock and the in-memory account lookup 26b will replace. */
+/** The collaborators the web security slice needs: a fixed clock and an in-memory account lookup standing in for the database one. */
 @TestConfiguration
 public class SecurityTestConfiguration {
 

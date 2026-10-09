@@ -11,7 +11,7 @@ import java.util.List;
  * The routes that need no token (threat model section 7, rule 1). The filter chain is default-deny
  * ({@code anyRequest().authenticated()}); this list is the only way out of it, and the route-inventory test checks every
  * mapped route against it. A route not listed here is authenticated. The set is fixed by the threat model:
- * registering an association, the public association page, a join request, the credential endpoints (26b) and the
+ * registering an association, the public association page, a join request, the credential endpoints and the
  * {@code /error} dispatch (generic body only).
  */
 public final class PublicRoutes {

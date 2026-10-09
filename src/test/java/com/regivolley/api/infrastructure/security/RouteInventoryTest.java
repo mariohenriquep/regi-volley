@@ -31,6 +31,13 @@ class RouteInventoryTest extends AbstractSecuredWebTest {
     /** "METHOD pattern" (ANY when the mapping names no method) to who may call it. */
     static final Map<String, Access> CLASSIFICATION = Map.of(
             "GET /api/v1/me", Access.AUTHENTICATED,
+            "POST /api/v1/auth/login", Access.PUBLIC,
+            "POST /api/v1/auth/refresh", Access.PUBLIC,
+            "POST /api/v1/auth/logout", Access.PUBLIC,
+            "POST /api/v1/auth/logout-all", Access.AUTHENTICATED,
+            "POST /api/v1/auth/activate", Access.PUBLIC,
+            "POST /api/v1/auth/password-reset-requests", Access.PUBLIC,
+            "POST /api/v1/auth/password-resets", Access.PUBLIC,
             "ANY /error", Access.PUBLIC);
 
     @Autowired
@@ -61,7 +68,7 @@ class RouteInventoryTest extends AbstractSecuredWebTest {
     @Test
     void theInventoryActuallySeesTheApplicationsRoutes() {
         // Arrange
-        Set<String> expected = Set.of("GET /api/v1/me", "ANY /error");
+        Set<String> expected = Set.of("GET /api/v1/me", "POST /api/v1/auth/login", "POST /api/v1/auth/logout-all", "ANY /error");
 
         // Act
         Set<String> found = routes;

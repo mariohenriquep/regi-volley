@@ -1,5 +1,7 @@
 package com.regivolley.api.infrastructure.security;
 
+import com.regivolley.api.application.identity.MembershipStatus;
+import com.regivolley.api.application.identity.UserStatus;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import org.junit.jupiter.api.Test;
@@ -196,7 +198,7 @@ class TokenAuthenticationTest extends AbstractSecuredWebTest {
     void aPendingMembershipIsRejected() throws Exception {
         // Arrange
         String authorization = bearer();
-        accounts.register(userId, association.id(), member.id(), new SecurityAccount(UserStatus.ACTIVE, STAMP, MembershipStatus.PENDING));
+        accounts.register(userId, association.id(), member.id(), UserStatus.ACTIVE, STAMP, MembershipStatus.PENDING);
 
         // Act
         ResultActions result = mockMvc.perform(get(PROBE).header("Authorization", authorization));
@@ -209,7 +211,7 @@ class TokenAuthenticationTest extends AbstractSecuredWebTest {
     void aDisabledAccountIsRejected() throws Exception {
         // Arrange
         String authorization = bearer();
-        accounts.register(userId, association.id(), member.id(), new SecurityAccount(UserStatus.DISABLED, STAMP, MembershipStatus.CONFIRMED));
+        accounts.register(userId, association.id(), member.id(), UserStatus.DISABLED, STAMP, MembershipStatus.CONFIRMED);
 
         // Act
         ResultActions result = mockMvc.perform(get(PROBE).header("Authorization", authorization));

@@ -1,6 +1,7 @@
 package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.ApproveJoinRequestCommand;
+import com.regivolley.api.application.port.AccountProvisioner;
 import com.regivolley.api.domain.exception.InvalidJoinRequestStatusTransitionException;
 import com.regivolley.api.domain.exception.JoinRequestModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.JoinRequestNotFoundException;
@@ -53,6 +54,8 @@ class ApproveJoinRequestServiceTest {
     private JoinRequestRepository joinRequests;
     @Mock
     private Notifier notifier;
+    @Mock
+    private AccountProvisioner provisioner;
 
     private final DirectTransactions transactions = new DirectTransactions();
 
@@ -67,7 +70,7 @@ class ApproveJoinRequestServiceTest {
         admin = Data.admin(association);
         request = JoinRequest.create(association.id(), ContactDetails.of("Rita Costa", EmailAddress.of("rita@example.com"),
                 PhoneNumber.of("912345678")), true, "2026-01", Data.CLOCK);
-        useCase = new ApproveJoinRequestService(associations, members, joinRequests, transactions, notifier, Data.CLOCK);
+        useCase = new ApproveJoinRequestService(associations, members, joinRequests, transactions, notifier, provisioner, Data.CLOCK);
         lenient().when(associations.findById(association.id())).thenReturn(Optional.of(association));
         lenient().when(members.findById(association.id(), admin.id())).thenReturn(Optional.of(admin));
         lenient().when(joinRequests.findById(association.id(), request.id())).thenReturn(Optional.of(request));
@@ -179,5 +182,43 @@ class ApproveJoinRequestServiceTest {
         // Assert
         assertThat(approval.request().status()).isEqualTo(JoinRequestStatus.APPROVED);
         verify(members).save(approval.member());
+    }
+
+    @Test
+    void provisionsTheNewMembersCredentialsAfterTheCommit() {
+        // Arrange
+        ApproveJoinRequestCommand command = new ApproveJoinRequestCommand(Data.actor(admin), request.id());
+
+        // Act
+        JoinRequestApproval approval = useCase.execute(command);
+
+        // Assert
+        verify(provisioner).provision(association.id(), approval.member().id(), EmailAddress.of("rita@example.com"));
+    }
+
+    @Test
+    void aFailingProvisionerNeverUndoesTheApprovalNorStopsTheNotification() {
+        // Arrange
+        doThrow(new IllegalStateException("db down")).when(provisioner).provision(any(), any(), any());
+
+        // Act
+        JoinRequestApproval approval = useCase.execute(new ApproveJoinRequestCommand(Data.actor(admin), request.id()));
+
+        // Assert
+        assertThat(approval.request().status()).isEqualTo(JoinRequestStatus.APPROVED);
+        verify(notifier).memberApproved(association.id(), approval.member().id());
+    }
+
+    @Test
+    void nothingIsProvisionedWhenTheApprovalFails() {
+        // Arrange
+        when(members.save(any(Member.class))).thenThrow(new MemberEmailAlreadyUsedException());
+        Executable act = () -> useCase.execute(new ApproveJoinRequestCommand(Data.actor(admin), request.id()));
+
+        // Act
+        assertThrows(MemberEmailAlreadyUsedException.class, act);
+
+        // Assert
+        verifyNoInteractions(provisioner);
     }
 }

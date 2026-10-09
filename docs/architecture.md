@@ -22,6 +22,21 @@ infrastructure  →  application  →  domain
   outside world: `web`, `persistence`, `security`, `notification`, `config`. Depends on both
   inner layers; nothing may depend on it.
 
+**The request flow** (decided by the product owner, 8/10/2026; the factory step is issue #34):
+
+```
+Controller  ->  UseCase (interface)  ->  Service (application)  ->  Repository (port)  ->  Adapter  ->  Factory
+```
+
+A controller (`infrastructure.web.controller`) only translates HTTP to a command and a result back to a DTO, and calls a `*UseCase`
+interface; it never names a `*Service`, a repository port, an entity or anything in `infrastructure.persistence`. The `*Service`
+in `application.usecase` *manages the request*: transaction and retry, authorization, loading through ports, invoking domain
+behaviour, saving, notifications after the commit. Ports are implemented by adapters in infrastructure, and aggregates are created
+and reconstituted only through factories (#34). `OnionArchitectureTest` pins the parts that exist: a `*Service` lives only in
+`application.usecase` or `domain.service`, and a controller may depend only on `application.usecase` `*UseCase` interfaces,
+`application.command`, `application.result`, `web.dto`, `web.mapper`, its own package, and `CurrentActor` / `AuthenticatedActor` /
+`RequestIds` from `infrastructure.security`.
+
 Mechanically enforced by
 `src/test/java/com/regivolley/api/architecture/OnionArchitectureTest.java` - plain JUnit 5, no
 architecture library (NFR "Qualidade"). It scans `src/main/java` with `JavaSourceFile`, which
@@ -62,7 +77,9 @@ never appears in `domain/`.
 | Repository ports (interfaces only, one per aggregate root) | `domain.repository` |
 | Other outbound ports (e.g. `Notifier`) | `domain.port` |
 | Use case interface (`*UseCase`) + implementation (`*Service`) and their package-private helpers (`UnitOfWork`, `SeatPromoter`, ...) | `application.usecase` |
-| Outbound ports the application owns that are not about the domain (`TransactionRunner`); interfaces only, no Spring | `application.port` |
+| Outbound ports the application owns that are not about the domain (`TransactionRunner`, the credential `*Store`s, `PasswordHasher`, `AccessTokenIssuer`, `PrincipalVerifier`, `CredentialAttemptThrottle`, `SecretGenerator`, `BackgroundWork`, `CommonPasswordList`, `AccountLinkMailer`, `AccountProvisioner`, `CredentialsEraser`); interfaces only, no Spring | `application.port` |
+| Application-owned credential vocabulary: `UserAccount`, `Membership`, `RefreshToken`, `EmailLink`, `AccessToken`, `AccountLink`, their status enums and lifetimes (`RefreshTokenPolicy`, `EmailLinkPolicy`); plain Java, no Spring (an architecture rule) | `application.identity` |
+| Exceptions the application raises for its own refusals (`InvalidCredentialsException`, `InvalidRefreshTokenException`, `InvalidLinkException`, `RateLimitExceededException`, `ServiceBusyException`, `AccountAlreadyExistsException`, `LinkAlreadyIssuedException`) | `application.exception` |
 | Use case input records | `application.command` |
 | Use case output records | `application.result` |
 | REST controllers | `infrastructure.web.controller` |
@@ -72,12 +89,14 @@ never appears in `domain/`.
 | JPA entities (`*JpaEntity`) | `infrastructure.persistence.entity` |
 | Spring Data repository interfaces (`*JpaRepository`, package-private) and repository port implementations (adapters) | `infrastructure.persistence.adapter` |
 | Entity ↔ domain translation (`*PersistenceMapper`) | `infrastructure.persistence.mapper` |
-| Spring Security configuration, filters (`*Filter`), entry point / access-denied handler, JWT keys, decoder and issuer, `PrincipalResolver`, `AuthenticatedActor`, the account-lookup seam | `infrastructure.security` |
+| Spring Security configuration, filters (`*Filter`), entry point / access-denied handler, JWT keys, decoder and issuer, `PrincipalResolver`, `AuthenticatedActor`, `SecurityAccountLookup` (the per-request account read that `persistence.adapter` implements), the JWT adapters (`JwtAccessTokenIssuer`), the password and secret adapters (`Argon2PasswordHasher`, `SecureSecretGenerator`, `BundledCommonPasswordList`), `RateLimiter` and its filter, the cookie guard, `ExecutorBackgroundWork` | `infrastructure.security` |
 | Notification sending (adapter for `Notifier`; logs ids only until the email adapter of Phase 2) | `infrastructure.notification` |
 | `TransactionRunner` implementation (`REQUIRES_NEW` template) | `infrastructure.persistence.adapter` |
 | Spring `@Configuration` beans that are not security (clock, scheduler, the start-up guard on the database secret) | `infrastructure.config` |
-| 26b: the `SecurityAccountLookup` adapter (reads `app_user` and `membership`) | `infrastructure.persistence.adapter` |
-| 26b: `app_user` / `membership` JPA entities and their Spring Data repositories | `infrastructure.persistence.entity` / `.adapter` |
+| The credential `*Store` adapters and `SecurityAccountLookupAdapter` (`*StoreAdapter`) | `infrastructure.persistence.adapter` |
+| `app_user` / `membership` / `refresh_token` / `email_link` JPA entities (`UserAccountJpaEntity`, ...) and their `*PersistenceMapper`s | `infrastructure.persistence.entity` / `.mapper` |
+| Credential endpoints (`AuthController`), its package-private `RefreshCookie` helper, the request/response records (`LoginRequest`, `AccessTokenResponse`, ...) and `AuthWebMapper` | `infrastructure.web.controller` / `.dto` / `.mapper` |
+| Mail for account links (`AccountLinkMailer` adapter; logs the link reference only until the SMTP adapter of Phase 2) | `infrastructure.notification` |
 
 A class that doesn't fit one of these rows is a signal to reconsider the design — flag it rather
 than inventing a package ad hoc. If `domain.model.entity` grows unwieldy, splitting it per
@@ -149,7 +168,9 @@ of the domain packages above.
 
 - **Repository (port/adapter)** — ports in `domain.repository`, adapters in
   `infrastructure.persistence.adapter`. Application code never touches Spring Data or JPA.
-- **Command pattern for use cases** — `UseCase<IN, OUT>`, one class per operation.
+- **Command pattern for use cases** — `UseCase<IN, OUT>`, one class per operation, reached through its interface from the controller
+  (request flow, §1). Helpers that several services share (`SessionIssuer`, `EmailLinkIssuer`, `CredentialLinkConsumer`) are
+  package-private in `application.usecase`.
 - **Immutable aggregates with self-validating transitions** — state machines (RN-05 for
   `Session`, RN-12 for `Booking`, RN-18 for `Subscription`) live in the aggregate as an
   allowed-transitions map, exactly like `Task` in task-manager-api. A service never decides from
@@ -175,7 +196,7 @@ Identical to task-manager-api:
 - **Application** — JUnit 5 + Mockito, ports mocked, no Spring context.
 - **Persistence** — `@DataJpaTest` + Testcontainers (real PostgreSQL), extending
   `AbstractPostgresIntegrationTest`.
-- **Web** — `@WebMvcTest` + MockMvc, use cases mocked. Security and error-mapping tests use the **real filter chain**,
+- **Web** — `@WebMvcTest` + MockMvc, use cases mocked (the `*UseCase` interfaces, never the services). Security and error-mapping tests use the **real filter chain**,
   advice and controllers (`AbstractSecuredWebTest`: `@WebMvcTest` importing `SecurityConfiguration`, a mocked
   `MemberRepository` and the in-memory `SecurityAccountLookup`); test-only controllers live outside `com.regivolley.api`
   and are `@Import`ed so they never enter the route inventory.
@@ -202,6 +223,17 @@ anything but public pages (US-24/26, resolved by the association's unique short 
 
 Each persistence adapter test includes an isolation case: data from association A is never
 returned when querying as association B.
+
+**The one exception: the credential tables.** `app_user` is a *person's* identity, not tenant business data, and one person
+may later belong to several associations, so it has no `association_id`. Neither have the tables that hang off the account
+(`refresh_token`, `email_link`); every association-bound fact lives in `membership(user_id, association_id, member_id, ...)`,
+whose composite foreign key to `members(association_id, id)` keeps the member inside its tenant, and both `(association_id,
+member_id)` and `(user_id, association_id)` are unique. The only code that reads a membership from a member starts from an
+`AssociationId` (`MembershipStore.findByMember`, `SecurityAccountLookup.find`), `PrincipalResolver` asserts the stored tenant
+and member equal the token's, and `MembershipStoreAdapterTest` / `SecurityAccountLookupAdapterTest` carry the isolation cases. `MembershipStore.findById` and
+`findByUser` are identity-scoped by design (they have no association to filter by) and are reachable only from a credential the
+user holds: a refresh token's own membership, or the account being logged in. No endpoint takes a membership or user id from the
+client.
 
 ## 9. Time
 
@@ -248,8 +280,8 @@ erasure against a stale edit, and approve against reject.
 ## 11. Identity and authentication
 
 The design and its reasoning are in [`security/threat-model-rest-api.md`](security/threat-model-rest-api.md) (decision ids
-`D-n`); this section says what the code does. Issue #26 is delivered in three steps: 26a (this: the security foundation),
-26b (users, login, refresh, rate limits), 26c (controllers).
+`D-n`); this section says what the code does. Issue #26 is delivered in three steps: 26a (the security foundation, #30),
+26b (credentials and sessions: users, login, refresh, links, rate limits, #31), 26c (controllers for the use cases).
 
 - **Infrastructure** (`infrastructure.security`): the filter chain, token verification and issuing, and the mapping from a
   token to the caller. The domain never sees any of it.
@@ -308,17 +340,102 @@ effect on the next request. The result is `AuthenticatedActor(userId, associatio
 `@CurrentActor AuthenticatedActor caller` (our name for `@AuthenticationPrincipal`) and call `caller.actor()`, the one
 `new Actor(...)` in the codebase.
 
-**The seam to 26b.** `app_user` and `membership` do not exist yet. `SecurityAccountLookup.find(userId, associationId,
-memberId)` returns the stored `SecurityAccount(userStatus, securityStamp, membershipStatus)` or empty when the user has no
-membership at exactly that member; 26b implements it over primary-key reads of those two tables and registers it as a
-bean (no cache). Until then `DenyAllSecurityAccountLookup` is used and every token is rejected (fails closed); tests use
-`InMemorySecurityAccountLookup`. 26b also adds the exception to section 8: `app_user` is an identity table with no
-`association_id`; tenant data hangs off `membership`.
+**The account lookup** (D-6). `SecurityAccountLookup.find(userId, associationId, memberId)` returns
+`SecurityAccount(userStatus, securityStamp, membershipStatus, associationId, memberId)` or empty when the user has no
+membership at exactly that member. `SecurityAccountLookupAdapter` (`persistence.adapter`) implements it with two indexed reads
+(membership by user + association + member, then the account by primary key) and **no cache**, so a password change, a
+deactivation or an erasure takes effect on the next request. `PrincipalResolver` additionally asserts the returned association
+and member equal the token's (`MEMBERSHIP_MISMATCH`), so a lookup that answered with another tenant's row is never trusted;
+`PrincipalResolver` also implements the application port `PrincipalVerifier` (the same checks without a token, answering a reason
+code), which login and refresh ask. There is no deny-all fallback any more: without a lookup bean the application does not start. Tests use
+`InMemorySecurityAccountLookup` (marked `@Primary` where a full context also has the real adapter).
+
+**Where the credential flows live.** Login, refresh, logout, logout-all, activation, reset and reset-request are ordinary use cases
+(request flow, §1): `AuthController` calls `LoginUseCase`, `RefreshSessionUseCase`, `LogoutUseCase`, `LogoutAllUseCase`,
+`ActivateAccountUseCase`, `ResetPasswordUseCase` and `RequestPasswordResetUseCase`, implemented by the `*Service`s in
+`application.usecase`, with commands in `application.command` and `SessionTokens` as the result. The services know no security
+framework: they use the credential models in `application.identity` and the ports in `application.port` (`UserAccountStore`,
+`MembershipStore`, `RefreshTokenStore`, `EmailLinkStore`, `PasswordHasher`, `AccessTokenIssuer`, `PrincipalVerifier`,
+`CredentialAttemptThrottle`, `SecretGenerator`, `BackgroundWork`, `CommonPasswordList`, `AccountLinkMailer`, `TransactionRunner`),
+which `persistence.adapter`, `infrastructure.security` and `infrastructure.notification` implement. `infrastructure.security` keeps
+what is security machinery: the filters, `RateLimiter`, `PrincipalResolver` (also the `PrincipalVerifier`), the JWT code, the hasher
+and secret adapters, `SecurityAccountLookup`. Transactions go through `TransactionRunner`.
+
+**Credentials** (D-8, `PasswordHasher` port, `Argon2PasswordHasher`, `PasswordPolicy`). `DelegatingPasswordEncoder` with Argon2id as
+default id (`{argon2id}`, 19 MiB, t=2, p=1, 16-byte salt, 32-byte hash) via BouncyCastle, `{bcrypt}` (cost 12) accepted as legacy and
+replaced at the next successful login (`needsUpgrade`, a compare-and-set so a concurrent reset is never overwritten). At most 4 hashes
+run at once; a caller waits for a slot at most 2 seconds, then gets `ServiceBusyException` (503 `SERVICE_BUSY` with `Retry-After`),
+and the per-email and per-IP throttles are taken before any hashing. Passwords are NFKC-normalised before hashing. Policy (a
+package-private class of `application.usecase` over the `CommonPasswordList` port): 10 to 128 characters, no composition rules, not on
+the bundled offline list (`security/common-passwords.txt`, a seed list to be replaced by a vetted ~10k list before go-live), not the
+email, its local part or the association's name; a refusal is `InvalidFieldException("password")` (422) and never quotes the value.
+`app_user.password_hash` is null until activation; the security stamp is 256 random bits from `SecretGenerator`, never derived from
+the password.
+
+**Sessions** (D-7, D-7a, `SessionIssuer`). A refresh token is 256 random bits, stored as a SHA-256 hash in `refresh_token` (family,
+parent, issued / absolute-expiry / idle-expiry / used / revoked), valid 30 days idle and 90 days from the login. Every `POST
+/api/v1/auth/refresh` rotates it in the same family; presenting an already-rotated token revokes the family (and logs a security event)
+unless it was rotated less than 10 seconds ago (a second tab: refused, nothing revoked); two requests racing to rotate the same token
+are decided by a conditional update (`markUsed`), the loser being treated like the grace case. Each refresh re-asks the
+`PrincipalVerifier`, so a deactivated member cannot refresh and loses the family. `logout` revokes the presented token's family,
+`logout-all` (the one authenticated credential route) revokes every family and rotates the stamp, so access tokens die at once; the
+link consumption below does the same. Revocations commit although the call then answers 401: the rotation returns an outcome inside
+the transaction and the use case throws after it. The cookie is `__Secure-rt`, `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth`,
+no `Domain`, `Max-Age` as long as the token lives (`RefreshCookie`, a package-private helper beside `AuthController`); the body of
+login and refresh carries only the access token (`{accessToken, tokenType: "Bearer", expiresIn: 600}`). `CookieEndpointGuardFilter`
+guards `POST /auth/refresh` and `/auth/logout` (paths matched decoded, like Spring MVC does): the body must be `application/json`
+(415), a request the browser marks `Sec-Fetch-Site: cross-site` is 403, and an `Origin`, if present, must be the API's own origin or
+`regi-volley.security.web-origin` (`WEB_ORIGIN`, needed when TLS ends at a proxy), else 403.
+
+**Login** (D-10, `LoginService`). One `InvalidCredentialsException` (401 `{"code":"INVALID_CREDENTIALS"}`) for unknown or malformed
+email, account never activated, wrong password, disabled account, membership not confirmed, inactive or anonymised member and (MVP)
+more than one confirmed membership; exactly one hash is verified in every case (a precomputed dummy hash when there is none to
+check), and the reason goes to the audit log by id with the client address truncated (IPv4 /24, IPv6 /48; `ClientAddresses`).
+Password-reset requests always answer 202 `{"status":"RECEIVED"}`; the work (lookup, link, mail) runs through `BackgroundWork` (a small
+bounded executor) so response time says nothing. Join and registration need no email lookup (D-14 and the founder-only-unique
+email), so there is nothing to enumerate; their controllers are 26c.
+
+**Emailed links** (D-11, `EmailLinkIssuer`, `CredentialLinkConsumer`). `email_link` holds the SHA-256 of a 256-bit token, a purpose
+(`ACTIVATION` 7 days, `PASSWORD_RESET` 30 minutes), an optional membership and `consumed_at`; a newer link of the same membership
+(activation) or user (reset) supersedes the older ones in the same transaction, and a user's spent links are cleared when a new one
+is issued. Partial unique indexes allow one live activation link per membership and one live reset per user, so two links issued at
+the same instant cannot both stay open: the loser gets `LinkAlreadyIssuedException` and its transaction is repeated (`Conflicts`).
+Composite foreign keys `(membership_id, user_id)` on `refresh_token` and `email_link` keep a token or link from naming one user with
+another user's membership. `POST /auth/activate {token, password}` and `POST /auth/password-resets {token, password}` check the
+policy *before* spending the link, consume it with a conditional update (of two parallel uses one wins), set the hashed password,
+rotate the stamp and revoke every refresh token; activation also confirms the membership, a reset never does (L4). Every unusable
+link is the same 400 `INVALID_LINK`. A reset requested for an account that was never activated re-sends its activation link instead.
+**Delivery:** `AccountLinkMailer.send(accountEmail, purpose, link)` mails the link to the *account's* address (`UserAccount.email()`),
+never to a member's contact address, which an administrator can edit. The clear token exists only in the `AccountLink`
+(`application.identity`) handed to the mailer; `LoggingAccountLinkMailer` logs the link's reference, never its token or the address.
+The SMTP adapter is Phase 2 and a go-live blocker.
+
+**Provisioning** (D-11, section 6, `AccountProvisionerService`). `RegisterAssociation` (the founder) and `ApproveJoinRequest` call
+the application port `AccountProvisioner.provision(associationId, memberId, email)` after the commit (`AccountProvisioning`: a
+failure is logged by ids and never undoes the use case, risk R3). The implementation, itself in `application.usecase`, creates the
+account for the email (or reuses the existing one untouched), a PENDING membership and an ACTIVATION link mailed after its own
+transaction; it is idempotent and repeats the transaction when it loses a race on the unique email or on the link. `CredentialsEraser`
+(`CredentialsEraserService`) is the port seam for the future erasure use case: it deletes the membership and, when it was the user's
+only one, the account with its tokens and links.
+
+**Rate limiting** (D-9, `RateLimiter`, `RateLimitFilter`). bucket4j token buckets in bounded, expiring Caffeine caches (one per rule;
+100 000 keys for address rules, 20 000 for the email-keyed ones, which an attacker controls; in memory, so a restart resets them and a
+second instance would need a shared store, risk R5), on the injected `Clock`. Per IP in `RateLimitFilter`, before the body is parsed
+and before any hash: login 30 / 10 min, refresh 60 / min, activation and reset confirmation 30 / h (one bucket), password-reset
+requests 10 / h, `POST /public/associations` 3 / h, join requests 5 / h, the public page 120 / min. The key is the address as
+`RateLimiter.addressKey` makes it: IPv4 whole, IPv6 by its /64 (a subscriber owns a /64, so rotating inside it must not give a fresh
+bucket), IPv4-mapped IPv6 as the IPv4. Per email hash through the `CredentialAttemptThrottle` port (`RateLimitingAttemptThrottle`):
+login 5 / 15 min, reset 3 / h (unknown emails count the same); `RateLimiter.joinKey` serves the 3 / day per (association, email) join
+limit that the 26c controller will take. The answer is 429 with `Retry-After` and no hard lock-out. **Client address:**
+`getRemoteAddr()` only. `server.forward-headers-strategy` is `none` (`FORWARD_HEADERS_STRATEGY`), so `X-Forwarded-For` is ignored;
+behind a known proxy set `native` *and* `server.tomcat.remoteip.internal-proxies` to that proxy (Tomcat's default trusts every
+private range). The authenticated per-user limit (U7) arrives with the 26c endpoints.
 
 **Errors** (`ApiExceptionHandler`, `infrastructure.web.exception`). One body `{code, message, requestId[, fields]}`.
 403 `NotAllowedException`; 404 every `*NotFoundException` (also another tenant's id: same body, no id echoed); 202
 `{"status":"RECEIVED"}` for `JoinRequestNotPossibleException` (D-14); 409 `ShortNameAlreadyTaken`, `MemberEmailAlreadyUsed`,
-`LastAdministrator`, `DuplicateBooking` and any `AggregateModifiedConcurrentlyException`; 422 every other
+`LastAdministrator`, `DuplicateBooking` and any `AggregateModifiedConcurrentlyException`; 401 `INVALID_CREDENTIALS` (login) and
+`UNAUTHENTICATED` (refresh); 400 `INVALID_LINK`; 429 `TOO_MANY_REQUESTS` and 503 `SERVICE_BUSY`, both with `Retry-After`; 422 every other
 `BusinessRuleException` with its own English message (`InvalidFieldException` also names its field); 400 malformed,
 invalid or unknown-property input with field names only, never values; 404/405/406/415 for the other Spring MVC errors;
 500 for everything else, logging the exception class and the place it was thrown, never its message. Spring Security's

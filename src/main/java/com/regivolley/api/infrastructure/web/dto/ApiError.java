@@ -13,6 +13,10 @@ import java.util.List;
 public record ApiError(String code, String message, String requestId, List<String> fields) {
 
     public static final String UNAUTHENTICATED = "UNAUTHENTICATED";
+    public static final String INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
+    public static final String INVALID_LINK = "INVALID_LINK";
+    public static final String TOO_MANY_REQUESTS = "TOO_MANY_REQUESTS";
+    public static final String SERVICE_BUSY = "SERVICE_BUSY";
     public static final String FORBIDDEN = "FORBIDDEN";
     public static final String NOT_ALLOWED = "NOT_ALLOWED";
     public static final String NOT_FOUND = "NOT_FOUND";
@@ -35,6 +39,23 @@ public record ApiError(String code, String message, String requestId, List<Strin
         return new ApiError(UNAUTHENTICATED, "Authentication is required", requestId);
     }
 
+    /** The one answer to a failed login, whatever the reason (threat model D-10). */
+    public static ApiError invalidCredentials(String requestId) {
+        return new ApiError(INVALID_CREDENTIALS, "Invalid email or password", requestId);
+    }
+
+    public static ApiError invalidLink(String requestId) {
+        return new ApiError(INVALID_LINK, "The link is invalid or has expired", requestId);
+    }
+
+    public static ApiError tooManyRequests(String requestId) {
+        return new ApiError(TOO_MANY_REQUESTS, "Too many requests, try again later", requestId);
+    }
+
+    public static ApiError serviceBusy(String requestId) {
+        return new ApiError(SERVICE_BUSY, "The service is busy, try again shortly", requestId);
+    }
+
     public static ApiError forbidden(String requestId) {
         return new ApiError(FORBIDDEN, "Access is denied", requestId);
     }
@@ -52,6 +73,8 @@ public record ApiError(String code, String message, String requestId, List<Strin
             case 404 -> new ApiError(NOT_FOUND, "The requested resource was not found", requestId);
             case 405 -> new ApiError(METHOD_NOT_ALLOWED, "This method is not supported here", requestId);
             case 406 -> new ApiError(NOT_ACCEPTABLE, "The requested representation is not available", requestId);
+            case 503 -> serviceBusy(requestId);
+            case 429 -> tooManyRequests(requestId);
             case 411 -> new ApiError(LENGTH_REQUIRED, "The request body must declare its length", requestId);
             case 413 -> new ApiError(PAYLOAD_TOO_LARGE, "The request body is too large", requestId);
             case 415 -> new ApiError(UNSUPPORTED_MEDIA_TYPE, "The content type is not supported", requestId);

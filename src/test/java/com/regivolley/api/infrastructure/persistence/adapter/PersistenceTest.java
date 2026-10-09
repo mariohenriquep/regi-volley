@@ -18,8 +18,9 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({AssociationRepositoryAdapter.class, JoinRequestRepositoryAdapter.class, MemberRepositoryAdapter.class,
-        PaymentRepositoryAdapter.class, PlanRepositoryAdapter.class, SessionRepositoryAdapter.class, SubscriptionRepositoryAdapter.class,
+@Import({AssociationRepositoryAdapter.class, EmailLinkStoreAdapter.class, JoinRequestRepositoryAdapter.class,
+        MemberRepositoryAdapter.class, MembershipStoreAdapter.class, RefreshTokenStoreAdapter.class,
+        SecurityAccountLookupAdapter.class, UserAccountStoreAdapter.class, PaymentRepositoryAdapter.class, PlanRepositoryAdapter.class, SessionRepositoryAdapter.class, SubscriptionRepositoryAdapter.class,
         TrainingGroupRepositoryAdapter.class, VenueRepositoryAdapter.class})
 public @interface PersistenceTest {
 }

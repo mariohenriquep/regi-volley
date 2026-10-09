@@ -1,4 +1,4 @@
-package com.regivolley.api.infrastructure.security;
+package com.regivolley.api.application.identity;
 
 import java.time.Instant;
 import java.util.Objects;

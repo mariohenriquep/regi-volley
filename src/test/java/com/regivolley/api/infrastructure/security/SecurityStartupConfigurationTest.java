@@ -1,5 +1,7 @@
 package com.regivolley.api.infrastructure.security;
 
+import com.regivolley.api.application.port.AccessTokenIssuer;
+
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
 import com.regivolley.api.infrastructure.config.SecretsGuardConfiguration;

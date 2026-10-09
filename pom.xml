@@ -33,6 +33,10 @@
         <spring-framework.version>7.0.9</spring-framework.version>
         <jackson-bom.version>3.1.7</jackson-bom.version>
         <postgresql.version>42.7.12</postgresql.version>
+
+        <!-- Not managed by the Boot BOM (threat model section 11). -->
+        <bouncycastle.version>1.86</bouncycastle.version>
+        <bucket4j.version>8.21.0</bucket4j.version>
     </properties>
 
     <dependencies>
@@ -78,6 +82,24 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <!-- Credentials (threat model D-8, D-9). BouncyCastle: Spring's Argon2PasswordEncoder needs it (Argon2id).
+             bucket4j + Caffeine: in-memory rate limiting with a bounded key cache. Neither is managed by the Boot BOM
+             except Caffeine; Dependabot tracks the versions below. -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j_jdk17-core</artifactId>
+            <version>${bucket4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
         </dependency>
 
         <!-- Testing -->

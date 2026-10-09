@@ -1,8 +1,11 @@
 package com.regivolley.api.infrastructure.security;
 
+import com.regivolley.api.application.identity.AccessToken;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.proc.SecurityContext;
+import com.regivolley.api.application.identity.AccessToken;
+import com.regivolley.api.application.port.AccessTokenIssuer;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
@@ -19,16 +22,16 @@ import java.util.UUID;
 
 /**
  * Mints access tokens (threat model D-1, D-4): ES256 with the active signing key, its {@code kid} in the header, and the
- * claims of {@link AccessTokenPolicy}. The login and refresh use cases of 26b call {@link #issue}; nothing else signs.
+ * claims of {@link AccessTokenPolicy}. The login and refresh use cases call it through the {@link AccessTokenIssuer} port; {@link #issue}; nothing else signs.
  * Time comes from the injected {@link Clock}.
  */
-public class AccessTokenIssuer {
+public class JwtAccessTokenIssuer implements AccessTokenIssuer {
 
     private final JwtEncoder encoder;
     private final String keyId;
     private final Clock clock;
 
-    public AccessTokenIssuer(JwtKeySet keys, Clock clock) {
+    public JwtAccessTokenIssuer(JwtKeySet keys, Clock clock) {
         this.encoder = new NimbusJwtEncoder(new ImmutableJWKSet<SecurityContext>(new JWKSet(keys.signingKey())));
         this.keyId = keys.signingKey().getKeyID();
         this.clock = clock;
@@ -40,6 +43,7 @@ public class AccessTokenIssuer {
      * @param memberId       the selected membership's member ({@code mid})
      * @param securityStamp  the account's current security stamp ({@code sv})
      */
+    @Override
     public AccessToken issue(UUID userId, AssociationId associationId, MemberId memberId, String securityStamp) {
         return issue(userId, associationId.value(), memberId.value(), securityStamp);
     }

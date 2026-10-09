@@ -1,5 +1,7 @@
 package com.regivolley.api.infrastructure.security;
 
+import com.regivolley.api.application.identity.MembershipStatus;
+import com.regivolley.api.application.identity.UserStatus;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 
@@ -9,7 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Test double of the seam 26b implements with {@code app_user} and {@code membership}: accounts are registered by hand.
+ * Test double of the account lookup the persistence adapter implements over {@code app_user} and {@code membership}: accounts are registered by hand.
  * Not found means exactly what it means in production: no such user, or no membership of that user at that member.
  */
 public class InMemorySecurityAccountLookup implements SecurityAccountLookup {
@@ -24,7 +26,13 @@ public class InMemorySecurityAccountLookup implements SecurityAccountLookup {
     }
 
     public void registerActive(UUID userId, AssociationId associationId, MemberId memberId, String stamp) {
-        register(userId, associationId, memberId, new SecurityAccount(UserStatus.ACTIVE, stamp, MembershipStatus.CONFIRMED));
+        register(userId, associationId, memberId, UserStatus.ACTIVE, stamp, MembershipStatus.CONFIRMED);
+    }
+
+    /** Registers an account whose stored tenant and member are the ones asked for, as the real lookup returns them. */
+    public void register(UUID userId, AssociationId associationId, MemberId memberId, UserStatus userStatus, String stamp,
+                         MembershipStatus membershipStatus) {
+        register(userId, associationId, memberId, new SecurityAccount(userStatus, stamp, membershipStatus, associationId, memberId));
     }
 
     public void clear() {

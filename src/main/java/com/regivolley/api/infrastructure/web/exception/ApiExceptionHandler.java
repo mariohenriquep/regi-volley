@@ -21,6 +21,11 @@ import com.regivolley.api.domain.exception.ShortNameNotFoundException;
 import com.regivolley.api.domain.exception.SubscriptionNotFoundException;
 import com.regivolley.api.domain.exception.TrainingGroupNotFoundException;
 import com.regivolley.api.domain.exception.VenueNotFoundException;
+import com.regivolley.api.application.exception.InvalidCredentialsException;
+import com.regivolley.api.application.exception.InvalidLinkException;
+import com.regivolley.api.application.exception.InvalidRefreshTokenException;
+import com.regivolley.api.application.exception.RateLimitExceededException;
+import com.regivolley.api.application.exception.ServiceBusyException;
 import com.regivolley.api.infrastructure.security.RequestIds;
 import com.regivolley.api.infrastructure.web.dto.AcknowledgementResponse;
 import com.regivolley.api.infrastructure.web.dto.ApiError;
@@ -54,6 +59,8 @@ import java.util.List;
  *       gets (D-12); 202 {@link JoinRequestNotPossibleException} (D-14); 409 the conflicts and
  *       {@link AggregateModifiedConcurrentlyException}; 422 every other {@link BusinessRuleException} with its own
  *       English message;</li>
+ *   <li>401 a failed login or refresh, 400 an invalid emailed link, 429 a rate limit with {@code Retry-After}: one answer per
+ *       failure, whatever the reason (D-10);</li>
  *   <li>400 malformed, invalid or unknown-property input (names of fields, never rejected values) and the other
  *       Spring MVC errors through {@link ResponseEntityExceptionHandler} (404, 405, 406, 415, ...);</li>
  *   <li>500 everything else: a generic body, and a log line with the exception class and the place it was thrown, never its
@@ -139,6 +146,37 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).contentType(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer")
                 .body(ApiError.unauthenticated(requestId()));
+    }
+
+    // ---- credentials: one answer per failure, whatever the reason (threat model D-10) -----------------------------
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ApiError> handleInvalidCredentials(InvalidCredentialsException ex) {
+        return json(HttpStatus.UNAUTHORIZED, ApiError.invalidCredentials(requestId()));
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ApiError> handleInvalidRefreshToken(InvalidRefreshTokenException ex) {
+        return json(HttpStatus.UNAUTHORIZED, ApiError.unauthenticated(requestId()));
+    }
+
+    @ExceptionHandler(InvalidLinkException.class)
+    public ResponseEntity<ApiError> handleInvalidLink(InvalidLinkException ex) {
+        return json(HttpStatus.BAD_REQUEST, ApiError.invalidLink(requestId()));
+    }
+
+    @ExceptionHandler(ServiceBusyException.class)
+    public ResponseEntity<ApiError> handleServiceBusy(ServiceBusyException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).contentType(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.retryAfterSeconds()))
+                .body(ApiError.serviceBusy(requestId()));
+    }
+
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ApiError> handleRateLimited(RateLimitExceededException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).contentType(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.retryAfterSeconds()))
+                .body(ApiError.tooManyRequests(requestId()));
     }
 
     // ---- bad input -----------------------------------------------------------------------------------------------
