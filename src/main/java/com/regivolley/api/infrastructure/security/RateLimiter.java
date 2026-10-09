@@ -11,6 +11,7 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.EnumMap;
 import java.util.HexFormat;
 import java.util.Locale;
@@ -100,12 +101,17 @@ public class RateLimiter {
         return value.trim().toLowerCase(Locale.ROOT);
     }
 
-    /** bucket4j's time source on our clock, so tests can move time. */
+    /**
+     * bucket4j's time source on our clock, so tests can move time. Reads {@code instant()}, not {@code millis()}: the production clock is
+     * {@code Clock.tick(systemUTC, 1 microsecond)} (ClockConfig), and the JDK's tick clock divides by zero in {@code millis()} when the
+     * tick is shorter than a millisecond.
+     */
     private record ClockTimeMeter(Clock clock) implements TimeMeter {
 
         @Override
         public long currentTimeNanos() {
-            return Math.multiplyExact(clock.millis(), 1_000_000L);
+            Instant now = clock.instant();
+            return Math.addExact(Math.multiplyExact(now.getEpochSecond(), 1_000_000_000L), now.getNano());
         }
 
         @Override

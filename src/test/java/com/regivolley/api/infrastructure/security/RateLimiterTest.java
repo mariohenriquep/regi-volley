@@ -9,6 +9,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -256,5 +257,22 @@ class RateLimiterTest {
         // Assert
         assertThat(capacity).isEqualTo(30);
         assertThat(rule.window()).isEqualTo(Duration.ofHours(1));
+    }
+
+    @Test
+    void worksOnTheProductionClockWhichTicksInMicroseconds() {
+        // Arrange - ClockConfig's clock: Clock.tick(systemUTC, 1 microsecond); its millis() divides by zero
+        RateLimiter onProductionClock = new RateLimiter(Clock.tick(Clock.systemUTC(), Duration.ofNanos(1_000)));
+        Executable beyondTheCapacity = () -> {
+            for (int i = 0; i <= 5; i++) { // LOGIN_EMAIL allows 5 per window
+                onProductionClock.check(RateLimitRule.LOGIN_EMAIL, "key");
+            }
+        };
+
+        // Act
+        RateLimitExceededException ex = assertThrows(RateLimitExceededException.class, beyondTheCapacity);
+
+        // Assert
+        assertThat(ex.retryAfterSeconds()).isPositive();
     }
 }
