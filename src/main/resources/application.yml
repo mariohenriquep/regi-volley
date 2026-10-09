@@ -48,6 +48,19 @@ regi-volley:
     enabled: ${JOIN_REQUEST_PURGE_ENABLED:true}
     cron: ${JOIN_REQUEST_PURGE_CRON:0 30 3 * * *}
 
+  mail:
+    # Outbound email (issue #40, threat model G3). With SMTP_HOST unset the logging adapters stay active, which only profiles dev and test
+    # allow: every other profile refuses to start unless host, credentials, MAIL_FROM, SMTP_SECURITY (STARTTLS or TLS) and an https
+    # WEB_ORIGIN are set. Local development: Mailpit from docker-compose (SMTP_HOST=localhost SMTP_PORT=1025 SMTP_SECURITY=NONE).
+    host: ${SMTP_HOST:}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    # STARTTLS (port 587, required not optional), TLS (implicit, port 465) or NONE (dev only; refused elsewhere).
+    security: ${SMTP_SECURITY:STARTTLS}
+    # The From header, optionally with a display name: RegiVolley <no-reply@example.org>
+    from: ${MAIL_FROM:}
+
   security:
     jwt:
       # ES256 keys (threat model D-1, D-2), from the environment or the platform secret store, never from the repo.
@@ -58,6 +71,7 @@ regi-volley:
       verification-keys: ${JWT_VERIFICATION_KEYS:}
     # The web origin (scheme://host[:port], no path) that may call the two cookie endpoints (/auth/refresh, /auth/logout) besides
     # the API's own origin (threat model D-7a). Set it when TLS ends at a proxy and the app sees plain http, e.g. https://app.example.org.
+    # It is also the origin of the links in the emails (/activate#token=..., /reset-password#token=...), so outside dev / test it is required (https).
     web-origin: ${WEB_ORIGIN:}
     cors:
       # Honoured under profile `dev` only (production is same-origin): the one local PWA origin, e.g. http://localhost:5173.

@@ -1,7 +1,9 @@
 package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.RegisterAssociationCommand;
+import com.regivolley.api.application.exception.RateLimitExceededException;
 import com.regivolley.api.application.port.AccountProvisioner;
+import com.regivolley.api.application.port.AttemptThrottle;
 import com.regivolley.api.application.result.AssociationRegistered;
 import com.regivolley.api.domain.exception.AssociationModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.ConsentRequiredException;
@@ -46,6 +48,8 @@ class RegisterAssociationServiceTest {
     private MemberRepository members;
     @Mock
     private AccountProvisioner provisioner;
+    @Mock
+    private AttemptThrottle throttle;
 
     private final DirectTransactions transactions = new DirectTransactions();
 
@@ -53,7 +57,7 @@ class RegisterAssociationServiceTest {
 
     @BeforeEach
     void setUp() {
-        useCase = new RegisterAssociationService(associations, members, transactions, provisioner, Data.CLOCK);
+        useCase = new RegisterAssociationService(associations, members, transactions, provisioner, throttle, Data.CLOCK);
         lenient().when(associations.save(any(Association.class))).thenAnswer(returnsFirstArg());
         lenient().when(members.save(any(Member.class))).thenAnswer(returnsFirstArg());
     }
@@ -92,6 +96,46 @@ class RegisterAssociationServiceTest {
         assertThat(founder.consent().policyVersion()).isEqualTo("2026-01");
         assertThat(founder.joinedAt()).isEqualTo(Data.NOW);
         assertThat(transactions.opened()).isEqualTo(1);
+    }
+
+    @Test
+    void countsTheRegistrationAgainstTheFoundersEmailOnceTheInputIsKnownToBeValid() {
+        // Arrange
+        RegisterAssociationCommand command = command("volley-club", true);
+
+        // Act
+        useCase.execute(command);
+
+        // Assert
+        var order = inOrder(throttle, associations);
+        order.verify(throttle).checkRegistration("ana@example.com");
+        order.verify(associations).existsByShortName(ShortName.of("volley-club"));
+    }
+
+    @Test
+    void anEmailThatRegisteredTooOftenIsRefusedBeforeAnythingIsLookedUpOrStored() {
+        // Arrange
+        doThrow(new RateLimitExceededException(java.time.Duration.ofHours(1))).when(throttle).checkRegistration("ana@example.com");
+        Executable act = () -> useCase.execute(command("volley-club", true));
+
+        // Act
+        assertThrows(RateLimitExceededException.class, act);
+
+        // Assert
+        verifyNoInteractions(associations, members, provisioner);
+        assertThat(transactions.opened()).isZero();
+    }
+
+    @Test
+    void anAttemptTheInputAloneRefusesDoesNotSpendTheEmailsBudget() {
+        // Arrange
+        Executable act = () -> useCase.execute(command("Not Valid!", true));
+
+        // Act
+        assertThrows(InvalidFieldException.class, act);
+
+        // Assert
+        verifyNoInteractions(throttle);
     }
 
     @Test

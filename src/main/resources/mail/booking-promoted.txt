@@ -1,0 +1,8 @@
+Hello,
+
+Good news: a seat became free and you were moved up from the waitlist.
+
+Association: {{association}}
+Session: {{when}} (Lisbon time)
+
+Your booking is now confirmed. If you can no longer come, please cancel it in RegiVolley as soon as possible so that someone else can take the seat.

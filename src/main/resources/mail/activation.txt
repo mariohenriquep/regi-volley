@@ -1,0 +1,9 @@
+Hello,
+
+Someone asked to give this email address access to RegiVolley. To activate the account and choose a password, open this link:
+
+{{link}}
+
+The link can be used once and expires on {{expires}} (Lisbon time).
+
+If you were not expecting this message, you can ignore it: nothing happens until the link is used.

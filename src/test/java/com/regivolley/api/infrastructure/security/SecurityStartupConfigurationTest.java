@@ -4,7 +4,7 @@ import com.regivolley.api.application.port.AccessTokenIssuer;
 
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
-import com.regivolley.api.infrastructure.config.SecretsGuardConfiguration;
+import com.regivolley.api.infrastructure.config.StartupGuardConfiguration;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.annotation.UserConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -27,8 +27,12 @@ class SecurityStartupConfigurationTest {
     private static final String DEFAULT_DB_PASSWORD = "spring.datasource.password=regi_volley";
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withConfiguration(UserConfigurations.of(JwtKeyConfiguration.class, SecretsGuardConfiguration.class))
-            .withBean(Clock.class, Clock::systemUTC);
+            .withConfiguration(UserConfigurations.of(JwtKeyConfiguration.class, StartupGuardConfiguration.class))
+            .withBean(Clock.class, Clock::systemUTC)
+            // The mail guard (issue #40) lives in the same configuration: a complete mail setup keeps these tests about keys and passwords.
+            .withPropertyValues("regi-volley.mail.host=smtp.example.org", "regi-volley.mail.username=mailer",
+                    "regi-volley.mail.password=a-long-random-smtp-secret", "regi-volley.mail.from=no-reply@example.org",
+                    "regi-volley.security.web-origin=https://app.example.org");
 
     private ApplicationContextRunner withProfiles(String profiles, String... properties) {
         return runner.withPropertyValues("spring.profiles.active=" + profiles).withPropertyValues(properties);

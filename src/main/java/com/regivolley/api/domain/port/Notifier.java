@@ -7,7 +7,7 @@ import com.regivolley.api.domain.model.valueobject.SessionId;
 
 /**
  * Outbound port for telling people what happened to their bookings and requests (US-06, US-16, RN-04, RN-11). It takes
- * ids only: the adapter looks up the address and writes the message (email arrives in Phase 2), so
+ * ids only: the adapter looks up the address and writes the message (SMTP, {@code infrastructure.notification}), so
  * no personal data travels through the application layer or its logs.
  *
  * <p>Called only after the change was committed, and a failure here never undoes it: use cases

@@ -18,7 +18,7 @@ One-time per machine: copy `docs/toolchains.sample.xml` to `~/.m2/toolchains.xml
 at a JDK 21.
 
 ```bash
-docker compose up -d       # local Postgres
+docker compose up -d       # local Postgres and Mailpit (the dev mail catcher)
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev   # http://localhost:8080; `dev` generates a throwaway JWT key
 ./mvnw verify              # tests + coverage gate (needs Docker for Testcontainers)
 ```
@@ -40,6 +40,39 @@ export JWT_VERIFICATION_KEYS="kid: dev-1
 $(cat dev-jwt.pub.pem)"
 ```
 
+## Email
+
+The API sends the account links (activation, password reset) and the notices of the booking rules (moved up from the waitlist,
+session cancelled, no-show limit warning, join request approved / rejected) by SMTP, asynchronously after the commit and with a few
+retries. Configuration is from the environment:
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `SMTP_HOST` | mail server; **unset = no SMTP**: the logging adapters stay active (only profiles `dev` and `test` may run like that) | unset |
+| `SMTP_PORT` | server port | `587` |
+| `SMTP_SECURITY` | `STARTTLS` (required, not opportunistic), `TLS` (implicit, port 465) or `NONE` (only towards `localhost`, a loopback address or `mailpit`; refused for any other host and outside `dev` / `test`) | `STARTTLS` |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | credentials (secrets: from the platform store, never the repo) | unset |
+| `MAIL_FROM` | the From header, e.g. `RegiVolley <no-reply@example.org>` | unset |
+| `WEB_ORIGIN` | the frontend's origin, e.g. `https://app.example.org`; the links in the emails are built on it (https required outside dev / test) | unset |
+
+A port that does not match the mode (TLS on 587, STARTTLS on 465) is logged as a warning. Outside `dev` and `test` the application **refuses to start** unless all of them are set and the connection is encrypted (the message
+names the missing variables, never their values). The links point at the frontend: `WEB_ORIGIN/activate#token=...` and
+`WEB_ORIGIN/reset-password#token=...` (the token is in the fragment, so it reaches no server log); the frontend must serve both routes
+remove the token from the address bar (`history.replaceState`) right after reading it, and POST the token with the new password to `/api/v1/auth/activate` or `/api/v1/auth/password-resets`.
+
+**Seeing the emails in development.** `docker compose up -d` starts [Mailpit](https://mailpit.axllent.org/), which accepts any mail and
+delivers none. Point the app at it and open the inbox at <http://localhost:8025>:
+
+```bash
+export SMTP_HOST=localhost SMTP_PORT=1025 SMTP_SECURITY=NONE MAIL_FROM='RegiVolley <no-reply@regivolley.local>'
+export WEB_ORIGIN=http://localhost:5173      # optional under dev: this is the default
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+```
+
+Registering an association through the API then puts the founder's activation email in the Mailpit inbox. Without `SMTP_HOST` the
+dev application only logs that a mail is due (by link reference, never the token). Tests use an in-process SMTP server (GreenMail),
+never a real provider.
+
 ## API overview
 
 All paths are under `/api/v1`; the full description is [`docs/api/openapi.json`](docs/api/openapi.json) (OpenAPI 3, generated from the
@@ -55,8 +88,8 @@ path, query or body value, and another association's id answers like one that do
 | Coach / admin of a session | `GET /sessions/{id}/roster` (who is in the session, with the booking ids and display names only), `POST /sessions/{id}/cancellation`, `PUT /sessions/{id}/capacity`, `PUT /sessions/{id}/attendance` |
 | Administrator | `/levels`, `/venues`, `/training-groups`, `/plans`, `/join-requests` (list, approve, reject), `/members/{id}` (level, roles, deactivation, subscriptions, `activation-links`: re-send an activation link, always `202 RECEIVED`), `/subscriptions` (list by payment status, CSV export, overdue-marking, payments), `/payments/{id}/reversal` |
 
-A quick tour against a local instance (`dev` profile; the activation link of a new association is only logged by reference until the
-SMTP adapter exists, so the end-to-end journey is exercised by `ApiJourneyIntegrationTest`):
+A quick tour against a local instance (`dev` profile; the activation link of a new association arrives by email, in the Mailpit inbox
+when configured as above; the end-to-end journey is also exercised by `ApiJourneyIntegrationTest`):
 
 ```bash
 curl -s localhost:8080/api/v1/public/associations/my-club                       # the public page

@@ -65,6 +65,7 @@ member activates by emailed link -> logs in.
   or reset mail can be delivered until Phase 2's SMTP adapter exists. Stated plainly: login can be
   built and tested in #26, but real users cannot onboard until an email adapter exists. That is a
   **go-live blocker**, not a #26 blocker.
+  **Closed by issue #40** (see section 14).
 - `JoinRequestNotPossibleException` already uses one message for "already member" and "pending
   request exists", but an HTTP client still tells 4xx from 2xx (the #25 review finding). D-14 fixes it.
 - `Invalid*Exception` (invariants) are plain `RuntimeException`s; `*NotFoundException` too;
@@ -380,7 +381,7 @@ for one pilot association.
   restricted access, key never in the repo/image/logs, rotation by overlap on suspicion of leak (D-2; within
   15 minutes the old key is gone). An HSM/KMS-backed signer is out of proportion for one pilot.
 - **R5** Rate-limit state is in memory and per instance.
-- **R6** Real onboarding cannot happen until the SMTP adapter exists (G3).
+- **R6** ~~Real onboarding cannot happen until the SMTP adapter exists (G3).~~ Closed by issue #40 (section 14); what remains is operating a real mail server (SPF / DKIM / DMARC for the sender domain, bounce handling).
 
 ## 13. Delivery notes for 26c (issue #32)
 
@@ -419,3 +420,50 @@ What was built against this model, and where it differs.
 - **Found by the new tests and fixed:** `RateLimiter` read `Clock.millis()`, which throws `ArithmeticException` on the production clock
   (`Clock.tick(systemUTC, 1 microsecond)`), so every rate-limited call would have been a 500 outside the tests (which use a fixed clock). The
   meter now reads `instant()`.
+
+## 14. Delivery notes for the email adapter (issue #40)
+
+Closes G3 and R6 as far as the code goes, and the registration item of the go-live list (#35).
+
+- **Delivered:** `SmtpAccountLinkMailer` (activation and password-reset links) and `SmtpNotifier` (promoted from the waitlist, session
+  cancelled, no-show warning to the member and the active administrators, join request approved / rejected) behind the existing ports, over
+  Spring's `JavaMailSender`; asynchronous on a bounded two-thread sender (500 tasks, then drop and log) with three retries (5 s, 30 s,
+  2 min) and no thread held while waiting; the SMTP settings from the environment with STARTTLS *required* (or implicit TLS) and the server
+  name checked; start-up refuses a profile other than `dev` / `test` without a complete, encrypted configuration and an https
+  `WEB_ORIGIN`; Mailpit for development; GreenMail in the tests.
+- **Links (D-11).** `WEB_ORIGIN/activate#token=...` and `WEB_ORIGIN/reset-password#token=...`, the token in the fragment and
+  percent-encoded, so it is in no access log or `Referer`. Account links go to `UserAccount.email()` (#31 S1); the SMTP adapter takes the
+  address from the call and never looks up a member.
+- **Abuse by visitor-controlled text (#35).** The association's name and a member's name are typed by visitors. Subjects are fixed; no
+  greeting uses a name (the mail can reach an address that is not the person's); values are cleaned of control, format and line-separator
+  characters, cut at 200 characters and HTML-escaped; links must be http(s). The administrators' no-show warning names the member, and a
+  cancellation prints the coach's reason, both cleaned and escaped; the administrator's rejection reason is not passed on by the port.
+- **Logs.** Only ids, the link's reference, the attempt number and the exception *class* (`LogCapture` tests over success, failure and
+  skipped recipients: no token, address, name, reason or body). JavaMail's debug output is off.
+- **Registration per founder email (#35).** `RateLimitRule.REGISTER_EMAIL`: 3 per day on the hash of the founder's email
+  (`AttemptThrottle.checkRegistration`), taken after the input is validated and before the short name is looked up, so every attempt counts and the
+  limit tells a stranger nothing. Without it, many addresses could flood one mailbox with activation links.
+- **Review follow-ups.** The no-show warning resolves and renders everything before queuing any mailbox, so a failing lookup can no longer
+  make the member receive two copies. `SMTP_SECURITY=NONE` is refused for any host except `localhost`, loopback and `mailpit`, under every
+  profile (one validation, `MailSettings.structuralProblems()`, shared by the sender and the production guard). A task that dies with an
+  `Error` frees its queue slot. Permanent failures (an address that does not parse, an unfillable template, an SMTP 5xx) are attempted once.
+  Account links and notices have separate queues (100 and 500), so a burst of notices cannot displace a link.
+- **Visitor text in mails (N1), decision.** A visitor chooses the association's name (and an applicant's name), and a mail from us carries
+  our reputation. Two options were weighed: reject URL-like association names at registration, or neutralise them when printing. Rejecting
+  changes a domain invariant (and the public API) and still prints names that merely look odd; neutralising is local to the mail layer and
+  covers every visitor-typed value, so `MailTemplates.clean` breaks `://`, `www.` and `@` in text values with a zero-width space (the text
+  stays readable, mail clients stop auto-linking it). It is best effort - a bare `evil.example` may still be linked by some clients - so
+  the join notices, which reach an address a stranger typed, also say "If you did not ask to join, ignore this message".
+- **Accepted:**
+  - The queue is in memory (a restart loses pending mail; the user asks again), and the reset path has two asynchronous hops
+    (`BackgroundWork`, then the mail dispatcher), each of which can drop under load.
+  - Delivery is at-least-once: when the server accepts a message but the connection fails before the client sees the reply, the retry
+    sends a second copy. A permanent refusal other than a clean 5xx reply is retried three times before it is given up.
+  - `REGISTER_EMAIL` counts the exact address, so `ana+1@x` and `ana+2@x` have a bucket each; the per-IP limit and the activation links'
+    single-use rule bound the damage, and a stricter canonical form would also merge distinct people at some providers.
+  - The frontend must scrub the token from the address bar right after reading the fragment (`history.replaceState`), or it stays in the
+    browser history and in anything that records the URL.
+  - The sender domain's SPF / DKIM / DMARC are not the application's. Before go-live the SMTP provider must be hosted in the EU and a data
+    processing agreement (DPA) signed: the provider sees recipients' addresses and every link token.
+  - The default port is 587 (STARTTLS); `SMTP_SECURITY=TLS` on 587 or STARTTLS on 465 is only a startup warning, since a provider may
+    deviate from the usual ports.
