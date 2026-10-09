@@ -2,15 +2,16 @@ package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.ApproveJoinRequestCommand;
 import com.regivolley.api.application.port.AccountProvisioner;
+import com.regivolley.api.application.result.JoinRequestApproval;
 import com.regivolley.api.domain.exception.InvalidJoinRequestStatusTransitionException;
 import com.regivolley.api.domain.exception.JoinRequestModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.JoinRequestNotFoundException;
 import com.regivolley.api.domain.exception.MemberEmailAlreadyUsedException;
 import com.regivolley.api.domain.exception.NotAllowedException;
+import com.regivolley.api.domain.factory.JoinRequestFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Member;
-import com.regivolley.api.domain.model.result.JoinRequestApproval;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.JoinRequestId;
@@ -68,7 +69,7 @@ class ApproveJoinRequestServiceTest {
     void setUp() {
         association = Data.association();
         admin = Data.admin(association);
-        request = JoinRequest.create(association.id(), ContactDetails.of("Rita Costa", EmailAddress.of("rita@example.com"),
+        request = JoinRequestFactory.create(association.id(), ContactDetails.of("Rita Costa", EmailAddress.of("rita@example.com"),
                 PhoneNumber.of("912345678")), true, "2026-01", Data.CLOCK);
         useCase = new ApproveJoinRequestService(associations, members, joinRequests, transactions, notifier, provisioner, Data.CLOCK);
         lenient().when(associations.findById(association.id())).thenReturn(Optional.of(association));
@@ -117,7 +118,7 @@ class ApproveJoinRequestServiceTest {
     @Test
     void aRequestOfAnotherAssociationIsNotFound() {
         // Arrange
-        JoinRequest foreign = JoinRequest.create(Data.association().id(), request.contact(), true, "2026-01", Data.CLOCK);
+        JoinRequest foreign = JoinRequestFactory.create(Data.association().id(), request.contact(), true, "2026-01", Data.CLOCK);
         Executable act = () -> useCase.execute(new ApproveJoinRequestCommand(Data.actor(admin), foreign.id()));
 
         // Act

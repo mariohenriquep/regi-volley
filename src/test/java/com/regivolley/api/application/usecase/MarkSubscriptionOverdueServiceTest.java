@@ -5,6 +5,8 @@ import com.regivolley.api.domain.exception.InvalidPaymentStatusTransitionExcepti
 import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.exception.SubscriptionModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.SubscriptionNotFoundException;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Plan;
@@ -56,8 +58,8 @@ class MarkSubscriptionOverdueServiceTest {
     void setUp() {
         association = Data.association();
         admin = Data.admin(association);
-        Plan plan = Plan.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
-        pending = Subscription.create(plan, Data.member(association).id(), LocalDate.parse("2026-10-01"), List.of());
+        Plan plan = PlanFactory.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
+        pending = SubscriptionFactory.create(plan, Data.member(association).id(), LocalDate.parse("2026-10-01"), List.of());
         useCase = new MarkSubscriptionOverdueService(members, subscriptions, transactions);
         lenient().when(members.findById(association.id(), admin.id())).thenReturn(Optional.of(admin));
         lenient().when(subscriptions.findById(association.id(), pending.id())).thenReturn(Optional.of(pending));

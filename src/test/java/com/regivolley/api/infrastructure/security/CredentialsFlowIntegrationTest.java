@@ -17,7 +17,7 @@ import com.regivolley.api.application.usecase.ApproveJoinRequestUseCase;
 import com.regivolley.api.application.usecase.RegisterAssociationUseCase;
 import com.regivolley.api.application.usecase.SubmitJoinRequestUseCase;
 import com.regivolley.api.domain.model.entity.Member;
-import com.regivolley.api.domain.model.result.JoinRequestApproval;
+import com.regivolley.api.application.result.JoinRequestApproval;
 import com.regivolley.api.application.identity.AccountLink;
 import com.regivolley.api.application.identity.AccountLinkPurpose;
 import com.regivolley.api.domain.model.valueobject.AssociationId;

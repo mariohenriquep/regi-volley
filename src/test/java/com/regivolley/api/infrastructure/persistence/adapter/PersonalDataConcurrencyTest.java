@@ -98,7 +98,7 @@ class PersonalDataConcurrencyTest extends AbstractPostgresIntegrationTest {
             JoinRequest stored = joinRequests.save(Fixtures.joinRequest(association.id(), "Rita", Fixtures.NOW));
             MemberId admin = MemberId.generate();
             Function<JoinRequest, JoinRequest> approve = request -> joinRequests.save(
-                    request.approve(association, admin, CLOCK).request());
+                    request.approve(admin, CLOCK));
             Function<JoinRequest, JoinRequest> reject = request -> joinRequests.save(
                     request.reject(admin, "Full", CLOCK));
 

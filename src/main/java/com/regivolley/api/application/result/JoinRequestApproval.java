@@ -1,4 +1,4 @@
-package com.regivolley.api.domain.model.result;
+package com.regivolley.api.application.result;
 
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Member;

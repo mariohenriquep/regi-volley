@@ -1,5 +1,12 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
+import com.regivolley.api.domain.factory.AssociationFactory;
+import com.regivolley.api.domain.factory.JoinRequestFactory;
+import com.regivolley.api.domain.factory.MemberFactory;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SessionFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
+import com.regivolley.api.domain.factory.TrainingGroupFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Member;
@@ -59,7 +66,7 @@ public final class Fixtures {
     }
 
     public static Association association(String shortName) {
-        return Association.create("Club " + shortName, shortName, "123456789", "Lisbon",
+        return AssociationFactory.create("Club " + shortName, shortName, "123456789", "Lisbon",
                 "info@" + shortName + ".example", List.of("Beginner", "Intermediate", "Advanced"));
     }
 
@@ -72,11 +79,11 @@ public final class Fixtures {
     }
 
     public static Member member(Association association, String name) {
-        return Member.create(association, contact(name), consent(), Set.of(MemberRole.MEMBER), CLOCK);
+        return MemberFactory.create(association, contact(name), consent(), Set.of(MemberRole.MEMBER), CLOCK);
     }
 
     public static JoinRequest joinRequest(AssociationId associationId, String name, Instant requestedAt) {
-        return JoinRequest.create(associationId, contact(name), true, "2026-01", at(requestedAt));
+        return JoinRequestFactory.create(associationId, contact(name), true, "2026-01", at(requestedAt));
     }
 
     public static WeeklySlot slot(DayOfWeek day, int hour, int minutes) {
@@ -84,12 +91,12 @@ public final class Fixtures {
     }
 
     public static TrainingGroup group(AssociationId associationId, String name, Set<LevelId> levels, MemberId coach) {
-        return TrainingGroup.create(associationId, name, levels, VenueId.generate(),
+        return TrainingGroupFactory.create(associationId, name, levels, VenueId.generate(),
                 WeeklySchedule.of(slot(DayOfWeek.MONDAY, 20, 90), slot(DayOfWeek.WEDNESDAY, 21, 60)), 12, coach);
     }
 
     public static Session session(AssociationId associationId, TrainingGroupId groupId, MemberId coach, Instant start, int capacity) {
-        return Session.create(associationId, groupId, coach, start, start.plus(Duration.ofMinutes(90)), capacity);
+        return SessionFactory.create(associationId, groupId, coach, start, start.plus(Duration.ofMinutes(90)), capacity);
     }
 
     public static Session session(AssociationId associationId, Instant start, int capacity) {
@@ -102,14 +109,14 @@ public final class Fixtures {
     }
 
     public static Plan pack(AssociationId associationId, Set<LevelId> allowedLevels) {
-        return Plan.create(associationId, "Pack of 10", PlanTerms.pack(10, allowedLevels), Money.ofCents(4500), 90);
+        return PlanFactory.create(associationId, "Pack of 10", PlanTerms.pack(10, allowedLevels), Money.ofCents(4500), 90);
     }
 
     public static Plan monthlyNPerWeek(AssociationId associationId) {
-        return Plan.create(associationId, "Twice a week", PlanTerms.monthlyNPerWeek(2, Set.of()), Money.ofCents(3000), null);
+        return PlanFactory.create(associationId, "Twice a week", PlanTerms.monthlyNPerWeek(2, Set.of()), Money.ofCents(3000), null);
     }
 
     public static Subscription subscription(Plan plan, MemberId memberId, String startDate) {
-        return Subscription.create(plan, memberId, LocalDate.parse(startDate), List.of());
+        return SubscriptionFactory.create(plan, memberId, LocalDate.parse(startDate), List.of());
     }
 }

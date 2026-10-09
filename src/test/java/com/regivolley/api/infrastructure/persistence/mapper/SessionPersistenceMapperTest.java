@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.factory.SessionFactory;
 import com.regivolley.api.domain.model.entity.Booking;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
@@ -82,7 +83,7 @@ class SessionPersistenceMapperTest {
         Session full = bookedBy(MemberId.generate(), MemberId.generate());
         SessionJpaEntity entity = new SessionJpaEntity();
         SessionPersistenceMapper.apply(full, entity);
-        Session emptied = Session.reconstruct(full.id(), full.associationId(), full.trainingGroupId(), full.coachId(),
+        Session emptied = SessionFactory.reconstitute(full.id(), full.associationId(), full.trainingGroupId(), full.coachId(),
                 full.startsAt(), full.endsAt(), full.capacity(), full.status(), null, List.of(), 0L);
 
         // Act

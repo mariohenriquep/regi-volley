@@ -11,11 +11,11 @@ import com.regivolley.api.domain.exception.CoachCannotBookOwnSessionException;
 import com.regivolley.api.domain.exception.DuplicateBookingException;
 import com.regivolley.api.domain.exception.InvalidBookingStatusTransitionException;
 import com.regivolley.api.domain.exception.InvalidCapacityException;
-import com.regivolley.api.domain.exception.InvalidSessionException;
 import com.regivolley.api.domain.exception.InvalidSessionStatusTransitionException;
 import com.regivolley.api.domain.exception.SessionAlreadyStartedException;
 import com.regivolley.api.domain.exception.SessionNotScheduledException;
 import com.regivolley.api.domain.exception.SessionNotStartedException;
+import com.regivolley.api.domain.factory.SessionFactory;
 import com.regivolley.api.domain.model.result.BookingCancellation;
 import com.regivolley.api.domain.model.result.BookingResult;
 import com.regivolley.api.domain.model.result.CapacityChange;
@@ -52,7 +52,6 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SessionTest {
-
     // 20:00 Lisbon (WEST, UTC+1) on Tuesday 20 Oct 2026; DST ends on 25 Oct, so the window opens
     // at the same wall-clock time on 13 Oct.
     private static final Instant START = Instant.parse("2026-10-20T19:00:00Z");
@@ -72,12 +71,12 @@ class SessionTest {
     }
 
     private static Session newSession(int capacity) {
-        return Session.create(ASSOCIATION, GROUP, COACH, START, END, capacity);
+        return SessionFactory.create(ASSOCIATION, GROUP, COACH, START, END, capacity);
     }
 
     private static Session sessionIn(SessionStatus status) {
         String reason = status == SessionStatus.CANCELLED ? "Venue unavailable" : null;
-        return Session.reconstruct(SessionId.generate(), ASSOCIATION, GROUP, COACH, START, END, 12, status,
+        return SessionFactory.reconstitute(SessionId.generate(), ASSOCIATION, GROUP, COACH, START, END, 12, status,
                 reason, List.of(), 0L);
     }
 
@@ -103,215 +102,22 @@ class SessionTest {
         return session.bookings().stream().filter(b -> b.memberId().equals(member)).findFirst().orElseThrow();
     }
 
+    /** A booking as {@code Session.book} makes it: CONFIRMED is confirmed at the request instant, WAITLISTED never was. */
+    private static Booking bookingOf(AssociationId association, SessionId session, MemberId member, BookingStatus status,
+                                     Instant requestedAt) {
+        Instant confirmedAt = status == BookingStatus.CONFIRMED ? requestedAt : null;
+        return SessionFactory.reconstituteBooking(BookingId.generate(), association, session, member, status, requestedAt,
+                confirmedAt, null);
+    }
+
     @Nested
     class Creation {
-
-        @Test
-        void createsAScheduledSessionWithNoBookings() {
-            // Arrange
-            int capacity = 12;
-
-            // Act
-            Session session = Session.create(ASSOCIATION, GROUP, COACH, START, END, capacity);
-
-            // Assert
-            assertThat(session.id()).isNotNull();
-            assertThat(session.associationId()).isEqualTo(ASSOCIATION);
-            assertThat(session.trainingGroupId()).isEqualTo(GROUP);
-            assertThat(session.coachId()).isEqualTo(COACH);
-            assertThat(session.startsAt()).isEqualTo(START);
-            assertThat(session.endsAt()).isEqualTo(END);
-            assertThat(session.capacity()).isEqualTo(12);
-            assertThat(session.status()).isEqualTo(SessionStatus.SCHEDULED);
-            assertThat(session.cancellationReason()).isEmpty();
-            assertThat(session.bookings()).isEmpty();
-            assertThat(session.freeSeats()).isEqualTo(12);
-            assertThat(session.bookingOpensAt(POLICY)).isEqualTo(OPENS_AT);
-            assertThat(session.version()).isZero();
-        }
-
-        @ParameterizedTest
-        @ValueSource(longs = {0, -1})
-        void rejectsAnEndThatIsNotAfterTheStart(long secondsAfterStart) {
-            // Arrange
-            Instant end = START.plusSeconds(secondsAfterStart);
-            Executable act = () -> Session.create(ASSOCIATION, GROUP, COACH, START, end, 12);
-
-            // Act
-            InvalidSessionException ex = assertThrows(InvalidSessionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("end");
-        }
-
-        @ParameterizedTest
-        @ValueSource(ints = {0, -5})
-        void rejectsANonPositiveCapacity(int capacity) {
-            // Arrange
-            Executable act = () -> newSession(capacity);
-
-            // Act
-            InvalidSessionException ex = assertThrows(InvalidSessionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("capacity");
-        }
-
-        @ParameterizedTest
-        @ValueSource(ints = {1, 7, 11, 13})
-        void doesNotEnforceAMultipleOfSix(int capacity) {
-            // Arrange
-            // (capacity provided by the parameter)
-
-            // Act
-            Session session = assertDoesNotThrow(() -> newSession(capacity));
-
-            // Assert
-            assertThat(session.capacity()).isEqualTo(capacity);
-        }
-
-        @Test
-        void rejectsANullCoach() {
-            // Arrange
-            Executable act = () -> Session.create(ASSOCIATION, GROUP, null, START, END, 12);
-
-            // Act
-            NullPointerException ex = assertThrows(NullPointerException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("coachId");
-        }
-
-        @Test
-        void reconstructRejectsCancelledWithoutReason() {
-            // Arrange
-            Executable act = () -> Session.reconstruct(SessionId.generate(), ASSOCIATION, GROUP, COACH, START, END,
-                    12, SessionStatus.CANCELLED, null, List.of(), 0L);
-
-            // Act
-            InvalidSessionException ex = assertThrows(InvalidSessionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("cancellation reason");
-        }
-
-        @Test
-        void reconstructRejectsAReasonOnANonCancelledSession() {
-            // Arrange
-            Executable act = () -> Session.reconstruct(SessionId.generate(), ASSOCIATION, GROUP, COACH, START, END,
-                    12, SessionStatus.SCHEDULED, "reason", List.of(), 0L);
-
-            // Act
-            InvalidSessionException ex = assertThrows(InvalidSessionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("cancellation reason");
-        }
-
-        @Test
-        void reconstructRejectsABookingFromAnotherSession() {
-            // Arrange
-            Booking foreign = Booking.create(ASSOCIATION, SessionId.generate(), MemberId.generate(),
-                    BookingStatus.CONFIRMED, OPENS_AT);
-            Executable act = () -> Session.reconstruct(SessionId.generate(), ASSOCIATION, GROUP, COACH, START, END,
-                    12, SessionStatus.SCHEDULED, null, List.of(foreign), 0L);
-
-            // Act
-            InvalidSessionException ex = assertThrows(InvalidSessionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("belong");
-        }
-
-        @Test
-        void reconstructRejectsABookingFromAnotherAssociation() {
-            // Arrange
-            SessionId sessionId = SessionId.generate();
-            Booking foreign = Booking.create(AssociationId.generate(), sessionId, MemberId.generate(),
-                    BookingStatus.CONFIRMED, OPENS_AT);
-            Executable act = () -> Session.reconstruct(sessionId, ASSOCIATION, GROUP, COACH, START, END,
-                    12, SessionStatus.SCHEDULED, null, List.of(foreign), 0L);
-
-            // Act
-            InvalidSessionException ex = assertThrows(InvalidSessionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("belong");
-        }
-
-        @Test
-        void reconstructRejectsMoreConfirmedBookingsThanCapacity() {
-            // Arrange
-            SessionId sessionId = SessionId.generate();
-            List<Booking> confirmed = members(2).stream()
-                    .map(m -> Booking.create(ASSOCIATION, sessionId, m, BookingStatus.CONFIRMED, OPENS_AT))
-                    .toList();
-            Executable act = () -> Session.reconstruct(sessionId, ASSOCIATION, GROUP, COACH, START, END,
-                    1, SessionStatus.SCHEDULED, null, confirmed, 0L);
-
-            // Act
-            InvalidSessionException ex = assertThrows(InvalidSessionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("exceed");
-        }
-
-        @Test
-        void reconstructRejectsTwoNonCancelledBookingsOfTheSameMember() {
-            // Arrange
-            SessionId sessionId = SessionId.generate();
-            MemberId member = MemberId.generate();
-            List<Booking> twice = List.of(
-                    Booking.create(ASSOCIATION, sessionId, member, BookingStatus.CONFIRMED, OPENS_AT),
-                    Booking.create(ASSOCIATION, sessionId, member, BookingStatus.WAITLISTED, OPENS_AT.plusSeconds(1)));
-            Executable act = () -> Session.reconstruct(sessionId, ASSOCIATION, GROUP, COACH, START, END,
-                    12, SessionStatus.SCHEDULED, null, twice, 0L);
-
-            // Act
-            InvalidSessionException ex = assertThrows(InvalidSessionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("at most one");
-        }
-
-        @Test
-        void reconstructAllowsACancelledBookingNextToALiveOneOfTheSameMember() {
-            // Arrange
-            SessionId sessionId = SessionId.generate();
-            MemberId member = MemberId.generate();
-            Booking first = Booking.create(ASSOCIATION, sessionId, member, BookingStatus.WAITLISTED, OPENS_AT)
-                    .cancel(CancellationKind.FREE);
-            Booking second = Booking.create(ASSOCIATION, sessionId, member, BookingStatus.CONFIRMED, OPENS_AT.plusSeconds(1));
-
-            // Act
-            Session session = Session.reconstruct(sessionId, ASSOCIATION, GROUP, COACH, START, END,
-                    12, SessionStatus.SCHEDULED, null, List.of(first, second), 0L);
-
-            // Assert
-            assertThat(session.bookings()).hasSize(2);
-        }
-
-        @Test
-        void reconstructRejectsALiveBookingOfTheCoach() {
-            // Arrange
-            SessionId sessionId = SessionId.generate();
-            Booking coachBooking = Booking.create(ASSOCIATION, sessionId, COACH, BookingStatus.CONFIRMED, OPENS_AT);
-            Executable act = () -> Session.reconstruct(sessionId, ASSOCIATION, GROUP, COACH, START, END,
-                    12, SessionStatus.SCHEDULED, null, List.of(coachBooking), 0L);
-
-            // Act
-            InvalidSessionException ex = assertThrows(InvalidSessionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("coach");
-        }
-
         @Test
         void operationsCarryTheVersionUnchanged() {
             // Arrange
             List<MemberId> people = members(1);
             SessionId sessionId = SessionId.generate();
-            Session session = Session.reconstruct(sessionId, ASSOCIATION, GROUP, COACH, START, END, 12,
+            Session session = SessionFactory.reconstitute(sessionId, ASSOCIATION, GROUP, COACH, START, END, 12,
                     SessionStatus.SCHEDULED, null, List.of(), 41L);
 
             // Act
@@ -324,24 +130,6 @@ class SessionTest {
             assertThat(resized.version()).isEqualTo(41L);
             assertThat(completed.version()).isEqualTo(41L);
             assertThat(session.cancel("Reason").version()).isEqualTo(41L);
-        }
-
-        @Test
-        void reconstructKeepsTheGivenState() {
-            // Arrange
-            SessionId sessionId = SessionId.generate();
-            Booking booking = Booking.create(ASSOCIATION, sessionId, MemberId.generate(), BookingStatus.CONFIRMED,
-                    OPENS_AT);
-
-            // Act
-            Session session = Session.reconstruct(sessionId, ASSOCIATION, GROUP, COACH, START, END, 12,
-                    SessionStatus.COMPLETED, null, List.of(booking), 7L);
-
-            // Assert
-            assertThat(session.id()).isEqualTo(sessionId);
-            assertThat(session.status()).isEqualTo(SessionStatus.COMPLETED);
-            assertThat(session.bookings()).containsExactly(booking);
-            assertThat(session.version()).isEqualTo(7L);
         }
 
         @Test
@@ -367,7 +155,6 @@ class SessionTest {
 
     @Nested
     class Status {
-
         private static final SessionStatus[] TARGETS = {SessionStatus.COMPLETED, SessionStatus.CANCELLED};
 
         private static Stream<Arguments> transitions(boolean legal) {
@@ -429,7 +216,6 @@ class SessionTest {
 
     @Nested
     class BookingRequests {
-
         @Test
         void confirmsTheBookingWhenASeatIsFree() {
             // Arrange
@@ -504,9 +290,9 @@ class SessionTest {
             SessionId sessionId = SessionId.generate();
             MemberId late = MemberId.generate();
             MemberId early = MemberId.generate();
-            Booking lateBooking = Booking.create(ASSOCIATION, sessionId, late, BookingStatus.WAITLISTED, OPENS_AT.plusSeconds(9));
-            Booking earlyBooking = Booking.create(ASSOCIATION, sessionId, early, BookingStatus.WAITLISTED, OPENS_AT.plusSeconds(1));
-            Session session = Session.reconstruct(sessionId, ASSOCIATION, GROUP, COACH, START, END, 1,
+            Booking lateBooking = bookingOf(ASSOCIATION, sessionId, late, BookingStatus.WAITLISTED, OPENS_AT.plusSeconds(9));
+            Booking earlyBooking = bookingOf(ASSOCIATION, sessionId, early, BookingStatus.WAITLISTED, OPENS_AT.plusSeconds(1));
+            Session session = SessionFactory.reconstitute(sessionId, ASSOCIATION, GROUP, COACH, START, END, 1,
                     SessionStatus.SCHEDULED, null, List.of(lateBooking, earlyBooking), 0L);
 
             // Act
@@ -660,7 +446,6 @@ class SessionTest {
 
     @Nested
     class BookingWindow {
-
         @Test
         void acceptsABookingExactlyWhenTheWindowOpens() {
             // Arrange
@@ -744,7 +529,7 @@ class SessionTest {
         void opensAtTheSameLisbonWallClockTimeAcrossTheDstChange() {
             // Arrange - class at 20:00 Lisbon on 29 Mar 2026 (19:00Z, WEST); a week before Lisbon was on WET (UTC+0)
             Instant start = Instant.parse("2026-03-29T19:00:00Z");
-            Session session = Session.create(ASSOCIATION, GROUP, COACH, start, start.plus(Duration.ofMinutes(90)), 12);
+            Session session = SessionFactory.create(ASSOCIATION, GROUP, COACH, start, start.plus(Duration.ofMinutes(90)), 12);
             Instant opens = Instant.parse("2026-03-22T20:00:00Z");
             Executable oneSecondEarly = () -> session.book(MemberId.generate(), POLICY, at(opens.minusSeconds(1)));
 
@@ -759,7 +544,6 @@ class SessionTest {
 
     @Nested
     class CancelBooking {
-
         @Test
         void cancelsFreelyWellBeforeTheDeadline() {
             // Arrange
@@ -970,7 +754,7 @@ class SessionTest {
         void theFreeCancellationDeadlineIsAnAbsoluteSixHoursAcrossTheDstChange() {
             // Arrange - 03:00 Lisbon (WEST) on 29 Mar 2026 is 02:00Z; six absolute hours earlier is 20:00Z on the 28th
             Instant start = Instant.parse("2026-03-29T02:00:00Z");
-            Session session = Session.create(ASSOCIATION, GROUP, COACH, start, start.plus(Duration.ofMinutes(90)), 12);
+            Session session = SessionFactory.create(ASSOCIATION, GROUP, COACH, start, start.plus(Duration.ofMinutes(90)), 12);
             MemberId first = MemberId.generate();
             MemberId second = MemberId.generate();
             Instant bookedAt = Instant.parse("2026-03-22T03:00:00Z");
@@ -1049,7 +833,6 @@ class SessionTest {
 
     @Nested
     class CancelBookingByAssociation {
-
         @Test
         void cancelsAConfirmedBookingAsByAssociationAndFreesTheSeatForTheWaitlist() {
             // Arrange
@@ -1186,7 +969,6 @@ class SessionTest {
 
     @Nested
     class AcceptsCancellations {
-
         @Test
         void isTrueWhileScheduledAndBeforeTheStart() {
             // Arrange
@@ -1230,12 +1012,11 @@ class SessionTest {
 
     @Nested
     class Overlap {
-
         @Test
         void overlapsWhenTheIntervalsShareTime() {
             // Arrange
             Session session = newSession(2);
-            Session later = Session.create(ASSOCIATION, GROUP, COACH, START.plus(Duration.ofMinutes(30)),
+            Session later = SessionFactory.create(ASSOCIATION, GROUP, COACH, START.plus(Duration.ofMinutes(30)),
                     END.plus(Duration.ofMinutes(30)), 2);
 
             // Act
@@ -1251,7 +1032,7 @@ class SessionTest {
         void backToBackSessionsDoNotOverlap() {
             // Arrange
             Session session = newSession(2);
-            Session next = Session.create(ASSOCIATION, GROUP, COACH, END, END.plus(Duration.ofMinutes(90)), 2);
+            Session next = SessionFactory.create(ASSOCIATION, GROUP, COACH, END, END.plus(Duration.ofMinutes(90)), 2);
 
             // Act
             boolean overlaps = session.overlaps(next);
@@ -1264,7 +1045,7 @@ class SessionTest {
         void aSessionAlwaysOverlapsItselfAndASeparateOneDoesNot() {
             // Arrange
             Session session = newSession(2);
-            Session dayAfter = Session.create(ASSOCIATION, GROUP, COACH, START.plus(Duration.ofDays(1)),
+            Session dayAfter = SessionFactory.create(ASSOCIATION, GROUP, COACH, START.plus(Duration.ofDays(1)),
                     END.plus(Duration.ofDays(1)), 2);
 
             // Act
@@ -1279,9 +1060,8 @@ class SessionTest {
 
     @Nested
     class NoOverlapRule {
-
         private Session other(Instant start, Instant end) {
-            return Session.create(ASSOCIATION, GROUP, COACH, start, end, 2);
+            return SessionFactory.create(ASSOCIATION, GROUP, COACH, start, end, 2);
         }
 
         @Test
@@ -1342,7 +1122,6 @@ class SessionTest {
 
     @Nested
     class FindBooking {
-
         @Test
         void findsABookingByIdOrReturnsEmpty() {
             // Arrange
@@ -1397,7 +1176,6 @@ class SessionTest {
 
     @Nested
     class ChangeCapacity {
-
         @Test
         void raisesTheCapacityWithoutAWaitlist() {
             // Arrange
@@ -1588,7 +1366,6 @@ class SessionTest {
 
     @Nested
     class CancelSession {
-
         @Test
         void cancelsTheSessionAndEveryActiveBookingFlaggedAsBySession() {
             // Arrange
@@ -1732,7 +1509,6 @@ class SessionTest {
 
     @Nested
     class CompleteSession {
-
         @Test
         void completesExactlyAtTheStart() {
             // Arrange
@@ -1808,7 +1584,6 @@ class SessionTest {
 
     @Nested
     class Attendance {
-
         @Test
         void marksAConfirmedBookingAttendedFromTheStart() {
             // Arrange
@@ -1930,7 +1705,6 @@ class SessionTest {
 
     @Nested
     class PromoteWaitlist {
-
         @Test
         void promotesEligibleWaitlistedBookingsIntoFreeSeatsInOrder() {
             // Arrange

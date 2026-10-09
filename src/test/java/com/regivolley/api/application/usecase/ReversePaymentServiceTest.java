@@ -6,6 +6,9 @@ import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.exception.PaymentNotFoundException;
 import com.regivolley.api.domain.exception.PaymentNotReversibleException;
 import com.regivolley.api.domain.exception.SubscriptionModifiedConcurrentlyException;
+import com.regivolley.api.domain.factory.PaymentFactory;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Payment;
@@ -69,9 +72,9 @@ class ReversePaymentServiceTest {
     void setUp() {
         association = Data.association();
         admin = Data.admin(association);
-        plan = Plan.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
-        Subscription pending = Subscription.create(plan, Data.member(association).id(), LocalDate.parse("2026-10-01"), List.of());
-        payment = Payment.record(pending, Money.ofCents(3000), PAID_ON, PaymentMethod.CASH, admin.id(), EARLIER);
+        plan = PlanFactory.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
+        Subscription pending = SubscriptionFactory.create(plan, Data.member(association).id(), LocalDate.parse("2026-10-01"), List.of());
+        payment = PaymentFactory.create(pending, Money.ofCents(3000), PAID_ON, PaymentMethod.CASH, admin.id(), EARLIER);
         paid = pending.markPaid();
         useCase = new ReversePaymentService(members, subscriptions, payments, transactions, Data.CLOCK);
         lenient().when(members.findById(association.id(), admin.id())).thenReturn(Optional.of(admin));
@@ -124,9 +127,9 @@ class ReversePaymentServiceTest {
     @Test
     void reversingOneOfTwoPaymentsKeepsAPendingSubscriptionPending() {
         // Arrange
-        Subscription pending = Subscription.create(plan, paid.memberId(), LocalDate.parse("2026-10-01"), List.of());
-        Payment first = Payment.record(pending, Money.ofCents(1000), PAID_ON, PaymentMethod.CASH, admin.id(), EARLIER);
-        Payment second = Payment.record(pending, Money.ofCents(500), PAID_ON, PaymentMethod.CASH, admin.id(), EARLIER);
+        Subscription pending = SubscriptionFactory.create(plan, paid.memberId(), LocalDate.parse("2026-10-01"), List.of());
+        Payment first = PaymentFactory.create(pending, Money.ofCents(1000), PAID_ON, PaymentMethod.CASH, admin.id(), EARLIER);
+        Payment second = PaymentFactory.create(pending, Money.ofCents(500), PAID_ON, PaymentMethod.CASH, admin.id(), EARLIER);
         when(subscriptions.findById(association.id(), pending.id())).thenReturn(Optional.of(pending));
         when(payments.findById(association.id(), second.id())).thenReturn(Optional.of(second));
         when(payments.findBySubscription(association.id(), pending.id())).thenReturn(List.of(first, second));
@@ -143,7 +146,7 @@ class ReversePaymentServiceTest {
     void aPaymentAlreadyReversedCannotBeReversedAgain() {
         // Arrange
         when(payments.findBySubscription(association.id(), paid.id()))
-                .thenReturn(List.of(payment, payment.reverse(admin.id(), EARLIER)));
+                .thenReturn(List.of(payment, PaymentFactory.createReversal(payment, admin.id(), EARLIER)));
         Executable act = () -> useCase.execute(reverse(payment.id()));
 
         // Act
@@ -157,7 +160,7 @@ class ReversePaymentServiceTest {
     @Test
     void aReversalCannotBeReversed() {
         // Arrange
-        Payment reversal = payment.reverse(admin.id(), EARLIER);
+        Payment reversal = PaymentFactory.createReversal(payment, admin.id(), EARLIER);
         when(payments.findById(association.id(), reversal.id())).thenReturn(Optional.of(reversal));
         when(payments.findBySubscription(association.id(), paid.id())).thenReturn(List.of(payment, reversal));
         Executable act = () -> useCase.execute(reverse(reversal.id()));

@@ -5,6 +5,7 @@ import com.regivolley.api.domain.exception.InvalidJoinRequestStatusTransitionExc
 import com.regivolley.api.domain.exception.JoinRequestModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.JoinRequestNotFoundException;
 import com.regivolley.api.domain.exception.NotAllowedException;
+import com.regivolley.api.domain.factory.JoinRequestFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Member;
@@ -56,7 +57,7 @@ class RejectJoinRequestServiceTest {
     void setUp() {
         association = Data.association();
         admin = Data.admin(association);
-        request = JoinRequest.create(association.id(), ContactDetails.of("Rita Costa", EmailAddress.of("rita@example.com"),
+        request = JoinRequestFactory.create(association.id(), ContactDetails.of("Rita Costa", EmailAddress.of("rita@example.com"),
                 PhoneNumber.of("912345678")), true, "2026-01", Data.CLOCK);
         useCase = new RejectJoinRequestService(members, joinRequests, transactions, notifier, Data.CLOCK);
         lenient().when(members.findById(association.id(), admin.id())).thenReturn(Optional.of(admin));
@@ -110,7 +111,7 @@ class RejectJoinRequestServiceTest {
     @Test
     void aRequestOfAnotherAssociationIsNotFound() {
         // Arrange
-        JoinRequest foreign = JoinRequest.create(Data.association().id(), request.contact(), true, "2026-01", Data.CLOCK);
+        JoinRequest foreign = JoinRequestFactory.create(Data.association().id(), request.contact(), true, "2026-01", Data.CLOCK);
         Executable act = () -> useCase.execute(new RejectJoinRequestCommand(Data.actor(admin), foreign.id(), null));
 
         // Act
@@ -123,7 +124,7 @@ class RejectJoinRequestServiceTest {
     @Test
     void aDecidedRequestCannotBeRejected() {
         // Arrange
-        JoinRequest approved = request.approve(association, admin.id(), Data.CLOCK).request();
+        JoinRequest approved = request.approve(admin.id(), Data.CLOCK);
         when(joinRequests.findById(association.id(), request.id())).thenReturn(Optional.of(approved));
         Executable act = () -> useCase.execute(new RejectJoinRequestCommand(Data.actor(admin), request.id(), null));
 

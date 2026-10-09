@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.factory.PaymentFactory;
 import com.regivolley.api.domain.model.entity.Payment;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
@@ -15,9 +16,9 @@ public final class PaymentPersistenceMapper {
     private PaymentPersistenceMapper() {
     }
 
-    /** Rebuilds the aggregate, re-checking its invariants. */
+    /** Rebuilds the aggregate through its factory, which re-checks its invariants. */
     public static Payment toDomain(PaymentJpaEntity entity) {
-        return Payment.reconstruct(new PaymentId(entity.getId()), new AssociationId(entity.getAssociationId()),
+        return PaymentFactory.reconstitute(new PaymentId(entity.getId()), new AssociationId(entity.getAssociationId()),
                 new SubscriptionId(entity.getSubscriptionId()), Money.ofCents(entity.getAmountCents()),
                 entity.getPaidOn(), PaymentMethod.valueOf(entity.getMethod()), new MemberId(entity.getRecordedBy()),
                 entity.getRecordedAt(), entity.getReversalOf() == null ? null : new PaymentId(entity.getReversalOf()));

@@ -4,6 +4,7 @@ import com.regivolley.api.application.command.GenerateSessionsCommand;
 import com.regivolley.api.application.result.SessionGenerationReport;
 import com.regivolley.api.domain.exception.AssociationNotFoundException;
 import com.regivolley.api.domain.exception.SessionModifiedConcurrentlyException;
+import com.regivolley.api.domain.factory.AssociationFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Session;
@@ -109,7 +110,7 @@ class GenerateSessionsServiceTest {
     @Test
     void usesTheAssociationsOwnWindow() {
         // Arrange
-        association = Association.reconstruct(association.id(), association.name(), association.shortName(), null,
+        association = AssociationFactory.reconstitute(association.id(), association.name(), association.shortName(), null,
                 association.locality(), association.contactEmail(), association.bookingPolicy(),
                 new SessionGenerationPolicy(1), NoShowPolicy.defaults(), association.levels(), association.entryLevelId(), 0L);
         when(associations.findById(association.id())).thenReturn(Optional.of(association));

@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.factory.AssociationFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Level;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
@@ -24,13 +25,13 @@ public final class AssociationPersistenceMapper {
     private AssociationPersistenceMapper() {
     }
 
-    /** Rebuilds the aggregate, re-checking its invariants. The entity's levels must be initialised. */
+    /** Rebuilds the aggregate through its factory, which re-checks its invariants. The entity's levels must be initialised. */
     public static Association toDomain(AssociationJpaEntity entity) {
         AssociationId id = new AssociationId(entity.getId());
         List<Level> levels = entity.getLevels().stream()
-                .map(level -> Level.reconstruct(new LevelId(level.getId()), id, level.getName(), level.getLevelRank()))
+                .map(level -> AssociationFactory.reconstituteLevel(new LevelId(level.getId()), id, level.getName(), level.getLevelRank()))
                 .toList();
-        return Association.reconstruct(
+        return AssociationFactory.reconstitute(
                 id,
                 entity.getName(),
                 new ShortName(entity.getShortName()),

@@ -51,7 +51,8 @@ import java.util.function.Predicate;
  * the optimistic lock on this aggregate).
  *
  * <p>Immutable: every operation returns a new {@code Session} (wrapped in a result record when
- * the caller also needs the affected bookings).
+ * the caller also needs the affected bookings). A session is created and reconstituted only by
+ * {@code SessionFactory}; the root itself creates its bookings ({@link #book}), because it guards its parts.
  *
  * <p><b>Coach (RN-02, decided 7/10/2026):</b> the session's coach never takes a seat, even when
  * playing. The coach is implicitly present and is rejected if they try to book; no booking is
@@ -84,34 +85,15 @@ public final class Session implements AggregateRoot {
     private final List<Booking> bookings;
     private final long version;
 
-    private Session(SessionId id, AssociationId associationId, TrainingGroupId trainingGroupId, MemberId coachId,
-                    Instant startsAt, Instant endsAt, int capacity, SessionStatus status,
-                    String cancellationReason, List<Booking> bookings, long version) {
-        this.id = id;
-        this.associationId = associationId;
-        this.trainingGroupId = trainingGroupId;
-        this.coachId = coachId;
-        this.startsAt = startsAt;
-        this.endsAt = endsAt;
-        this.capacity = capacity;
-        this.status = status;
-        this.cancellationReason = cancellationReason;
-        this.bookings = bookings;
-        this.version = version;
-    }
-
-    /** Creates a new SCHEDULED session with no bookings. Capacity is typically inherited from the training group (RN-02). */
-    public static Session create(AssociationId associationId, TrainingGroupId trainingGroupId, MemberId coachId,
-                                 Instant startsAt, Instant endsAt, int capacity) {
-        return reconstruct(SessionId.generate(), associationId, trainingGroupId, coachId, startsAt, endsAt,
-                capacity, SessionStatus.SCHEDULED, null, List.of(), 0L);
-    }
-
-    /** Rebuilds a session from persisted data, re-checking its invariants. */
-    public static Session reconstruct(SessionId id, AssociationId associationId, TrainingGroupId trainingGroupId,
-                                      MemberId coachId, Instant startsAt, Instant endsAt, int capacity,
-                                      SessionStatus status, String cancellationReason, List<Booking> bookings,
-                                      long version) {
+    /**
+     * Checks every invariant, so no session exists in an invalid state. Public because the only callers are
+     * {@code SessionFactory} (new sessions and persisted ones) and this class; the architecture test pins that.
+     * Every operation below builds its result through here too, so the rules hold after each transition.
+     */
+    public Session(SessionId id, AssociationId associationId, TrainingGroupId trainingGroupId,
+                   MemberId coachId, Instant startsAt, Instant endsAt, int capacity,
+                   SessionStatus status, String cancellationReason, List<Booking> bookings,
+                   long version) {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(associationId, "associationId must not be null");
         Objects.requireNonNull(trainingGroupId, "trainingGroupId must not be null");
@@ -135,8 +117,17 @@ public final class Session implements AggregateRoot {
             throw new InvalidSessionException("Confirmed bookings exceed the session capacity");
         }
         requireOneLiveBookingPerMember(owned, coachId);
-        return new Session(id, associationId, trainingGroupId, coachId, startsAt, endsAt, capacity, status,
-                cancellationReason, owned, version);
+        this.id = id;
+        this.associationId = associationId;
+        this.trainingGroupId = trainingGroupId;
+        this.coachId = coachId;
+        this.startsAt = startsAt;
+        this.endsAt = endsAt;
+        this.capacity = capacity;
+        this.status = status;
+        this.cancellationReason = cancellationReason;
+        this.bookings = owned;
+        this.version = version;
     }
 
     private static void requireOneLiveBookingPerMember(List<Booking> bookings, MemberId coachId) {
@@ -184,7 +175,8 @@ public final class Session implements AggregateRoot {
         }
 
         BookingStatus initial = freeSeats() > 0 ? BookingStatus.CONFIRMED : BookingStatus.WAITLISTED;
-        Booking booking = Booking.create(associationId, id, memberId, initial, now);
+        Instant confirmedAt = initial == BookingStatus.CONFIRMED ? now : null;
+        Booking booking = new Booking(BookingId.generate(), associationId, id, memberId, initial, now, confirmedAt, null);
         List<Booking> updated = new ArrayList<>(bookings);
         updated.add(booking);
         return new BookingResult(withBookings(updated), booking);

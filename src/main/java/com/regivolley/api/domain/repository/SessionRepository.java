@@ -29,7 +29,7 @@ public interface SessionRepository {
 
     /**
      * Sessions of one training group starting in {@code [from, toExclusive)}, CANCELLED ones
-     * included, oldest first: exactly what {@code TrainingGroup.generateSessions} must be given.
+     * included, oldest first: exactly what {@code TrainingGroup.occurrencesToGenerate} must be given.
      */
     List<Session> findByTrainingGroupStartingBetween(AssociationId associationId, TrainingGroupId trainingGroupId,
                                                      Instant from, Instant toExclusive);

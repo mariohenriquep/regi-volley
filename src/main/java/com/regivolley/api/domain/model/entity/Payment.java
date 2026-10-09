@@ -7,11 +7,9 @@ import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.model.valueobject.Money;
 import com.regivolley.api.domain.model.valueobject.PaymentId;
 import com.regivolley.api.domain.model.valueobject.PaymentMethod;
-import com.regivolley.api.domain.model.valueobject.ScheduleZone;
 import com.regivolley.api.domain.model.valueobject.SubscriptionId;
 import com.regivolley.api.domain.shared.AggregateRoot;
 
-import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Objects;
@@ -22,7 +20,8 @@ import java.util.Optional;
  * and <b>append-only</b> (RN-19): a payment is never updated or deleted, so it has no version to
  * protect; a mistake is corrected by recording a <em>reversal</em>, a second payment of the same amount
  * that points at the first through {@link #reversalOf()} and counts negatively. The audit (who recorded it and
- * when) is part of every payment, reversals included.
+ * when) is part of every payment, reversals included. A payment, and its reversal, is created and reconstituted
+ * only by {@code PaymentFactory}.
  *
  * <p>The amount is always positive; {@link #signedCents()} gives the contribution to what the member has paid.
  * What the payments of a subscription add up to, and whether that settles the subscription, is judged by
@@ -40,48 +39,16 @@ public final class Payment implements AggregateRoot {
     private final Instant recordedAt;
     private final PaymentId reversalOf;
 
-    private Payment(PaymentId id, AssociationId associationId, SubscriptionId subscriptionId, Money amount,
-                    LocalDate paidOn, PaymentMethod method, MemberId recordedBy, Instant recordedAt,
-                    PaymentId reversalOf) {
-        this.id = id;
-        this.associationId = associationId;
-        this.subscriptionId = subscriptionId;
-        this.amount = amount;
-        this.paidOn = paidOn;
-        this.method = method;
-        this.recordedBy = recordedBy;
-        this.recordedAt = recordedAt;
-        this.reversalOf = reversalOf;
-    }
-
     /**
-     * Records money received for {@code subscription}.
-     *
-     * @param paidOn     the day the money was handed over (a Europe/Lisbon calendar date), as the administrator states it
-     * @param recordedBy the administrator who records it; the caller has authorised them
-     * @throws InvalidFieldException if the amount is zero or the date is after today in Lisbon
-     */
-    public static Payment record(Subscription subscription, Money amount, LocalDate paidOn, PaymentMethod method,
-                                 MemberId recordedBy, Clock clock) {
-        Objects.requireNonNull(subscription, "subscription must not be null");
-        Objects.requireNonNull(clock, "clock must not be null");
-        Objects.requireNonNull(paidOn, "paidOn must not be null");
-        LocalDate today = clock.instant().atZone(ScheduleZone.LISBON.zoneId()).toLocalDate();
-        if (paidOn.isAfter(today)) {
-            throw new InvalidFieldException("payment date", "The payment date cannot be in the future");
-        }
-        return reconstruct(PaymentId.generate(), subscription.associationId(), subscription.id(), amount, paidOn,
-                method, recordedBy, clock.instant(), null);
-    }
-
-    /**
-     * Rebuilds a payment from persisted data, re-checking its invariants.
+     * Checks every invariant, so no payment exists in an invalid state. Public because the only callers are
+     * {@code PaymentFactory} (new payments, reversals and persisted ones) and this class; the architecture test
+     * pins that.
      *
      * @param reversalOf the payment this one reverses, or null for an ordinary payment
      */
-    public static Payment reconstruct(PaymentId id, AssociationId associationId, SubscriptionId subscriptionId,
-                                      Money amount, LocalDate paidOn, PaymentMethod method, MemberId recordedBy,
-                                      Instant recordedAt, PaymentId reversalOf) {
+    public Payment(PaymentId id, AssociationId associationId, SubscriptionId subscriptionId, Money amount,
+                   LocalDate paidOn, PaymentMethod method, MemberId recordedBy, Instant recordedAt,
+                   PaymentId reversalOf) {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(associationId, "associationId must not be null");
         Objects.requireNonNull(subscriptionId, "subscriptionId must not be null");
@@ -96,26 +63,15 @@ public final class Payment implements AggregateRoot {
         if (id.equals(reversalOf)) {
             throw new InvalidPaymentException("A payment cannot reverse itself");
         }
-        return new Payment(id, associationId, subscriptionId, amount, paidOn, method, recordedBy, recordedAt, reversalOf);
-    }
-
-    /**
-     * The reversal of this payment (RN-19): a new payment of the same amount and method that counts negatively,
-     * dated today in Lisbon. This payment is not touched.
-     *
-     * @param reversedBy the administrator who reverses it; the caller has authorised them
-     * @throws InvalidPaymentException if this payment is itself a reversal ({@code PaymentLedger} reports that,
-     *                                 and a payment already reversed, as a rule violation before getting here)
-     */
-    public Payment reverse(MemberId reversedBy, Clock clock) {
-        Objects.requireNonNull(reversedBy, "reversedBy must not be null");
-        Objects.requireNonNull(clock, "clock must not be null");
-        if (isReversal()) {
-            throw new InvalidPaymentException("A reversal cannot be reversed");
-        }
-        Instant now = clock.instant();
-        return reconstruct(PaymentId.generate(), associationId, subscriptionId, amount,
-                now.atZone(ScheduleZone.LISBON.zoneId()).toLocalDate(), method, reversedBy, now, id);
+        this.id = id;
+        this.associationId = associationId;
+        this.subscriptionId = subscriptionId;
+        this.amount = amount;
+        this.paidOn = paidOn;
+        this.method = method;
+        this.recordedBy = recordedBy;
+        this.recordedAt = recordedAt;
+        this.reversalOf = reversalOf;
     }
 
     public boolean isReversal() {

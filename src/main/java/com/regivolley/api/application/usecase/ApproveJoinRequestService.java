@@ -3,10 +3,11 @@ package com.regivolley.api.application.usecase;
 import com.regivolley.api.application.command.ApproveJoinRequestCommand;
 import com.regivolley.api.application.port.AccountProvisioner;
 import com.regivolley.api.application.port.TransactionRunner;
+import com.regivolley.api.application.result.JoinRequestApproval;
+import com.regivolley.api.domain.factory.MemberFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Member;
-import com.regivolley.api.domain.model.result.JoinRequestApproval;
 import com.regivolley.api.domain.port.Notifier;
 import com.regivolley.api.domain.repository.AssociationRepository;
 import com.regivolley.api.domain.repository.JoinRequestRepository;
@@ -60,9 +61,10 @@ public class ApproveJoinRequestService implements ApproveJoinRequestUseCase {
         JoinRequest request = Lookups.joinRequest(joinRequests, associationId, command.requestId());
         Association association = Lookups.association(associations, associationId);
 
-        JoinRequestApproval approval = request.approve(association, admin.id(), clock);
-        JoinRequest storedRequest = joinRequests.save(approval.request());
-        Member storedMember = members.save(approval.member());
+        JoinRequest approved = request.approve(admin.id(), clock);
+        Member member = MemberFactory.fromApprovedJoinRequest(association, approved);
+        JoinRequest storedRequest = joinRequests.save(approved);
+        Member storedMember = members.save(member);
         return Outcome.of(new JoinRequestApproval(storedRequest, storedMember),
                 List.of(n -> n.memberApproved(associationId, storedMember.id())));
     }

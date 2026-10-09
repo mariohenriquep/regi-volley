@@ -4,6 +4,9 @@ import com.regivolley.api.domain.exception.BookingNotAllowedException;
 import com.regivolley.api.domain.exception.InvalidPaymentStatusTransitionException;
 import com.regivolley.api.domain.exception.InvalidSubscriptionException;
 import com.regivolley.api.domain.exception.SubscriptionOverlapException;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SessionFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.BookingId;
 import com.regivolley.api.domain.model.valueobject.BookingRejectionReason;
@@ -16,7 +19,6 @@ import com.regivolley.api.domain.model.valueobject.Money;
 import com.regivolley.api.domain.model.valueobject.PaymentStatus;
 import com.regivolley.api.domain.model.valueobject.PlanId;
 import com.regivolley.api.domain.model.valueobject.PlanTerms;
-import com.regivolley.api.domain.model.valueobject.PlanType;
 import com.regivolley.api.domain.model.valueobject.ScheduleZone;
 import com.regivolley.api.domain.model.valueobject.SessionId;
 import com.regivolley.api.domain.model.valueobject.SubscriptionId;
@@ -43,7 +45,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class SubscriptionTest {
-
     private static final AssociationId ASSOCIATION = AssociationId.generate();
     private static final MemberId MEMBER = MemberId.generate();
     private static final Money PRICE = Money.ofCents(3500);
@@ -53,23 +54,23 @@ class SubscriptionTest {
     private static final LocalDate TODAY = LocalDate.parse("2026-10-14");
 
     private static Plan unlimited() {
-        return Plan.create(ASSOCIATION, "Unlimited", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
+        return PlanFactory.create(ASSOCIATION, "Unlimited", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
     }
 
     private static Plan perWeek(int sessionsPerWeek) {
-        return Plan.create(ASSOCIATION, "N per week", PlanTerms.monthlyNPerWeek(sessionsPerWeek, Set.of()), PRICE, null);
+        return PlanFactory.create(ASSOCIATION, "N per week", PlanTerms.monthlyNPerWeek(sessionsPerWeek, Set.of()), PRICE, null);
     }
 
     private static Plan pack(int credits, int validityDays) {
-        return Plan.create(ASSOCIATION, "Pack", PlanTerms.pack(credits, Set.of()), PRICE, validityDays);
+        return PlanFactory.create(ASSOCIATION, "Pack", PlanTerms.pack(credits, Set.of()), PRICE, validityDays);
     }
 
     private static Plan single() {
-        return Plan.create(ASSOCIATION, "Drop-in", PlanTerms.singleSession(Set.of()), PRICE, 1);
+        return PlanFactory.create(ASSOCIATION, "Drop-in", PlanTerms.singleSession(Set.of()), PRICE, 1);
     }
 
     private static Subscription subscribe(Plan plan, String start) {
-        return Subscription.create(plan, MEMBER, LocalDate.parse(start), List.of());
+        return SubscriptionFactory.create(plan, MEMBER, LocalDate.parse(start), List.of());
     }
 
     /** Europe/Lisbon wall-clock time, e.g. {@code "2026-10-14T20:00"}. */
@@ -78,7 +79,7 @@ class SubscriptionTest {
     }
 
     private static Subscription inStatus(Subscription base, PaymentStatus status) {
-        return Subscription.reconstruct(base.id(), base.associationId(), base.memberId(), base.planId(),
+        return SubscriptionFactory.reconstitute(base.id(), base.associationId(), base.memberId(), base.planId(),
                 base.terms(), base.price(), base.startDate(), base.endDate(), status, base.usages(), base.version());
     }
 
@@ -95,255 +96,10 @@ class SubscriptionTest {
         return subscription.rejectionFor(lisbon(sessionStart), ANY_GROUP);
     }
 
-    @Nested
-    class Creation {
-
-        @Test
-        void startsPendingWithThePlanSnapshotAndAnEmptyBalanceUsage() {
-            // Arrange
-            Plan plan = pack(10, 90);
-
-            // Act
-            Subscription subscription = Subscription.create(plan, MEMBER, LocalDate.parse("2026-10-01"), List.of());
-
-            // Assert
-            assertThat(subscription.id()).isNotNull();
-            assertThat(subscription.associationId()).isEqualTo(ASSOCIATION);
-            assertThat(subscription.memberId()).isEqualTo(MEMBER);
-            assertThat(subscription.planId()).isEqualTo(plan.id());
-            assertThat(subscription.terms()).isEqualTo(plan.terms());
-            assertThat(subscription.type()).isEqualTo(PlanType.PACK);
-            assertThat(subscription.startDate()).isEqualTo(LocalDate.parse("2026-10-01"));
-            assertThat(subscription.endDate()).isEqualTo(LocalDate.parse("2026-12-29"));
-            assertThat(subscription.paymentStatus()).isEqualTo(PaymentStatus.PENDING);
-            assertThat(subscription.usages()).isEmpty();
-            assertThat(subscription.creditsUsed()).isZero();
-            assertThat(subscription.version()).isZero();
-        }
-
-        @Test
-        void keepsThePriceThePlanHadWhenItWasAssignedEvenIfThePlanChangesLater() {
-            // Arrange
-            Plan plan = pack(10, 90);
-            Subscription subscription = Subscription.create(plan, MEMBER, LocalDate.parse("2026-10-01"), List.of());
-            Plan repriced = plan.edit(plan.name(), plan.terms(), Money.ofCents(9900), 90);
-
-            // Act
-            Subscription renewal = Subscription.renew(repriced, subscription, List.of(subscription), LocalDate.parse("2026-12-30"));
-
-            // Assert
-            assertThat(subscription.price()).isEqualTo(PRICE);
-            assertThat(renewal.price()).isEqualTo(Money.ofCents(9900));
-            assertThat(subscription.markPaid().price()).isEqualTo(PRICE);
-            assertThat(subscription.consume(BookingId.generate(), lisbon("2026-10-14T20:00")).price()).isEqualTo(PRICE);
-        }
-
-        @Test
-        void aSubscriptionNeedsAPrice() {
-            // Arrange
-            Executable act = () -> Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
-                    PlanId.generate(), PlanTerms.monthlyUnlimited(Set.of()), null, LocalDate.parse("2026-10-01"),
-                    LocalDate.parse("2026-10-31"), PaymentStatus.PAID, List.of(), 0L);
-
-            // Act
-            NullPointerException ex = assertThrows(NullPointerException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("price");
-        }
-
-        @Test
-        void everyChangeKeepsTheVersionTheSubscriptionWasLoadedWith() {
-            // Arrange
-            Subscription loaded = Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
-                    PlanId.generate(), PlanTerms.pack(5, Set.of()), Money.ofCents(4500),
-                    LocalDate.parse("2026-10-01"),
-                    LocalDate.parse("2026-12-29"), PaymentStatus.PENDING, List.of(), 4L);
-            BookingId booking = BookingId.generate();
-
-            // Act
-            Subscription changed = loaded.consume(booking, lisbon("2026-10-12T20:00:00")).markPaid();
-            Subscription refunded = changed.refund(booking);
-
-            // Assert
-            assertThat(loaded.version()).isEqualTo(4L);
-            assertThat(changed.version()).isEqualTo(4L);
-            assertThat(refunded.version()).isEqualTo(4L);
-        }
-
-        @Test
-        void reconstructRejectsANegativeVersion() {
-            // Arrange
-            Executable act = () -> Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
-                    PlanId.generate(), PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000),
-                    LocalDate.parse("2026-10-01"),
-                    LocalDate.parse("2026-10-31"), PaymentStatus.PAID, List.of(), -1L);
-
-            // Act
-            InvalidSubscriptionException ex = assertThrows(InvalidSubscriptionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("version");
-        }
-
-        @Test
-        void keepsTheTermsItWasCreatedWithEvenIfThePlanChangesLater() {
-            // Arrange
-            Plan original = pack(10, 90);
-            Subscription subscription = subscribe(original, "2026-10-01");
-            Plan edited = Plan.reconstruct(original.id(), ASSOCIATION, "Pack", PlanTerms.pack(20, Set.of()), PRICE, 90, 0L);
-
-            // Act
-            int balance = subscription.balanceOn(LocalDate.parse("2026-10-02")).getAsInt();
-
-            // Assert
-            assertThat(edited.terms().credits()).isEqualTo(20);
-            assertThat(balance).isEqualTo(10);
-        }
-
-        @Test
-        void rejectsNullArguments() {
-            // Arrange
-            Plan plan = unlimited();
-            LocalDate start = LocalDate.parse("2026-10-01");
-            Executable noPlan = () -> Subscription.create(null, MEMBER, start, List.of());
-            Executable noMember = () -> Subscription.create(plan, null, start, List.of());
-            Executable noStart = () -> Subscription.create(plan, MEMBER, null, List.of());
-            Executable noExisting = () -> Subscription.create(plan, MEMBER, start, null);
-
-            // Act
-            NullPointerException planEx = assertThrows(NullPointerException.class, noPlan);
-            NullPointerException memberEx = assertThrows(NullPointerException.class, noMember);
-            NullPointerException startEx = assertThrows(NullPointerException.class, noStart);
-            NullPointerException existingEx = assertThrows(NullPointerException.class, noExisting);
-
-            // Assert
-            assertThat(planEx.getMessage()).contains("plan");
-            assertThat(memberEx.getMessage()).contains("memberId");
-            assertThat(startEx.getMessage()).contains("startDate");
-            assertThat(existingEx.getMessage()).contains("existing");
-        }
-    }
-
-    @Nested
-    class Reconstruction {
-
-        static Stream<String> datesOutsideOctober() {
-            return Stream.of("2026-09-30", "2026-11-01");
-        }
-
-        private Subscription reconstruct(PlanTerms terms, String start, String end, List<CreditUsage> usages) {
-            return Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER, PlanId.generate(), terms, Money.ofCents(3000),
-                    LocalDate.parse(start), LocalDate.parse(end), PaymentStatus.PAID, usages, 0L);
-        }
-
-        @Test
-        void rebuildsAValidSubscription() {
-            // Arrange
-            CreditUsage usage = new CreditUsage(BookingId.generate(), LocalDate.parse("2026-10-05"));
-
-            // Act
-            Subscription subscription = reconstruct(PlanTerms.pack(3, Set.of()), "2026-10-01", "2026-10-31", List.of(usage));
-
-            // Assert
-            assertThat(subscription.usages()).containsExactly(usage);
-            assertThat(subscription.paymentStatus()).isEqualTo(PaymentStatus.PAID);
-        }
-
-        @Test
-        void rejectsAnEndBeforeTheStart() {
-            // Arrange
-            Executable act = () -> reconstruct(PlanTerms.monthlyUnlimited(Set.of()), "2026-10-02", "2026-10-01", List.of());
-
-            // Act
-            InvalidSubscriptionException ex = assertThrows(InvalidSubscriptionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("end before");
-        }
-
-        @Test
-        void acceptsAOneDayPeriod() {
-            // Arrange
-            // (start equals end)
-
-            // Act
-            Subscription subscription = reconstruct(PlanTerms.singleSession(Set.of()), "2026-10-01", "2026-10-01", List.of());
-
-            // Assert
-            assertThat(subscription.isValidOn(LocalDate.parse("2026-10-01"))).isTrue();
-        }
-
-        @Test
-        void rejectsTheSameBookingHoldingTwoPlaces() {
-            // Arrange
-            BookingId booking = BookingId.generate();
-            List<CreditUsage> usages = List.of(
-                    new CreditUsage(booking, LocalDate.parse("2026-10-05")),
-                    new CreditUsage(booking, LocalDate.parse("2026-10-06")));
-            Executable act = () -> reconstruct(PlanTerms.pack(5, Set.of()), "2026-10-01", "2026-10-31", usages);
-
-            // Act
-            InvalidSubscriptionException ex = assertThrows(InvalidSubscriptionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("only one place");
-        }
-
-        @ParameterizedTest
-        @MethodSource("datesOutsideOctober")
-        void rejectsASessionOutsideThePeriod(String sessionDate) {
-            // Arrange
-            List<CreditUsage> usages = List.of(new CreditUsage(BookingId.generate(), LocalDate.parse(sessionDate)));
-            Executable act = () -> reconstruct(PlanTerms.pack(5, Set.of()), "2026-10-01", "2026-10-31", usages);
-
-            // Act
-            InvalidSubscriptionException ex = assertThrows(InvalidSubscriptionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("outside");
-        }
-
-        @Test
-        void rejectsMoreCreditsUsedThanThePlanGrants() {
-            // Arrange
-            List<CreditUsage> usages = List.of(
-                    new CreditUsage(BookingId.generate(), LocalDate.parse("2026-10-05")),
-                    new CreditUsage(BookingId.generate(), LocalDate.parse("2026-10-06")));
-            Executable act = () -> reconstruct(PlanTerms.pack(1, Set.of()), "2026-10-01", "2026-10-31", usages);
-
-            // Act
-            InvalidSubscriptionException ex = assertThrows(InvalidSubscriptionException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("credits");
-        }
-
-        @Test
-        void rejectsMissingRequiredFields() {
-            // Arrange
-            PlanTerms terms = PlanTerms.monthlyUnlimited(Set.of());
-            LocalDate start = LocalDate.parse("2026-10-01");
-            Executable noId = () -> Subscription.reconstruct(null, ASSOCIATION, MEMBER, PlanId.generate(), terms, Money.ofCents(3000),
-                    start, start, PaymentStatus.PAID, List.of(), 0L);
-            Executable noStatus = () -> Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
-                    PlanId.generate(), terms, Money.ofCents(3000), start, start, null, List.of(), 0L);
-
-            // Act
-            NullPointerException id = assertThrows(NullPointerException.class, noId);
-            NullPointerException status = assertThrows(NullPointerException.class, noStatus);
-
-            // Assert
-            assertThat(id.getMessage()).contains("id");
-            assertThat(status.getMessage()).contains("paymentStatus");
-        }
-    }
-
     // ---------------------------------------------------------------- RN-13 balance rules
 
     @Nested
     class MonthlyUnlimited {
-
         @Test
         void hasNoLimitOnTheNumberOfSessions() {
             // Arrange
@@ -374,7 +130,6 @@ class SubscriptionTest {
 
     @Nested
     class MonthlyNPerWeek {
-
         @Test
         void allowsNSessionsInAWeekAndRejectsTheNextOne() {
             // Arrange
@@ -492,7 +247,6 @@ class SubscriptionTest {
 
     @Nested
     class Pack {
-
         @Test
         void spendsOneCreditPerBookingUntilItRunsOut() {
             // Arrange
@@ -577,7 +331,6 @@ class SubscriptionTest {
 
     @Nested
     class SingleSession {
-
         @Test
         void allowsExactlyOneSessionOnItsDay() {
             // Arrange
@@ -598,7 +351,6 @@ class SubscriptionTest {
 
     @Nested
     class ConsumeAndRefund {
-
         @Test
         void consumingRecordsTheBookingAndTheLisbonSessionDate() {
             // Arrange
@@ -766,7 +518,6 @@ class SubscriptionTest {
 
     @Nested
     class RejectionOrder {
-
         @Test
         void reportsAnOverdueSubscriptionWithBalance() {
             // Arrange
@@ -794,7 +545,7 @@ class SubscriptionTest {
         @Test
         void reportsThePlanLevelBeforeBalanceAndOverdue() {
             // Arrange
-            Plan restricted = Plan.create(ASSOCIATION, "Open play only", PlanTerms.pack(5, Set.of(OPEN_PLAY)), PRICE, 90);
+            Plan restricted = PlanFactory.create(ASSOCIATION, "Open play only", PlanTerms.pack(5, Set.of(OPEN_PLAY)), PRICE, 90);
             Subscription overdue = subscribe(restricted, "2026-10-01").markOverdue();
 
             // Act
@@ -807,7 +558,7 @@ class SubscriptionTest {
         @Test
         void reportsOutsideThePeriodBeforeEverythingElse() {
             // Arrange
-            Plan restricted = Plan.create(ASSOCIATION, "Open play only", PlanTerms.pack(5, Set.of(OPEN_PLAY)), PRICE, 10);
+            Plan restricted = PlanFactory.create(ASSOCIATION, "Open play only", PlanTerms.pack(5, Set.of(OPEN_PLAY)), PRICE, 10);
             Subscription overdue = subscribe(restricted, "2026-10-01").markOverdue();
 
             // Act
@@ -835,7 +586,6 @@ class SubscriptionTest {
 
     @Nested
     class PaymentTransitions {
-
         @Test
         void pendingBecomesPaid() {
             // Arrange
@@ -961,173 +711,10 @@ class SubscriptionTest {
         }
     }
 
-    // ------------------------------------------------------------------ RN-16
-
-    @Nested
-    class Overlap {
-
-        private Subscription october() {
-            return subscribe(unlimited(), "2026-10-01");
-        }
-
-        static Stream<Arguments> overlappingStarts() {
-            return Stream.of(
-                    Arguments.of("same period", "2026-10-01"),
-                    Arguments.of("starts inside", "2026-10-15"),
-                    Arguments.of("starts on the last day", "2026-10-31"),
-                    Arguments.of("starts before and runs into it", "2026-09-15")
-            );
-        }
-
-        @ParameterizedTest(name = "{0}")
-        @MethodSource("overlappingStarts")
-        void rejectsAnOverlappingPeriod(String description, String start) {
-            // Arrange
-            Subscription existing = october();
-            Executable act = () -> Subscription.create(unlimited(), MEMBER, LocalDate.parse(start), List.of(existing));
-
-            // Act
-            SubscriptionOverlapException ex = assertThrows(SubscriptionOverlapException.class, act);
-
-            // Assert
-            assertThat(ex.conflictStart()).isEqualTo(LocalDate.parse("2026-10-01"));
-            assertThat(ex.conflictEnd()).isEqualTo(LocalDate.parse("2026-10-31"));
-            assertThat(ex.getMessage()).contains("01/10/2026").contains("31/10/2026");
-        }
-
-        @Test
-        void rejectsANewPeriodThatFullyContainsAnExistingOne() {
-            // Arrange
-            Subscription oneDay = subscribe(single(), "2026-10-14");
-            Executable act = () -> Subscription.create(unlimited(), MEMBER, LocalDate.parse("2026-10-01"), List.of(oneDay));
-
-            // Act
-            SubscriptionOverlapException ex = assertThrows(SubscriptionOverlapException.class, act);
-
-            // Assert
-            assertThat(ex.conflictStart()).isEqualTo(LocalDate.parse("2026-10-14"));
-        }
-
-        @Test
-        void allowsAPeriodStartingTheDayAfterTheExistingOneEnds() {
-            // Arrange
-            Subscription existing = october();
-
-            // Act
-            Subscription next = Subscription.create(unlimited(), MEMBER, LocalDate.parse("2026-11-01"), List.of(existing));
-
-            // Assert
-            assertThat(next.startDate()).isEqualTo(LocalDate.parse("2026-11-01"));
-        }
-
-        @Test
-        void allowsAPeriodEndingTheDayBeforeTheExistingOneStarts() {
-            // Arrange
-            Subscription existing = october();
-            Plan oneDay = single();
-
-            // Act
-            Subscription before = Subscription.create(oneDay, MEMBER, LocalDate.parse("2026-09-30"), List.of(existing));
-
-            // Assert
-            assertThat(before.endDate()).isEqualTo(LocalDate.parse("2026-09-30"));
-        }
-
-        @Test
-        void ignoresOtherMembersSubscriptions() {
-            // Arrange
-            Subscription someoneElses = Subscription.create(unlimited(), MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
-
-            // Act
-            Subscription mine = Subscription.create(unlimited(), MEMBER, LocalDate.parse("2026-10-01"), List.of(someoneElses));
-
-            // Assert
-            assertThat(mine.memberId()).isEqualTo(MEMBER);
-        }
-
-        @Test
-        void overlapsIsInclusiveOnBothEnds() {
-            // Arrange
-            Subscription existing = october();
-
-            // Act
-            boolean touchesStart = existing.overlaps(LocalDate.parse("2026-09-20"), LocalDate.parse("2026-10-01"));
-            boolean touchesEnd = existing.overlaps(LocalDate.parse("2026-10-31"), LocalDate.parse("2026-11-20"));
-            boolean before = existing.overlaps(LocalDate.parse("2026-09-20"), LocalDate.parse("2026-09-30"));
-            boolean after = existing.overlaps(LocalDate.parse("2026-11-01"), LocalDate.parse("2026-11-20"));
-
-            // Assert
-            assertThat(touchesStart).isTrue();
-            assertThat(touchesEnd).isTrue();
-            assertThat(before).isFalse();
-            assertThat(after).isFalse();
-        }
-    }
-
-    @Nested
-    class Renewal {
-
-        @Test
-        void startsTheDayAfterThePreviousEnds() {
-            // Arrange
-            Subscription previous = subscribe(unlimited(), "2026-10-01");
-
-            // Act
-            Subscription renewed = Subscription.renew(unlimited(), previous, List.of(previous), TODAY);
-
-            // Assert
-            assertThat(previous.renewalStartDate()).isEqualTo(LocalDate.parse("2026-11-01"));
-            assertThat(renewed.startDate()).isEqualTo(LocalDate.parse("2026-11-01"));
-            assertThat(renewed.endDate()).isEqualTo(LocalDate.parse("2026-11-30"));
-            assertThat(renewed.memberId()).isEqualTo(MEMBER);
-            assertThat(renewed.paymentStatus()).isEqualTo(PaymentStatus.PENDING);
-        }
-
-        @Test
-        void aRenewalIntoADifferentPlanTypeIsAllowed() {
-            // Arrange
-            Subscription previous = subscribe(unlimited(), "2026-10-01");
-
-            // Act
-            Subscription renewed = Subscription.renew(pack(10, 90), previous, List.of(previous), TODAY);
-
-            // Assert
-            assertThat(renewed.type()).isEqualTo(PlanType.PACK);
-            assertThat(renewed.startDate()).isEqualTo(LocalDate.parse("2026-11-01"));
-        }
-
-        @Test
-        void isRejectedWhenTheRenewalPeriodAlreadyHasASubscription() {
-            // Arrange
-            Subscription previous = subscribe(unlimited(), "2026-10-01");
-            Subscription alreadyRenewed = Subscription.renew(unlimited(), previous, List.of(previous), TODAY);
-            Executable act = () -> Subscription.renew(unlimited(), previous, List.of(previous, alreadyRenewed), TODAY);
-
-            // Act
-            SubscriptionOverlapException ex = assertThrows(SubscriptionOverlapException.class, act);
-
-            // Assert
-            assertThat(ex.conflictStart()).isEqualTo(LocalDate.parse("2026-11-01"));
-        }
-
-        @Test
-        void rejectsANullPrevious() {
-            // Arrange
-            Executable act = () -> Subscription.renew(unlimited(), null, List.of(), TODAY);
-
-            // Act
-            NullPointerException ex = assertThrows(NullPointerException.class, act);
-
-            // Assert
-            assertThat(ex.getMessage()).contains("previous");
-        }
-    }
-
     // ------------------------------------------------- RN-16 decisions (exhausted packs, weekly)
 
     @Nested
     class ExhaustedCreditPlans {
-
         private Subscription exhaustedPack() {
             return subscribe(pack(1, 90), "2026-10-01").consume(BookingId.generate(), lisbon("2026-10-05T20:00"));
         }
@@ -1160,36 +747,12 @@ class SubscriptionTest {
         }
 
         @Test
-        void aNewPackMayStartInsideTheOldExhaustedOnesPeriod() {
-            // Arrange
-            Subscription exhausted = exhaustedPack();
-
-            // Act
-            Subscription next = Subscription.create(pack(10, 90), MEMBER, LocalDate.parse("2026-10-14"), List.of(exhausted));
-
-            // Assert
-            assertThat(next.startDate()).isEqualTo(LocalDate.parse("2026-10-14"));
-        }
-
-        @Test
-        void aNewMonthlyPlanMayAlsoStartOverAnExhaustedPack() {
-            // Arrange
-            Subscription exhausted = exhaustedPack();
-
-            // Act
-            Subscription next = Subscription.create(unlimited(), MEMBER, LocalDate.parse("2026-10-14"), List.of(exhausted));
-
-            // Assert
-            assertThat(next.startDate()).isEqualTo(LocalDate.parse("2026-10-14"));
-        }
-
-        @Test
         void anExhaustedSingleSessionDoesNotBlockANewPackEither() {
             // Arrange
             Subscription exhausted = consumeAll(subscribe(single(), "2026-10-14"), "2026-10-14T20:00");
 
             // Act
-            Subscription next = Subscription.create(pack(10, 90), MEMBER, LocalDate.parse("2026-10-14"), List.of(exhausted));
+            Subscription next = SubscriptionFactory.create(pack(10, 90), MEMBER, LocalDate.parse("2026-10-14"), List.of(exhausted));
 
             // Assert
             assertThat(exhausted.isExhausted()).isTrue();
@@ -1200,7 +763,7 @@ class SubscriptionTest {
         void aPackWithCreditsLeftStillBlocksAnOverlappingSubscription() {
             // Arrange
             Subscription active = subscribe(pack(2, 90), "2026-10-01");
-            Executable act = () -> Subscription.create(pack(10, 90), MEMBER, LocalDate.parse("2026-10-14"), List.of(active));
+            Executable act = () -> SubscriptionFactory.create(pack(10, 90), MEMBER, LocalDate.parse("2026-10-14"), List.of(active));
 
             // Act
             SubscriptionOverlapException ex = assertThrows(SubscriptionOverlapException.class, act);
@@ -1213,7 +776,7 @@ class SubscriptionTest {
         void aMonthlySubscriptionBlocksANewPackEvenWhenItsWeeklyAllowanceIsUsedUp() {
             // Arrange
             Subscription monthly = consumeAll(subscribe(perWeek(1), "2026-10-01"), "2026-10-14T20:00");
-            Executable act = () -> Subscription.create(pack(10, 90), MEMBER, LocalDate.parse("2026-10-15"), List.of(monthly));
+            Executable act = () -> SubscriptionFactory.create(pack(10, 90), MEMBER, LocalDate.parse("2026-10-15"), List.of(monthly));
 
             // Act
             SubscriptionOverlapException ex = assertThrows(SubscriptionOverlapException.class, act);
@@ -1234,20 +797,6 @@ class SubscriptionTest {
             // Assert
             assertThat(exhausted.isExhausted()).isTrue();
             assertThat(refunded.isExhausted()).isFalse();
-        }
-
-        @Test
-        void renewingAnExhaustedPackStartsImmediately() {
-            // Arrange
-            Subscription exhausted = exhaustedPack();
-
-            // Act
-            Subscription renewed = Subscription.renew(pack(10, 90), exhausted, List.of(exhausted), TODAY);
-
-            // Assert
-            assertThat(exhausted.renewalStartDate(TODAY)).isEqualTo(TODAY);
-            assertThat(renewed.startDate()).isEqualTo(TODAY);
-            assertThat(renewed.endDate()).isEqualTo(LocalDate.parse("2027-01-11"));
         }
 
         @Test
@@ -1282,7 +831,7 @@ class SubscriptionTest {
             Subscription active = subscribe(pack(5, 90), "2026-10-01");
 
             // Act
-            Subscription renewed = Subscription.renew(pack(10, 90), active, List.of(active), TODAY);
+            Subscription renewed = SubscriptionFactory.createRenewal(pack(10, 90), active, List.of(active), TODAY);
 
             // Assert
             assertThat(renewed.startDate()).isEqualTo(LocalDate.parse("2026-12-30"));
@@ -1316,7 +865,6 @@ class SubscriptionTest {
 
     @Nested
     class WeeklyAllowanceAcrossSubscriptions {
-
         // Previous monthly plan 16/09 - 15/10; its renewal starts on Friday 16/10, mid-week
         // (Monday 12/10 - Sunday 18/10).
         private Subscription previousUsedTwice() {
@@ -1324,7 +872,7 @@ class SubscriptionTest {
         }
 
         private Subscription renewal(Subscription previous) {
-            return Subscription.renew(perWeek(2), previous, List.of(previous), TODAY);
+            return SubscriptionFactory.createRenewal(perWeek(2), previous, List.of(previous), TODAY);
         }
 
         @Test
@@ -1418,7 +966,7 @@ class SubscriptionTest {
             // Arrange
             Subscription weekly = subscribe(perWeek(1), "2026-10-01");
             Subscription myPack = consumeAll(subscribe(pack(5, 90), "2026-10-01"), "2026-10-14T20:00");
-            Subscription someoneElses = consumeAll(Subscription.create(perWeek(1), MemberId.generate(),
+            Subscription someoneElses = consumeAll(SubscriptionFactory.create(perWeek(1), MemberId.generate(),
                     LocalDate.parse("2026-10-01"), List.of()), "2026-10-14T20:00");
 
             // Act
@@ -1454,7 +1002,7 @@ class SubscriptionTest {
             List<CreditUsage> sameWeek = List.of(
                     new CreditUsage(BookingId.generate(), LocalDate.parse("2026-10-12")),
                     new CreditUsage(BookingId.generate(), LocalDate.parse("2026-10-18")));
-            Executable act = () -> Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
+            Executable act = () -> SubscriptionFactory.reconstitute(SubscriptionId.generate(), ASSOCIATION, MEMBER,
                     PlanId.generate(), PlanTerms.monthlyNPerWeek(1, Set.of()), Money.ofCents(3000),
                     LocalDate.parse("2026-10-01"),
                     LocalDate.parse("2026-10-31"), PaymentStatus.PAID, sameWeek, 0L);
@@ -1474,7 +1022,7 @@ class SubscriptionTest {
                     new CreditUsage(BookingId.generate(), LocalDate.parse("2026-10-19")));
 
             // Act
-            Subscription subscription = Subscription.reconstruct(SubscriptionId.generate(), ASSOCIATION, MEMBER,
+            Subscription subscription = SubscriptionFactory.reconstitute(SubscriptionId.generate(), ASSOCIATION, MEMBER,
                     PlanId.generate(), PlanTerms.monthlyNPerWeek(1, Set.of()), Money.ofCents(3000),
                     LocalDate.parse("2026-10-01"),
                     LocalDate.parse("2026-10-31"), PaymentStatus.PAID, adjacentWeeks, 0L);
@@ -1486,13 +1034,12 @@ class SubscriptionTest {
 
     @Nested
     class RefundForBooking {
-
         private final SessionId session = SessionId.generate();
 
         private Booking booking(BookingId id, MemberId member, AssociationId association, BookingStatus status,
                                 boolean confirmed, CancellationKind kind) {
             Instant requestedAt = Instant.parse("2026-10-10T10:00:00Z");
-            return Booking.reconstruct(id, association, session, member, status, requestedAt,
+            return SessionFactory.reconstituteBooking(id, association, session, member, status, requestedAt,
                     confirmed ? requestedAt.plusSeconds(60) : null, kind);
         }
 
@@ -1618,9 +1165,9 @@ class SubscriptionTest {
     @Test
     void creatingRejectsExistingSubscriptionsOfAnotherAssociation() {
         // Arrange
-        Plan otherPlan = Plan.create(AssociationId.generate(), "Other", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
-        Subscription foreign = Subscription.create(otherPlan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
-        Executable act = () -> Subscription.create(unlimited(), MEMBER, LocalDate.parse("2026-10-01"), List.of(foreign));
+        Plan otherPlan = PlanFactory.create(AssociationId.generate(), "Other", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
+        Subscription foreign = SubscriptionFactory.create(otherPlan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
+        Executable act = () -> SubscriptionFactory.create(unlimited(), MEMBER, LocalDate.parse("2026-10-01"), List.of(foreign));
 
         // Act
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, act);

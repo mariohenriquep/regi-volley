@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.factory.JoinRequestFactory;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
@@ -17,11 +18,11 @@ public final class JoinRequestPersistenceMapper {
     private JoinRequestPersistenceMapper() {
     }
 
-    /** Rebuilds the aggregate, re-checking its invariants. */
+    /** Rebuilds the aggregate through its factory, which re-checks its invariants. */
     public static JoinRequest toDomain(JoinRequestJpaEntity entity) {
         ContactDetails contact = ContactDetails.reconstruct(entity.getName(), new EmailAddress(entity.getEmail()),
                 entity.getPhone() == null ? null : new PhoneNumber(entity.getPhone()));
-        return JoinRequest.reconstruct(
+        return JoinRequestFactory.reconstitute(
                 new JoinRequestId(entity.getId()),
                 new AssociationId(entity.getAssociationId()),
                 contact,

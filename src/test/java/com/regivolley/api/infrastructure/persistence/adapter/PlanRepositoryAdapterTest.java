@@ -1,6 +1,7 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
 import com.regivolley.api.domain.exception.PlanModifiedConcurrentlyException;
+import com.regivolley.api.domain.factory.PlanFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Plan;
 import com.regivolley.api.domain.model.valueobject.LevelId;
@@ -62,9 +63,9 @@ class PlanRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     void everyPlanTypeRoundTrips() {
         // Arrange
         Association association = newAssociation();
-        Plan unlimited = Plan.create(association.id(), "Unlimited", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(5000), null);
+        Plan unlimited = PlanFactory.create(association.id(), "Unlimited", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(5000), null);
         Plan weekly = Fixtures.monthlyNPerWeek(association.id());
-        Plan single = Plan.create(association.id(), "Drop-in", PlanTerms.singleSession(Set.of()), Money.ofCents(700), 1);
+        Plan single = PlanFactory.create(association.id(), "Drop-in", PlanTerms.singleSession(Set.of()), Money.ofCents(700), 1);
 
         // Act
         Plan loadedUnlimited = saveAndReload(unlimited);
@@ -87,7 +88,7 @@ class PlanRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         Plan plan = plans.save(Fixtures.pack(association.id(), Set.of(association.levels().get(0).id())));
         entityManager.flush();
         entityManager.clear();
-        Plan changed = Plan.reconstruct(plan.id(), plan.associationId(), "Renamed pack",
+        Plan changed = PlanFactory.reconstitute(plan.id(), plan.associationId(), "Renamed pack",
                 PlanTerms.pack(10, Set.of(association.levels().get(2).id())), Money.ofCents(5000), 60, plan.version());
 
         // Act
@@ -125,11 +126,11 @@ class PlanRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         entityManager.clear();
         Plan copyA = plans.findById(association.id(), stored.id()).orElseThrow();
         Plan copyB = plans.findById(association.id(), stored.id()).orElseThrow();
-        Plan renamed = plans.save(Plan.reconstruct(copyB.id(), copyB.associationId(), "Renamed", copyB.terms(),
+        Plan renamed = plans.save(PlanFactory.reconstitute(copyB.id(), copyB.associationId(), "Renamed", copyB.terms(),
                 copyB.price(), 90, copyB.version()));
         entityManager.flush();
         entityManager.clear();
-        Executable act = () -> plans.save(Plan.reconstruct(copyA.id(), copyA.associationId(), "Stale rename",
+        Executable act = () -> plans.save(PlanFactory.reconstitute(copyA.id(), copyA.associationId(), "Stale rename",
                 copyA.terms(), copyA.price(), 90, copyA.version()));
 
         // Act

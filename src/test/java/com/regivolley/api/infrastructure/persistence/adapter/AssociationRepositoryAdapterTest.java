@@ -2,6 +2,7 @@ package com.regivolley.api.infrastructure.persistence.adapter;
 
 import com.regivolley.api.domain.exception.AggregateModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.ShortNameAlreadyTakenException;
+import com.regivolley.api.domain.factory.AssociationFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Level;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
@@ -72,9 +73,9 @@ class AssociationRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
     @Test
     void anAssociationWithoutNifAndWithCustomPoliciesAndANonLowestEntryLevelRoundTrips() {
         // Arrange
-        Association base = Association.create("Club Sem Nif", "sem-nif", null, "Porto", "a@b.co",
+        Association base = AssociationFactory.create("Club Sem Nif", "sem-nif", null, "Porto", "a@b.co",
                 List.of("Beginner", "Advanced"));
-        Association custom = Association.reconstruct(base.id(), base.name(), base.shortName(), null, base.locality(),
+        Association custom = AssociationFactory.reconstitute(base.id(), base.name(), base.shortName(), null, base.locality(),
                 base.contactEmail(), new BookingPolicy(3, 12), new SessionGenerationPolicy(6), new NoShowPolicy(5), base.levels(),
                 levelNamed(base, "Advanced"), 0L);
 

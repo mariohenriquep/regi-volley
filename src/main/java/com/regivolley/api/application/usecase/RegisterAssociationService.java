@@ -5,6 +5,8 @@ import com.regivolley.api.application.port.AccountProvisioner;
 import com.regivolley.api.application.port.TransactionRunner;
 import com.regivolley.api.application.result.AssociationRegistered;
 import com.regivolley.api.domain.exception.ShortNameAlreadyTakenException;
+import com.regivolley.api.domain.factory.AssociationFactory;
+import com.regivolley.api.domain.factory.MemberFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
@@ -53,12 +55,12 @@ public class RegisterAssociationService implements RegisterAssociationUseCase {
     @Override
     public AssociationRegistered execute(RegisterAssociationCommand command) {
         ShortName shortName = ShortName.of(command.shortName());
-        Association association = Association.create(command.name(), command.shortName(), command.nif(),
+        Association association = AssociationFactory.create(command.name(), command.shortName(), command.nif(),
                 command.locality(), command.contactEmail(), command.levelNames());
         ContactDetails founderContact = ContactDetails.of(command.founderName(), EmailAddress.of(command.founderEmail()),
                 PhoneNumber.of(command.founderPhone()));
         GdprConsent consent = GdprConsent.record(command.consentAccepted(), command.policyVersion(), clock);
-        Member founder = Member.create(association, founderContact, consent,
+        Member founder = MemberFactory.create(association, founderContact, consent,
                 Set.of(MemberRole.ADMIN, MemberRole.MEMBER), clock);
 
         Member storedFounder = unitOfWork.retrying(() -> {

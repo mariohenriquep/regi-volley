@@ -26,8 +26,9 @@ import java.util.stream.Collectors;
 
 /**
  * A recurring class of an association (Turma, US-09): which levels it accepts (RN-21), where and
- * when it runs, its default capacity and its coach. It generates the {@link Session}s of the
- * coming weeks from its schedule (RN-01, US-10). Immutable: every edit returns a new instance.
+ * when it runs, its default capacity and its coach. It works out which occurrences of its schedule still need a
+ * {@link Session} in the coming weeks (RN-01, US-10); {@code SessionFactory} turns them into sessions. Immutable:
+ * every edit returns a new instance. A group is created and reconstituted only by {@code TrainingGroupFactory}.
  *
  * <p><b>Accepted levels (RN-21)</b> are a set of {@link LevelId}s with at least one member. The
  * default rule that a member may also book levels below their own comes from {@code LevelRank} at
@@ -59,39 +60,16 @@ public final class TrainingGroup implements AggregateRoot {
     private final TrainingGroupStatus status;
     private final long version;
 
-    private TrainingGroup(TrainingGroupId id, AssociationId associationId, String name, Set<LevelId> acceptedLevels,
-                          VenueId venueId, WeeklySchedule schedule, int defaultCapacity, MemberId coachId,
-                          TrainingGroupStatus status, long version) {
-        this.id = id;
-        this.associationId = associationId;
-        this.name = name;
-        this.acceptedLevels = acceptedLevels;
-        this.venueId = venueId;
-        this.schedule = schedule;
-        this.defaultCapacity = defaultCapacity;
-        this.coachId = coachId;
-        this.status = status;
-        this.version = version;
-    }
-
-    /** Creates a new ACTIVE group. */
-    public static TrainingGroup create(AssociationId associationId, String name, Set<LevelId> acceptedLevels,
-                                       VenueId venueId, WeeklySchedule schedule, int defaultCapacity,
-                                       MemberId coachId) {
-        return reconstruct(TrainingGroupId.generate(), associationId, name, acceptedLevels, venueId, schedule,
-                defaultCapacity, coachId, TrainingGroupStatus.ACTIVE, 0L);
-    }
-
     /**
-     * Rebuilds a group from persisted data, re-checking its invariants.
+     * Checks every invariant, so no group exists in an invalid state. Public because the only callers are
+     * {@code TrainingGroupFactory} (new groups and persisted ones) and this class; the architecture test pins that.
      *
      * @param version the optimistic-lock version it was loaded with (0 for a new group); edits carry it over
      *                unchanged, so a stale copy is detected when it is saved (architecture.md section 10)
      */
-    public static TrainingGroup reconstruct(TrainingGroupId id, AssociationId associationId, String name,
-                                            Set<LevelId> acceptedLevels, VenueId venueId, WeeklySchedule schedule,
-                                            int defaultCapacity, MemberId coachId, TrainingGroupStatus status,
-                                            long version) {
+    public TrainingGroup(TrainingGroupId id, AssociationId associationId, String name, Set<LevelId> acceptedLevels,
+                         VenueId venueId, WeeklySchedule schedule, int defaultCapacity, MemberId coachId,
+                         TrainingGroupStatus status, long version) {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(associationId, "associationId must not be null");
         Objects.requireNonNull(venueId, "venueId must not be null");
@@ -102,66 +80,73 @@ public final class TrainingGroup implements AggregateRoot {
         if (version < 0) {
             throw new InvalidTrainingGroupException("The version must not be negative");
         }
-        return new TrainingGroup(id, associationId, FieldRules.requiredText("group name", name, MAX_NAME_LENGTH),
-                requireLevels(acceptedLevels), venueId, schedule, defaultCapacity, coachId, status, version);
+        this.id = id;
+        this.associationId = associationId;
+        this.name = FieldRules.requiredText("group name", name, MAX_NAME_LENGTH);
+        this.acceptedLevels = requireLevels(acceptedLevels);
+        this.venueId = venueId;
+        this.schedule = schedule;
+        this.defaultCapacity = defaultCapacity;
+        this.coachId = coachId;
+        this.status = status;
+        this.version = version;
     }
 
     // ------------------------------------------------------------------ edits
 
     public TrainingGroup rename(String newName) {
         requireActive();
-        return reconstruct(id, associationId, newName, acceptedLevels, venueId, schedule, defaultCapacity, coachId, status, version);
+        return new TrainingGroup(id, associationId, newName, acceptedLevels, venueId, schedule, defaultCapacity, coachId, status, version);
     }
 
     public TrainingGroup changeAcceptedLevels(Set<LevelId> newLevels) {
         requireActive();
-        return reconstruct(id, associationId, name, newLevels, venueId, schedule, defaultCapacity, coachId, status, version);
+        return new TrainingGroup(id, associationId, name, newLevels, venueId, schedule, defaultCapacity, coachId, status, version);
     }
 
     public TrainingGroup changeCapacity(int newCapacity) {
         requireActive();
-        return reconstruct(id, associationId, name, acceptedLevels, venueId, schedule, newCapacity, coachId, status, version);
+        return new TrainingGroup(id, associationId, name, acceptedLevels, venueId, schedule, newCapacity, coachId, status, version);
     }
 
     public TrainingGroup changeCoach(MemberId newCoachId) {
         requireActive();
-        return reconstruct(id, associationId, name, acceptedLevels, venueId, schedule, defaultCapacity, newCoachId, status, version);
+        return new TrainingGroup(id, associationId, name, acceptedLevels, venueId, schedule, defaultCapacity, newCoachId, status, version);
     }
 
     public TrainingGroup changeSchedule(WeeklySchedule newSchedule) {
         requireActive();
-        return reconstruct(id, associationId, name, acceptedLevels, venueId, newSchedule, defaultCapacity, coachId, status, version);
+        return new TrainingGroup(id, associationId, name, acceptedLevels, venueId, newSchedule, defaultCapacity, coachId, status, version);
     }
 
     /** Retires the group: it stops generating sessions. Existing sessions are untouched. */
     public TrainingGroup archive() {
         requireActive();
-        return reconstruct(id, associationId, name, acceptedLevels, venueId, schedule, defaultCapacity, coachId,
+        return new TrainingGroup(id, associationId, name, acceptedLevels, venueId, schedule, defaultCapacity, coachId,
                 TrainingGroupStatus.ARCHIVED, version);
     }
 
     // ------------------------------------------------------------- generation
 
     /**
-     * New sessions for the window {@code [from, from + policy.windowWeeks())} (RN-01, US-10),
-     * oldest first. Pure: it neither saves nor reads anything; the caller loads
-     * {@code existingSessions} and persists the result.
+     * The occurrences, for the window {@code [from, from + policy.windowWeeks())} (RN-01, US-10), that still need a
+     * session, oldest first. Pure: it neither saves nor reads anything; the caller loads {@code existingSessions}, has
+     * {@code SessionFactory} build the sessions of these occurrences and persists them.
      *
      * <p>A session is identified by (training group, start instant): an occurrence whose start
      * matches an existing session of this group is skipped, whatever that session's status, so a
      * cancelled session is never resurrected and re-running generation returns nothing new. Two
      * slots that resolve to the same start instant (possible on the spring-forward night) yield
-     * a single session. The caller must therefore pass <b>all</b> sessions of this group that
-     * fall in the window, CANCELLED ones included; sessions of other groups are ignored. Each new session inherits this group's capacity and coach (RN-02) and
-     * starts at the Lisbon wall-clock time of its slot (see {@code WeeklySlot} for DST gaps and
-     * overlaps). An archived group generates nothing.
+     * a single occurrence. The caller must therefore pass <b>all</b> sessions of this group that
+     * fall in the window, CANCELLED ones included; sessions of other groups are ignored. Each occurrence starts at the
+     * Lisbon wall-clock time of its slot (see {@code WeeklySlot} for DST gaps and overlaps). An archived group has none.
      *
      * @param from            inclusive start of the window; a slot exactly at {@code from} is generated, one exactly at the window end is not
      * @param existingSessions sessions already stored, all of this association (another association's session is an
      *                         {@link IllegalArgumentException}: it signals a tenant mix-up in the caller)
      */
-    public List<Session> generateSessions(Instant from, SessionGenerationPolicy policy,
-                                          Collection<Session> existingSessions) {
+    public List<ScheduledOccurrence> occurrencesToGenerate(Instant from, SessionGenerationPolicy policy,
+                                                           Collection<Session> existingSessions) {
         Objects.requireNonNull(from, "from must not be null");
         Objects.requireNonNull(policy, "policy must not be null");
         Objects.requireNonNull(existingSessions, "existingSessions must not be null");
@@ -177,12 +162,7 @@ public final class TrainingGroup implements AggregateRoot {
                 .collect(Collectors.toCollection(HashSet::new));
         return schedule.occurrencesBetween(from, policy.windowEnd(from)).stream()
                 .filter(o -> seenStarts.add(o.startsAt()))
-                .map(this::newSession)
                 .toList();
-    }
-
-    private Session newSession(ScheduledOccurrence occurrence) {
-        return Session.create(associationId, id, coachId, occurrence.startsAt(), occurrence.endsAt(), defaultCapacity);
     }
 
     // -------------------------------------------------------------- invariants

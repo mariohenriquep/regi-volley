@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.factory.PlanFactory;
 import com.regivolley.api.domain.model.entity.Plan;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.LevelId;
@@ -20,14 +21,14 @@ public final class PlanPersistenceMapper {
     private PlanPersistenceMapper() {
     }
 
-    /** Rebuilds the aggregate, re-checking its invariants. */
+    /** Rebuilds the aggregate through its factory, which re-checks its invariants. */
     public static Plan toDomain(PlanJpaEntity entity) {
         Set<LevelId> allowedLevels = entity.getAllowedLevels().stream()
                 .map(ref -> new LevelId(ref.getLevelId()))
                 .collect(Collectors.toSet());
         PlanTerms terms = new PlanTerms(PlanType.valueOf(entity.getPlanType()), entity.getSessionsPerWeek(),
                 entity.getCredits(), allowedLevels);
-        return Plan.reconstruct(
+        return PlanFactory.reconstitute(
                 new PlanId(entity.getId()),
                 new AssociationId(entity.getAssociationId()),
                 entity.getName(),

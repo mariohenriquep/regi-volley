@@ -3,6 +3,8 @@ package com.regivolley.api.application.usecase;
 import com.regivolley.api.application.command.ListSubscriptionsByPaymentStatusQuery;
 import com.regivolley.api.application.result.SubscriptionPaymentEntry;
 import com.regivolley.api.domain.exception.NotAllowedException;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Plan;
@@ -60,8 +62,8 @@ class ListSubscriptionsByPaymentStatusServiceTest {
         // Arrange
         Member late = Data.member(association);
         when(members.findByIds(eq(association.id()), any())).thenReturn(List.of(late));
-        Plan plan = Plan.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
-        Subscription overdue = Subscription.create(plan, late.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
+        Plan plan = PlanFactory.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
+        Subscription overdue = SubscriptionFactory.create(plan, late.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
         when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.OVERDUE)).thenReturn(List.of(overdue));
 
         // Act
@@ -81,10 +83,10 @@ class ListSubscriptionsByPaymentStatusServiceTest {
         Member first = Data.member(association);
         Member second = Data.member(association);
         Member missing = Data.member(association);
-        Plan plan = Plan.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
-        Subscription a = Subscription.create(plan, first.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
-        Subscription b = Subscription.create(plan, missing.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
-        Subscription c = Subscription.create(plan, second.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
+        Plan plan = PlanFactory.create(association.id(), "Monthly", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null);
+        Subscription a = SubscriptionFactory.create(plan, first.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
+        Subscription b = SubscriptionFactory.create(plan, missing.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
+        Subscription c = SubscriptionFactory.create(plan, second.id(), LocalDate.parse("2026-10-01"), List.of()).markOverdue();
         when(subscriptions.findByPaymentStatus(association.id(), PaymentStatus.OVERDUE)).thenReturn(List.of(a, b, c));
         when(members.findByIds(eq(association.id()), any())).thenReturn(List.of(first, second));
 

@@ -22,7 +22,8 @@ import java.util.Set;
  * (WAITLISTED), later ATTENDED / NO_SHOW or CANCELLED (RN-12).
  *
  * <p>Immutable: every transition returns a new instance. A booking is only created and moved by
- * its {@code Session} (creation and every transition are package-private), which enforces
+ * its {@code Session} (every transition is package-private; a persisted one is reconstituted through
+ * {@code SessionFactory}), which enforces
  * capacity, the booking window, one-live-booking-per-member and the cancellation rules; the
  * transitions here only guard the state machine itself.
  *
@@ -48,37 +49,14 @@ public final class Booking implements Entity {
     private final Instant confirmedAt;
     private final CancellationKind cancellationKind;
 
-    private Booking(BookingId id, AssociationId associationId, SessionId sessionId, MemberId memberId,
-                    BookingStatus status, Instant requestedAt, Instant confirmedAt,
-                    CancellationKind cancellationKind) {
-        this.id = id;
-        this.associationId = associationId;
-        this.sessionId = sessionId;
-        this.memberId = memberId;
-        this.status = status;
-        this.requestedAt = requestedAt;
-        this.confirmedAt = confirmedAt;
-        this.cancellationKind = cancellationKind;
-    }
-
     /**
-     * New booking request, only created through {@link Session#book}. The initial status is
-     * CONFIRMED (a seat was free, so it is confirmed right at the request) or WAITLISTED (RN-08).
+     * Checks every invariant, so no booking exists in an invalid state. Public so that {@code SessionFactory} can
+     * reconstitute one with its session; a booking is created and moved only by its {@link Session} (the
+     * transitions below are package-private), and the architecture test lets nothing else construct one.
      */
-    static Booking create(AssociationId associationId, SessionId sessionId, MemberId memberId,
-                          BookingStatus initialStatus, Instant requestedAt) {
-        if (initialStatus != BookingStatus.CONFIRMED && initialStatus != BookingStatus.WAITLISTED) {
-            throw new InvalidBookingException("A new booking must start CONFIRMED or WAITLISTED, not " + initialStatus);
-        }
-        Instant confirmedAt = initialStatus == BookingStatus.CONFIRMED ? requestedAt : null;
-        return reconstruct(BookingId.generate(), associationId, sessionId, memberId, initialStatus, requestedAt,
-                confirmedAt, null);
-    }
-
-    /** Rebuilds a booking from persisted data, re-checking its invariants. */
-    public static Booking reconstruct(BookingId id, AssociationId associationId, SessionId sessionId,
-                                      MemberId memberId, BookingStatus status, Instant requestedAt,
-                                      Instant confirmedAt, CancellationKind cancellationKind) {
+    public Booking(BookingId id, AssociationId associationId, SessionId sessionId, MemberId memberId,
+                   BookingStatus status, Instant requestedAt, Instant confirmedAt,
+                   CancellationKind cancellationKind) {
         Objects.requireNonNull(status, "status must not be null");
         Objects.requireNonNull(requestedAt, "requestedAt must not be null");
         if ((status == BookingStatus.CANCELLED) != (cancellationKind != null)) {
@@ -88,13 +66,14 @@ public final class Booking implements Entity {
             throw new InvalidBookingException("A booking cannot be confirmed before it was requested");
         }
         requireConfirmationConsistentWith(status, confirmedAt, cancellationKind);
-        return new Booking(
-                Objects.requireNonNull(id, "id must not be null"),
-                Objects.requireNonNull(associationId, "associationId must not be null"),
-                Objects.requireNonNull(sessionId, "sessionId must not be null"),
-                Objects.requireNonNull(memberId, "memberId must not be null"),
-                status, requestedAt, confirmedAt, cancellationKind
-        );
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.associationId = Objects.requireNonNull(associationId, "associationId must not be null");
+        this.sessionId = Objects.requireNonNull(sessionId, "sessionId must not be null");
+        this.memberId = Objects.requireNonNull(memberId, "memberId must not be null");
+        this.status = status;
+        this.requestedAt = requestedAt;
+        this.confirmedAt = confirmedAt;
+        this.cancellationKind = cancellationKind;
     }
 
     private static void requireConfirmationConsistentWith(BookingStatus status, Instant confirmedAt,
@@ -137,7 +116,7 @@ public final class Booking implements Entity {
         if (!ALLOWED_TRANSITIONS.get(status).contains(target)) {
             throw new InvalidBookingStatusTransitionException(status, target);
         }
-        return reconstruct(id, associationId, sessionId, memberId, target, requestedAt, newConfirmedAt, kind);
+        return new Booking(id, associationId, sessionId, memberId, target, requestedAt, newConfirmedAt, kind);
     }
 
     /** WAITLISTED or CONFIRMED: the booking still occupies a seat or a waitlist slot. */

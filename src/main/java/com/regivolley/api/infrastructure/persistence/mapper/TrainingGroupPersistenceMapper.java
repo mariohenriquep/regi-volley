@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.factory.TrainingGroupFactory;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.LevelId;
@@ -26,7 +27,7 @@ public final class TrainingGroupPersistenceMapper {
     private TrainingGroupPersistenceMapper() {
     }
 
-    /** Rebuilds the aggregate, re-checking its invariants. */
+    /** Rebuilds the aggregate through its factory, which re-checks its invariants. */
     public static TrainingGroup toDomain(TrainingGroupJpaEntity entity) {
         Set<LevelId> acceptedLevels = entity.getAcceptedLevels().stream()
                 .map(ref -> new LevelId(ref.getLevelId()))
@@ -35,7 +36,7 @@ public final class TrainingGroupPersistenceMapper {
                 .map(row -> new WeeklySlot(DayOfWeek.of(row.getDayOfWeek()), row.getStartTime(),
                         Duration.ofMinutes(row.getDurationMinutes())))
                 .toList();
-        return TrainingGroup.reconstruct(
+        return TrainingGroupFactory.reconstitute(
                 new TrainingGroupId(entity.getId()),
                 new AssociationId(entity.getAssociationId()),
                 entity.getName(),

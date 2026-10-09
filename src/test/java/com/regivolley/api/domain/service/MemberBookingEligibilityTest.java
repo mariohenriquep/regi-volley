@@ -1,5 +1,10 @@
 package com.regivolley.api.domain.service;
 
+import com.regivolley.api.domain.factory.AssociationFactory;
+import com.regivolley.api.domain.factory.JoinRequestFactory;
+import com.regivolley.api.domain.factory.MemberFactory;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.JoinRequest;
 import com.regivolley.api.domain.model.entity.Level;
@@ -35,7 +40,7 @@ class MemberBookingEligibilityTest {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-10-01T10:00:00Z"), ZoneOffset.UTC);
     private static final MemberId COACH = MemberId.generate();
 
-    private static final Association ASSOCIATION = Association.create("Club", "club", null, "Lisbon", "a@b.co",
+    private static final Association ASSOCIATION = AssociationFactory.create("Club", "club", null, "Lisbon", "a@b.co",
             List.of("Beginner", "Intermediate", "Advanced"));
     private static final Level BEGINNER = ASSOCIATION.levels().get(0);
     private static final Level INTERMEDIATE = ASSOCIATION.levels().get(1);
@@ -45,15 +50,15 @@ class MemberBookingEligibilityTest {
     private static final Instant SESSION_START = Instant.parse("2026-10-14T19:00:00Z");
 
     private static Member newMember() {
-        JoinRequest request = JoinRequest.create(ASSOCIATION.id(),
+        JoinRequest request = JoinRequestFactory.create(ASSOCIATION.id(),
                 ContactDetails.of("Ana Silva", EmailAddress.of("ana@example.com"), PhoneNumber.of("912345678")), true, "2026-10", CLOCK);
-        return request.approve(ASSOCIATION, COACH, CLOCK).member();
+        return MemberFactory.fromApprovedJoinRequest(ASSOCIATION, request.approve(COACH, CLOCK));
     }
 
     private static Subscription octoberUnlimited(Member member) {
-        Plan plan = Plan.create(ASSOCIATION.id(), "Unlimited", PlanTerms.monthlyUnlimited(Set.of()),
+        Plan plan = PlanFactory.create(ASSOCIATION.id(), "Unlimited", PlanTerms.monthlyUnlimited(Set.of()),
                 Money.ofCents(3500), null);
-        return Subscription.create(plan, member.id(), LocalDate.parse("2026-10-01"), List.of());
+        return SubscriptionFactory.create(plan, member.id(), LocalDate.parse("2026-10-01"), List.of());
     }
 
     private static BookingTarget groupAccepting(Level... levels) {
@@ -84,7 +89,7 @@ class MemberBookingEligibilityTest {
         @Test
         void rejectsAnAssociationThatIsNotTheMembers() {
             // Arrange
-            Association other = Association.create("Other", "other", null, "Porto", "x@y.co", List.of("Open"));
+            Association other = AssociationFactory.create("Other", "other", null, "Porto", "x@y.co", List.of("Open"));
             Member member = newMember();
             Executable act = () -> member.bookingProfile(other, List.of());
 

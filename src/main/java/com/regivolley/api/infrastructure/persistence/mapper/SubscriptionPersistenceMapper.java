@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.persistence.mapper;
 
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.entity.Subscription;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.BookingId;
@@ -27,7 +28,7 @@ public final class SubscriptionPersistenceMapper {
     private SubscriptionPersistenceMapper() {
     }
 
-    /** Rebuilds the aggregate, re-checking its invariants. */
+    /** Rebuilds the aggregate through its factory, which re-checks its invariants. */
     public static Subscription toDomain(SubscriptionJpaEntity entity) {
         Set<LevelId> allowedLevels = entity.getAllowedLevels().stream()
                 .map(ref -> new LevelId(ref.getLevelId()))
@@ -37,7 +38,7 @@ public final class SubscriptionPersistenceMapper {
         List<CreditUsage> usages = entity.getUsages().stream()
                 .map(row -> new CreditUsage(new BookingId(row.getBookingId()), row.getSessionDate()))
                 .toList();
-        return Subscription.reconstruct(
+        return SubscriptionFactory.reconstitute(
                 new SubscriptionId(entity.getId()),
                 new AssociationId(entity.getAssociationId()),
                 new MemberId(entity.getMemberId()),

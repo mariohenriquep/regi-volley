@@ -3,6 +3,9 @@ package com.regivolley.api.domain.service;
 import com.regivolley.api.domain.exception.InvalidFieldException;
 import com.regivolley.api.domain.exception.PaymentExceedsOutstandingException;
 import com.regivolley.api.domain.exception.PaymentNotReversibleException;
+import com.regivolley.api.domain.factory.PaymentFactory;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.model.entity.Payment;
 import com.regivolley.api.domain.model.entity.Plan;
 import com.regivolley.api.domain.model.entity.Subscription;
@@ -34,15 +37,15 @@ class PaymentLedgerTest {
     private static final Money PRICE = Money.ofCents(3000);
 
     private final AssociationId association = AssociationId.generate();
-    private final Plan plan = Plan.create(association, "Monthly", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
-    private final Subscription subscription = Subscription.create(plan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
+    private final Plan plan = PlanFactory.create(association, "Monthly", PlanTerms.monthlyUnlimited(Set.of()), PRICE, null);
+    private final Subscription subscription = SubscriptionFactory.create(plan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
 
     private PaymentLedger ledger(Payment... payments) {
         return PaymentLedger.of(subscription, List.of(payments));
     }
 
     private Payment pay(long cents) {
-        return Payment.record(subscription, Money.ofCents(cents), DAY, PaymentMethod.CASH, ADMIN, CLOCK);
+        return PaymentFactory.create(subscription, Money.ofCents(cents), DAY, PaymentMethod.CASH, ADMIN, CLOCK);
     }
 
     @Test
@@ -64,7 +67,7 @@ class PaymentLedgerTest {
         // Arrange
         Payment first = pay(1000);
         Payment second = pay(500);
-        Payment reversal = second.reverse(ADMIN, CLOCK);
+        Payment reversal = PaymentFactory.createReversal(second, ADMIN, CLOCK);
 
         // Act
         PaymentLedger ledger = ledger(first, second, reversal);
@@ -144,7 +147,7 @@ class PaymentLedgerTest {
     void refusesToReverseAPaymentTwice() {
         // Arrange
         Payment payment = pay(3000);
-        PaymentLedger ledger = ledger(payment, payment.reverse(ADMIN, CLOCK));
+        PaymentLedger ledger = ledger(payment, PaymentFactory.createReversal(payment, ADMIN, CLOCK));
         Executable act = () -> ledger.reverse(payment.id(), ADMIN, CLOCK);
 
         // Act
@@ -157,7 +160,7 @@ class PaymentLedgerTest {
     @Test
     void refusesToReverseAReversal() {
         // Arrange
-        Payment reversal = pay(3000).reverse(ADMIN, CLOCK);
+        Payment reversal = PaymentFactory.createReversal(pay(3000), ADMIN, CLOCK);
         PaymentLedger ledger = ledger(pay(3000), reversal);
         Executable act = () -> ledger.reverse(reversal.id(), ADMIN, CLOCK);
 
@@ -184,8 +187,8 @@ class PaymentLedgerTest {
     @Test
     void refusesPaymentsOfAnotherSubscriptionOrTenant() {
         // Arrange
-        Subscription other = Subscription.create(plan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
-        Payment foreign = Payment.record(other, Money.ofCents(100), DAY, PaymentMethod.CASH, ADMIN, CLOCK);
+        Subscription other = SubscriptionFactory.create(plan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
+        Payment foreign = PaymentFactory.create(other, Money.ofCents(100), DAY, PaymentMethod.CASH, ADMIN, CLOCK);
         Executable act = () -> PaymentLedger.of(subscription, List.of(foreign));
 
         // Act
@@ -227,7 +230,7 @@ class PaymentLedgerTest {
         // Arrange
         Payment payment = pay(3000);
         Subscription paid = subscription.markPaid();
-        PaymentLedger afterReversal = ledger(payment, payment.reverse(ADMIN, CLOCK));
+        PaymentLedger afterReversal = ledger(payment, PaymentFactory.createReversal(payment, ADMIN, CLOCK));
 
         // Act
         Subscription reopened = afterReversal.settle(paid);
@@ -251,8 +254,8 @@ class PaymentLedgerTest {
     @Test
     void aFreePlanIsSettledFromTheStart() {
         // Arrange
-        Plan freePlan = Plan.create(association, "Trial", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(0), null);
-        Subscription trial = Subscription.create(freePlan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
+        Plan freePlan = PlanFactory.create(association, "Trial", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(0), null);
+        Subscription trial = SubscriptionFactory.create(freePlan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
         PaymentLedger free = PaymentLedger.of(trial, List.of());
 
         // Act
@@ -267,7 +270,7 @@ class PaymentLedgerTest {
     void whatIsDueFollowsThePriceTheSubscriptionWasSoldAtNotTheCurrentPlanPrice() {
         // Arrange
         Plan repriced = plan.edit(plan.name(), plan.terms(), Money.ofCents(5000), null);
-        Subscription renewal = Subscription.create(repriced, MemberId.generate(), LocalDate.parse("2026-11-01"), List.of());
+        Subscription renewal = SubscriptionFactory.create(repriced, MemberId.generate(), LocalDate.parse("2026-11-01"), List.of());
 
         // Act
         PaymentLedger oldPrice = PaymentLedger.of(subscription, List.of());
@@ -281,7 +284,7 @@ class PaymentLedgerTest {
     @Test
     void settlingRefusesAnotherSubscription() {
         // Arrange
-        Subscription other = Subscription.create(plan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
+        Subscription other = SubscriptionFactory.create(plan, MemberId.generate(), LocalDate.parse("2026-10-01"), List.of());
         Executable act = () -> ledger().settle(other);
 
         // Act

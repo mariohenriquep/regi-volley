@@ -13,7 +13,8 @@ import java.util.Objects;
  * A place where an association trains (Pavilhao, US-02): a name, an address and the number of courts
  * (at least one). Immutable: an edit returns a new instance. A training group points at it by
  * {@link VenueId}; the rule that a venue used by an active group cannot be deleted needs the groups, so it is
- * the delete use case's job (through a repository), not this aggregate's.
+ * the delete use case's job (through a repository), not this aggregate's. A venue is created and reconstituted
+ * only by {@code VenueFactory}.
  */
 public final class Venue implements AggregateRoot {
 
@@ -27,27 +28,14 @@ public final class Venue implements AggregateRoot {
     private final int courts;
     private final long version;
 
-    private Venue(VenueId id, AssociationId associationId, String name, String address, int courts, long version) {
-        this.id = id;
-        this.associationId = associationId;
-        this.name = name;
-        this.address = address;
-        this.courts = courts;
-        this.version = version;
-    }
-
-    public static Venue create(AssociationId associationId, String name, String address, int courts) {
-        return reconstruct(VenueId.generate(), associationId, name, address, courts, 0L);
-    }
-
     /**
-     * Rebuilds a venue from persisted data, re-checking its invariants.
+     * Checks every invariant, so no venue exists in an invalid state. Public because the only callers are
+     * {@code VenueFactory} (new venues and persisted ones) and this class; the architecture test pins that.
      *
      * @param version the optimistic-lock version it was loaded with (0 for a new venue); edits carry it over
      *                unchanged, so a stale copy is detected when it is saved (architecture.md section 10)
      */
-    public static Venue reconstruct(VenueId id, AssociationId associationId, String name, String address,
-                                    int courts, long version) {
+    public Venue(VenueId id, AssociationId associationId, String name, String address, int courts, long version) {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(associationId, "associationId must not be null");
         if (version < 0) {
@@ -56,12 +44,16 @@ public final class Venue implements AggregateRoot {
         if (courts < 1) {
             throw new InvalidCourtCountException(courts);
         }
-        return new Venue(id, associationId, FieldRules.requiredText("venue name", name, MAX_NAME_LENGTH),
-                FieldRules.requiredText("venue address", address, MAX_ADDRESS_LENGTH), courts, version);
+        this.id = id;
+        this.associationId = associationId;
+        this.name = FieldRules.requiredText("venue name", name, MAX_NAME_LENGTH);
+        this.address = FieldRules.requiredText("venue address", address, MAX_ADDRESS_LENGTH);
+        this.courts = courts;
+        this.version = version;
     }
 
     public Venue edit(String newName, String newAddress, int newCourts) {
-        return reconstruct(id, associationId, newName, newAddress, newCourts, version);
+        return new Venue(id, associationId, newName, newAddress, newCourts, version);
     }
 
     public VenueId id() {

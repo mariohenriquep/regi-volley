@@ -1,5 +1,12 @@
 package com.regivolley.api.infrastructure.persistence.adapter;
 
+import com.regivolley.api.domain.factory.AssociationFactory;
+import com.regivolley.api.domain.factory.JoinRequestFactory;
+import com.regivolley.api.domain.factory.MemberFactory;
+import com.regivolley.api.domain.factory.PlanFactory;
+import com.regivolley.api.domain.factory.SessionFactory;
+import com.regivolley.api.domain.factory.SubscriptionFactory;
+import com.regivolley.api.domain.factory.TrainingGroupFactory;
 import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.exception.AssociationModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.JoinRequestModifiedConcurrentlyException;
@@ -75,7 +82,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association a = association();
         Session session = Fixtures.session(a.id(), SESSION_START, 12);
-        Session loadedElsewhere = Session.reconstruct(session.id(), a.id(), session.trainingGroupId(), session.coachId(),
+        Session loadedElsewhere = SessionFactory.reconstitute(session.id(), a.id(), session.trainingGroupId(), session.coachId(),
                 session.startsAt(), session.endsAt(), 12, SessionStatus.SCHEDULED, null, List.of(), 3L);
         Executable act = () -> sessions.save(loadedElsewhere);
 
@@ -93,7 +100,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
         Association a = association();
         Association b = association();
         Session stored = sessions.save(Fixtures.session(a.id(), SESSION_START, 12));
-        Session asB = Session.reconstruct(stored.id(), b.id(), stored.trainingGroupId(), stored.coachId(),
+        Session asB = SessionFactory.reconstitute(stored.id(), b.id(), stored.trainingGroupId(), stored.coachId(),
                 stored.startsAt(), stored.endsAt(), 1, SessionStatus.SCHEDULED, null, List.of(), 1L);
         Executable act = () -> sessions.save(asB);
 
@@ -109,7 +116,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association a = association();
         TrainingGroup group = Fixtures.group(a.id(), "Open play", Set.of(a.entryLevelId()), MemberId.generate());
-        TrainingGroup loaded = TrainingGroup.reconstruct(group.id(), a.id(), "Open play", group.acceptedLevels(),
+        TrainingGroup loaded = TrainingGroupFactory.reconstitute(group.id(), a.id(), "Open play", group.acceptedLevels(),
                 group.venueId(), group.schedule(), 12, group.coachId(), TrainingGroupStatus.ACTIVE, 2L);
         Executable act = () -> groups.save(loaded);
 
@@ -124,7 +131,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
     void anAssociationWithAVersionButNoStoredRowIsAConflict() {
         // Arrange
         Association never = Fixtures.association();
-        Association loaded = Association.reconstruct(never.id(), never.name(), never.shortName(), null, never.locality(),
+        Association loaded = AssociationFactory.reconstitute(never.id(), never.name(), never.shortName(), null, never.locality(),
                 never.contactEmail(), never.bookingPolicy(), never.sessionGenerationPolicy(), NoShowPolicy.defaults(), never.levels(),
                 never.entryLevelId(), 4L);
         Executable act = () -> associations.save(loaded);
@@ -141,7 +148,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association a = association();
         Subscription fresh = Fixtures.subscription(Fixtures.pack(a.id(), Set.of()), MemberId.generate(), "2026-10-01");
-        Subscription loaded = Subscription.reconstruct(fresh.id(), a.id(), fresh.memberId(), fresh.planId(), fresh.terms(), fresh.price(),
+        Subscription loaded = SubscriptionFactory.reconstitute(fresh.id(), a.id(), fresh.memberId(), fresh.planId(), fresh.terms(), fresh.price(),
                 fresh.startDate(), fresh.endDate(), PaymentStatus.PENDING, List.of(), 5L);
         Executable act = () -> subscriptions.save(loaded);
 
@@ -157,7 +164,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association a = association();
         Member fresh = Fixtures.member(a, "Ana");
-        Member loaded = Member.reconstruct(fresh.id(), a.id(), fresh.contact(), fresh.consent(), MemberStatus.ACTIVE,
+        Member loaded = MemberFactory.reconstitute(fresh.id(), a.id(), fresh.contact(), fresh.consent(), MemberStatus.ACTIVE,
                 fresh.levelId(), fresh.roles(), List.of(), fresh.joinedAt(), null, 1L);
         Executable act = () -> members.save(loaded);
 
@@ -173,7 +180,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association a = association();
         JoinRequest fresh = Fixtures.joinRequest(a.id(), "Rita", Fixtures.NOW);
-        JoinRequest loaded = JoinRequest.reconstruct(fresh.id(), a.id(), fresh.contact(), fresh.consent(),
+        JoinRequest loaded = JoinRequestFactory.reconstitute(fresh.id(), a.id(), fresh.contact(), fresh.consent(),
                 JoinRequestStatus.PENDING, fresh.requestedAt(), null, null, null, null, 1L);
         Executable act = () -> joinRequests.save(loaded);
 
@@ -189,7 +196,7 @@ class UnstoredAggregateTest extends AbstractPostgresIntegrationTest {
         // Arrange
         Association a = association();
         Plan fresh = Fixtures.pack(a.id(), Set.of());
-        Plan loaded = Plan.reconstruct(fresh.id(), a.id(), fresh.name(), fresh.terms(), fresh.price(), 90, 2L);
+        Plan loaded = PlanFactory.reconstitute(fresh.id(), a.id(), fresh.name(), fresh.terms(), fresh.price(), 90, 2L);
         Executable act = () -> plans.save(loaded);
 
         // Act

@@ -48,7 +48,7 @@ import java.util.Set;
  * this aggregate. A full erasure also has to anonymise the person's {@link JoinRequest}s and
  * anything else holding their data, which is the erasure use case's job.
  *
- * <p>{@link #toString()} prints ids only.
+ * <p>A member is created and reconstituted only by {@code MemberFactory}. {@link #toString()} prints ids only.
  */
 public final class Member implements AggregateRoot {
 
@@ -69,44 +69,17 @@ public final class Member implements AggregateRoot {
     private final Instant anonymisedAt;
     private final long version;
 
-    private Member(MemberId id, AssociationId associationId, ContactDetails contact, GdprConsent consent, MemberStatus status, LevelId levelId, Set<MemberRole> roles,
-                   List<LevelChange> levelChanges, Instant joinedAt, Instant anonymisedAt, long version) {
-        this.id = id;
-        this.associationId = associationId;
-        this.contact = contact;
-        this.consent = consent;
-        this.status = status;
-        this.levelId = levelId;
-        this.roles = roles;
-        this.levelChanges = levelChanges;
-        this.joinedAt = joinedAt;
-        this.anonymisedAt = anonymisedAt;
-        this.version = version;
-    }
-
     /**
-     * A new, ACTIVE member at the association's entry level (RN-20). Used when a join request is
-     * approved (roles {MEMBER}) and when someone registers an association (roles {ADMIN}).
-     */
-    public static Member create(Association association, ContactDetails contact, GdprConsent consent,
-                                Set<MemberRole> roles, Clock clock) {
-        Objects.requireNonNull(association, "association must not be null");
-        Objects.requireNonNull(clock, "clock must not be null");
-        return reconstruct(MemberId.generate(), association.id(), contact, consent, MemberStatus.ACTIVE,
-                association.entryLevelId(), roles, List.of(), clock.instant(), null, 0L);
-    }
-
-    /**
-     * Rebuilds a member from persisted data, re-checking its invariants.
+     * Checks every invariant, so no member exists in an invalid state. Public because the only callers are
+     * {@code MemberFactory} (new members and persisted ones) and this class; the architecture test pins that.
      *
      * @param version the optimistic-lock version it was loaded with (0 for a new member); every change
      *                carries it over, so a stale copy cannot be saved over a newer one, an RGPD erasure
      *                included (architecture.md section 10)
      */
-    public static Member reconstruct(MemberId id, AssociationId associationId, ContactDetails contact,
-                                     GdprConsent consent, MemberStatus status, LevelId levelId, Set<MemberRole> roles,
-                                     List<LevelChange> levelChanges, Instant joinedAt, Instant anonymisedAt,
-                                     long version) {
+    public Member(MemberId id, AssociationId associationId, ContactDetails contact, GdprConsent consent,
+                  MemberStatus status, LevelId levelId, Set<MemberRole> roles, List<LevelChange> levelChanges,
+                  Instant joinedAt, Instant anonymisedAt, long version) {
         Objects.requireNonNull(contact, "contact must not be null");
         Objects.requireNonNull(status, "status must not be null");
         Objects.requireNonNull(levelId, "levelId must not be null");
@@ -129,13 +102,17 @@ public final class Member implements AggregateRoot {
             throw new InvalidMemberException("A member cannot be anonymised before the member joined");
         }
         requireConsistentHistory(levelChanges, levelId, joinedAt);
-        return new Member(
-                Objects.requireNonNull(id, "id must not be null"),
-                Objects.requireNonNull(associationId, "associationId must not be null"),
-                contact,
-                Objects.requireNonNull(consent, "consent must not be null"),
-                status, levelId, Set.copyOf(roles), List.copyOf(levelChanges), joinedAt, anonymisedAt, version
-        );
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.associationId = Objects.requireNonNull(associationId, "associationId must not be null");
+        this.contact = contact;
+        this.consent = Objects.requireNonNull(consent, "consent must not be null");
+        this.status = status;
+        this.levelId = levelId;
+        this.roles = Set.copyOf(roles);
+        this.levelChanges = List.copyOf(levelChanges);
+        this.joinedAt = joinedAt;
+        this.anonymisedAt = anonymisedAt;
+        this.version = version;
     }
 
     /** The history must be a chain of moves that ends at the current level. */
@@ -247,7 +224,7 @@ public final class Member implements AggregateRoot {
         if (isAnonymised()) {
             return this;
         }
-        return reconstruct(id, associationId, ContactDetails.anonymisedFor(id.value()), consent,
+        return new Member(id, associationId, ContactDetails.anonymisedFor(id.value()), consent,
                 MemberStatus.INACTIVE, levelId, Set.of(MemberRole.MEMBER), levelChanges, joinedAt, clock.instant(), version);
     }
 
@@ -259,7 +236,7 @@ public final class Member implements AggregateRoot {
 
     private Member copy(MemberStatus newStatus, LevelId newLevelId, Set<MemberRole> newRoles,
                         List<LevelChange> newHistory) {
-        return reconstruct(id, associationId, contact, consent, newStatus, newLevelId, newRoles,
+        return new Member(id, associationId, contact, consent, newStatus, newLevelId, newRoles,
                 newHistory, joinedAt, anonymisedAt, version);
     }
 

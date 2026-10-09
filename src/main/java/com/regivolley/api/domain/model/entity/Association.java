@@ -1,6 +1,5 @@
 package com.regivolley.api.domain.model.entity;
 
-import com.regivolley.api.domain.exception.AtLeastOneLevelRequiredException;
 import com.regivolley.api.domain.exception.DuplicateLevelNameException;
 import com.regivolley.api.domain.exception.InvalidAssociationException;
 import com.regivolley.api.domain.exception.LevelNotFoundException;
@@ -45,6 +44,9 @@ import java.util.stream.Collectors;
  * uniqueness is the registration use case's job, through a repository. Levels can be added,
  * renamed and reordered here; removing one needs to know which members and groups use it, so it
  * is left to a later slice.
+ *
+ * <p>An association is registered and reconstituted only by {@code AssociationFactory}; the association itself
+ * creates the levels added later ({@link #addLevel}), because it guards the rules that span them.
  */
 public final class Association implements AggregateRoot {
 
@@ -64,57 +66,18 @@ public final class Association implements AggregateRoot {
     private final LevelId entryLevelId;
     private final long version;
 
-    private Association(AssociationId id, String name, ShortName shortName, Nif nif, String locality,
-                        EmailAddress contactEmail, BookingPolicy bookingPolicy,
-                        SessionGenerationPolicy sessionGenerationPolicy, NoShowPolicy noShowPolicy,
-                        List<Level> levels, LevelId entryLevelId, long version) {
-        this.id = id;
-        this.name = name;
-        this.shortName = shortName;
-        this.nif = nif;
-        this.locality = locality;
-        this.contactEmail = contactEmail;
-        this.bookingPolicy = bookingPolicy;
-        this.sessionGenerationPolicy = sessionGenerationPolicy;
-        this.noShowPolicy = noShowPolicy;
-        this.levels = levels;
-        this.entryLevelId = entryLevelId;
-        this.version = version;
-    }
-
     /**
-     * Registers an association (US-01) with the default booking policy and its first levels.
-     *
-     * @param nif        optional: null or blank means none; otherwise it must be a valid NIF
-     * @param levelNames from the most basic to the most advanced, at least one; the first is the
-     *                   entry level (RN-20) until {@link #changeEntryLevel} says otherwise
-     */
-    public static Association create(String name, String shortName, String nif, String locality,
-                                     String contactEmail, List<String> levelNames) {
-        Objects.requireNonNull(levelNames, "levelNames must not be null");
-        AssociationId id = AssociationId.generate();
-        List<Level> levels = new ArrayList<>();
-        for (String levelName : levelNames) {
-            levels.add(Level.create(id, levelName, levels.size()));
-        }
-        if (levels.isEmpty()) {
-            throw new AtLeastOneLevelRequiredException();
-        }
-        return reconstruct(id, name, ShortName.of(shortName), optionalNif(nif), locality,
-                EmailAddress.of(contactEmail), BookingPolicy.defaults(), SessionGenerationPolicy.defaults(),
-                NoShowPolicy.defaults(), levels, levels.get(0).id(), 0L);
-    }
-
-    /**
-     * Rebuilds an association from persisted data, re-checking its invariants. Levels may arrive in any order.
+     * Checks every invariant, so no association exists in an invalid state. Public because the only callers are
+     * {@code AssociationFactory} (registration and persisted associations) and this class; the architecture test
+     * pins that. Levels may arrive in any order; they are kept sorted by rank.
      *
      * @param version the optimistic-lock version it was loaded with (0 for a new association); edits carry it
      *                over unchanged, so a stale copy is detected when it is saved (architecture.md section 10)
      */
-    public static Association reconstruct(AssociationId id, String name, ShortName shortName, Nif nif,
-                                          String locality, EmailAddress contactEmail, BookingPolicy bookingPolicy,
-                                          SessionGenerationPolicy sessionGenerationPolicy, NoShowPolicy noShowPolicy,
-                                          List<Level> levels, LevelId entryLevelId, long version) {
+    public Association(AssociationId id, String name, ShortName shortName, Nif nif, String locality,
+                       EmailAddress contactEmail, BookingPolicy bookingPolicy,
+                       SessionGenerationPolicy sessionGenerationPolicy, NoShowPolicy noShowPolicy,
+                       List<Level> levels, LevelId entryLevelId, long version) {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(levels, "levels must not be null");
         Objects.requireNonNull(entryLevelId, "entryLevelId must not be null");
@@ -123,20 +86,18 @@ public final class Association implements AggregateRoot {
         }
         List<Level> ordered = levels.stream().sorted(Comparator.comparingInt(Level::rank)).toList();
         requireValidLevels(id, ordered, entryLevelId);
-        return new Association(
-                id,
-                FieldRules.requiredText("association name", name, MAX_NAME_LENGTH),
-                Objects.requireNonNull(shortName, "shortName must not be null"),
-                nif,
-                FieldRules.requiredText("locality", locality, MAX_LOCALITY_LENGTH),
-                Objects.requireNonNull(contactEmail, "contactEmail must not be null"),
-                Objects.requireNonNull(bookingPolicy, "bookingPolicy must not be null"),
-                Objects.requireNonNull(sessionGenerationPolicy, "sessionGenerationPolicy must not be null"),
-                Objects.requireNonNull(noShowPolicy, "noShowPolicy must not be null"),
-                ordered,
-                entryLevelId,
-                version
-        );
+        this.id = id;
+        this.name = FieldRules.requiredText("association name", name, MAX_NAME_LENGTH);
+        this.shortName = Objects.requireNonNull(shortName, "shortName must not be null");
+        this.nif = nif;
+        this.locality = FieldRules.requiredText("locality", locality, MAX_LOCALITY_LENGTH);
+        this.contactEmail = Objects.requireNonNull(contactEmail, "contactEmail must not be null");
+        this.bookingPolicy = Objects.requireNonNull(bookingPolicy, "bookingPolicy must not be null");
+        this.sessionGenerationPolicy = Objects.requireNonNull(sessionGenerationPolicy, "sessionGenerationPolicy must not be null");
+        this.noShowPolicy = Objects.requireNonNull(noShowPolicy, "noShowPolicy must not be null");
+        this.levels = ordered;
+        this.entryLevelId = entryLevelId;
+        this.version = version;
     }
 
     private static void requireValidLevels(AssociationId id, List<Level> ordered, LevelId entryLevelId) {
@@ -176,26 +137,26 @@ public final class Association implements AggregateRoot {
 
     /** Edits the details an administrator may change; the short name stays (it is the public URL). */
     public Association updateDetails(String newName, String newNif, String newLocality, String newContactEmail) {
-        return reconstruct(id, newName, shortName, optionalNif(newNif), newLocality,
+        return new Association(id, newName, shortName, optionalNif(newNif), newLocality,
                 EmailAddress.of(newContactEmail), bookingPolicy, sessionGenerationPolicy, noShowPolicy, levels, entryLevelId,
                 version);
     }
 
     public Association changeBookingPolicy(BookingPolicy newPolicy) {
-        return reconstruct(id, name, shortName, nif, locality, contactEmail, newPolicy, sessionGenerationPolicy,
+        return new Association(id, name, shortName, nif, locality, contactEmail, newPolicy, sessionGenerationPolicy,
                 noShowPolicy, levels, entryLevelId, version);
     }
 
     /** RN-11: how many no-shows in a month trigger the warning to the member and the administrators. */
     public Association changeNoShowPolicy(NoShowPolicy newPolicy) {
-        return reconstruct(id, name, shortName, nif, locality, contactEmail, bookingPolicy, sessionGenerationPolicy,
+        return new Association(id, name, shortName, nif, locality, contactEmail, bookingPolicy, sessionGenerationPolicy,
                 newPolicy, levels, entryLevelId, version);
     }
 
     /** Adds a level as the most advanced one; reorder afterwards to place it elsewhere. */
     public Association addLevel(String levelName) {
         List<Level> updated = new ArrayList<>(levels);
-        updated.add(Level.create(id, levelName, levels.size()));
+        updated.add(new Level(LevelId.generate(), id, levelName, levels.size()));
         return withLevels(updated, entryLevelId);
     }
 
@@ -231,7 +192,7 @@ public final class Association implements AggregateRoot {
     }
 
     private Association withLevels(List<Level> newLevels, LevelId newEntryLevelId) {
-        return reconstruct(id, name, shortName, nif, locality, contactEmail, bookingPolicy, sessionGenerationPolicy,
+        return new Association(id, name, shortName, nif, locality, contactEmail, bookingPolicy, sessionGenerationPolicy,
                 noShowPolicy, newLevels, newEntryLevelId, version);
     }
 
