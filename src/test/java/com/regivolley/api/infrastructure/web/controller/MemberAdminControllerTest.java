@@ -4,7 +4,9 @@ import com.regivolley.api.application.command.AssignPlanCommand;
 import com.regivolley.api.application.command.ChangeMemberLevelCommand;
 import com.regivolley.api.application.command.DeactivateMemberCommand;
 import com.regivolley.api.application.command.GrantRoleCommand;
+import com.regivolley.api.application.command.ResendActivationLinkCommand;
 import com.regivolley.api.application.command.RevokeRoleCommand;
+import com.regivolley.api.application.exception.RateLimitExceededException;
 import com.regivolley.api.application.result.MemberDeactivated;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
@@ -17,11 +19,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpMethod;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -185,5 +189,66 @@ class MemberAdminControllerTest extends AbstractControllerWebTest {
         noPlan.andExpect(status().isBadRequest()).andExpect(jsonPath("$.fields[0]").value("planId"));
         badDate.andExpect(status().isBadRequest());
         verifyNoInteractions(assignPlanUseCase);
+    }
+
+    @Test
+    void resendingAnActivationLinkAnswers202ReceivedWithNothingElse() throws Exception {
+        // Arrange
+        String path = "/api/v1/members/" + target.id() + "/activation-links";
+
+        // Act
+        var result = authenticated(HttpMethod.POST, path);
+
+        // Assert
+        result.andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("RECEIVED"))
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(header().doesNotExist("Location"));
+        ArgumentCaptor<ResendActivationLinkCommand> command = ArgumentCaptor.forClass(ResendActivationLinkCommand.class);
+        verify(resendActivationLinkUseCase).execute(command.capture());
+        assertThat(command.getValue().memberId()).isEqualTo(target.id());
+        assertThat(command.getValue().actor()).isEqualTo(expectedActor());
+    }
+
+    @Test
+    void resendingWithAMemberIdThatIsNotAUuidIs400() throws Exception {
+        // Arrange
+        String path = "/api/v1/members/not-a-uuid/activation-links";
+
+        // Act
+        var result = authenticated(HttpMethod.POST, path);
+
+        // Assert
+        result.andExpect(status().isBadRequest());
+        verifyNoInteractions(resendActivationLinkUseCase);
+    }
+
+    @Test
+    void aBodyIsIgnoredBecauseTheLinkAlwaysGoesToTheAccountsOwnAddress() throws Exception {
+        // Arrange
+        String path = "/api/v1/members/" + target.id() + "/activation-links";
+
+        // Act
+        var result = authenticated(HttpMethod.POST, path, "{\"email\":\"someone@example.com\"}");
+
+        // Assert - the link goes to the account's address, never to one the caller names
+        result.andExpect(status().isAccepted());
+        ArgumentCaptor<ResendActivationLinkCommand> command = ArgumentCaptor.forClass(ResendActivationLinkCommand.class);
+        verify(resendActivationLinkUseCase).execute(command.capture());
+        assertThat(command.getValue().toString()).doesNotContain("someone@example.com");
+    }
+
+    @Test
+    void resendingTooOftenIs429WithRetryAfter() throws Exception {
+        // Arrange
+        doThrow(new RateLimitExceededException(Duration.ofMinutes(20))).when(resendActivationLinkUseCase).execute(any());
+
+        // Act
+        var result = authenticated(HttpMethod.POST, "/api/v1/members/" + target.id() + "/activation-links");
+
+        // Assert
+        result.andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "1200"))
+                .andExpect(jsonPath("$.code").value("TOO_MANY_REQUESTS"));
     }
 }

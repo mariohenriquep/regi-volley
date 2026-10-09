@@ -395,23 +395,14 @@
             "format" : "uuid",
             "type" : "string"
           },
-          "endsAt" : {
-            "format" : "date-time",
-            "type" : "string"
-          },
-          "sessionId" : {
+          "memberId" : {
             "format" : "uuid",
             "type" : "string"
           },
-          "startsAt" : {
-            "format" : "date-time",
+          "memberName" : {
             "type" : "string"
           },
           "status" : {
-            "type" : "string"
-          },
-          "trainingGroupId" : {
-            "format" : "uuid",
             "type" : "string"
           }
         },
@@ -1099,6 +1090,50 @@
           "waitlistSize" : {
             "format" : "int32",
             "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "SessionRosterResponse" : {
+        "properties" : {
+          "capacity" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "coachId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "endsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "seats" : {
+            "items" : {
+              "$ref" : "#/components/schemas/EntryView"
+            },
+            "type" : "array"
+          },
+          "sessionId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "startsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "trainingGroupId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "waitlist" : {
+            "items" : {
+              "$ref" : "#/components/schemas/EntryView"
+            },
+            "type" : "array"
           }
         },
         "type" : "object"
@@ -2090,6 +2125,57 @@
         "tags" : [ "member-self-controller" ]
       }
     },
+    "/api/v1/members/{memberId}/activation-links" : {
+      "post" : {
+        "operationId" : "memberAdminResendActivationLink",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "memberId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "202" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AcknowledgementResponse"
+                }
+              }
+            },
+            "description" : "Accepted"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
+          },
+          "409" : {
+            "$ref" : "#/components/responses/Conflict"
+          },
+          "422" : {
+            "$ref" : "#/components/responses/RuleViolation"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "member-admin-controller" ]
+      }
+    },
     "/api/v1/members/{memberId}/deactivation" : {
       "post" : {
         "operationId" : "memberAdminDeactivate",
@@ -3002,6 +3088,51 @@
           },
           "422" : {
             "$ref" : "#/components/responses/RuleViolation"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "session-controller" ]
+      }
+    },
+    "/api/v1/sessions/{sessionId}/roster" : {
+      "get" : {
+        "operationId" : "sessionRoster",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "sessionId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SessionRosterResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
           },
           "429" : {
             "$ref" : "#/components/responses/TooManyRequests"

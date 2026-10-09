@@ -437,8 +437,8 @@ guards `POST /auth/refresh` and `/auth/logout` (paths matched decoded, like Spri
 email, account never activated, wrong password, disabled account, membership not confirmed, inactive or anonymised member and (MVP)
 more than one confirmed membership; exactly one hash is verified in every case (a precomputed dummy hash when there is none to
 check), and the reason goes to the audit log by id with the client address truncated (IPv4 /24, IPv6 /48; `ClientAddresses`).
-Password-reset requests always answer 202 `{"status":"RECEIVED"}`; the work (lookup, link, mail) runs through `BackgroundWork` (a small
-bounded executor) so response time says nothing; the mail itself is then a second asynchronous hop, queued on the SMTP adapter's own
+Password-reset requests always answer 202 `{"status":"RECEIVED"}`; the work (lookup, link, mail) runs through `BackgroundWork` (small bounded executors, one per lane: `ACCOUNT_MAIL` for this and `ADMIN_RESEND` for an administrator's
+resends, so a flood of resends can never take the reset mail's capacity; a full lane drops and logs) so response time says nothing; the mail itself is then a second asynchronous hop, queued on the SMTP adapter's own
 dispatcher (so a reset can be dropped at either queue when it is full, and the user asks again). Join and registration need no email lookup (D-14 and the founder-only-unique
 email), so there is nothing to enumerate: `PublicAssociationController` answers `202 {"status":"RECEIVED"}` to a join request whatever happened to it and registration echoes only the short name the visitor typed (§14).
 
@@ -505,7 +505,9 @@ README *Email*); tests use an in-process GreenMail server (test scope), never a 
 the application port `AccountProvisioner.provision(associationId, memberId, email)` after the commit (`AccountProvisioning`: a
 failure is logged by ids and never undoes the use case, risk R3). The implementation, itself in `application.usecase`, creates the
 account for the email (or reuses the existing one untouched), a PENDING membership and an ACTIVATION link mailed after its own
-transaction; it is idempotent and repeats the transaction when it loses a race on the unique email or on the link. `CredentialsEraser`
+transaction; it is idempotent and repeats the transaction when it loses a race on the unique email or on the link. The administrator's recovery,
+`ResendActivationLink` (section 14), issues a new ACTIVATION link for a PENDING membership through the same `EmailLinkIssuer` (mailed to the
+account's address) and calls the provisioner for a member that has no membership yet. `CredentialsEraser`
 (`CredentialsEraserService`) is the port seam for the future erasure use case: it deletes the membership and, when it was the user's
 only one, the account with its tokens and links.
 
@@ -519,7 +521,7 @@ bucket), IPv4-mapped IPv6 as the IPv4. Per email hash through the `AttemptThrott
 login 5 / 15 min, reset 3 / h (unknown emails count the same); `RateLimiter.joinKey` serves the 3 / day per (association, email) join
 limit, taken by `SubmitJoinRequestService` through `AttemptThrottle.checkJoinRequest` before anything is looked up and for every outcome; registration has
 3 / day per founder email hash (`checkRegistration`, `RegisterAssociationService`, taken once the input is valid and before the short name is looked up), because each registration mails that
-address an activation link and the per-IP limit alone lets many addresses flood one mailbox (#35, #40). The answer is 429 with `Retry-After` and no hard lock-out. **Client address:**
+address an activation link and the per-IP limit alone lets many addresses flood one mailbox (#35, #40). An administrator's resend of an activation link is limited to 30 an hour per association (`ASSOCIATION_RESEND`) and 3 an hour per (association, member) (`ACTIVATION_RESEND`), both in `AttemptThrottle.checkActivationLinkResend`, taken after the caller is authorised and before the member is looked up (so another association's id and an unknown one spend the same budget as a real member); and to 6 mails an hour per recipient address across associations (`LINK_MAIL_PER_ADDRESS`, `AttemptThrottle.checkLinkMailAddress`, taken once the member is found, by the member's contact address, which is the account's address until contact details become editable). That last bucket is its own: shared with password-reset requests it would let a flood of resends lock the owner out of their resets. The answer is 429 with `Retry-After` and no hard lock-out. **Client address:**
 `getRemoteAddr()` only. `server.forward-headers-strategy` is `none` (`FORWARD_HEADERS_STRATEGY`), so `X-Forwarded-For` is ignored;
 behind a known proxy set `native` *and* `server.tomcat.remoteip.internal-proxies` to that proxy (Tomcat's default trusts every
 private range). **Order of checks on a join request:** every refusal that depends on the input alone (the short name, the contact details, the RGPD consent, the policy version) comes *before* the throttle and before any lookup, because a refusal placed after the member / pending lookup would tell a stranger which addresses are known (P1). A text that cannot be a short name is a 404 like an unknown one. Registration validates the whole input before it looks at the short name.
@@ -622,6 +624,7 @@ errors are the one `ApiError` body (section 11). Lists return a JSON array.
 | `POST /sessions/{sessionId}/cancellation` | coach of the session, admin | `CancelSession` (US-12) |
 | `PUT /sessions/{sessionId}/capacity` | coach of the session, admin | `ChangeSessionCapacity` (US-11) |
 | `PUT /sessions/{sessionId}/attendance` | coach of the session, admin | `MarkAttendance` (US-17) |
+| `GET /sessions/{sessionId}/roster` | coach of the session, admin | `GetSessionRoster` (US-17): the session summary and its live bookings - `seats` (CONFIRMED, ATTENDED, NO_SHOW, in booking order) and `waitlist` (promotion order) - each with `bookingId`, `memberId`, `memberName` and `status`; cancelled bookings left out; no email, no phone (`SessionRoster` / `RosterEntry`); the read model attendance is marked from |
 | `POST /levels`, `PUT /levels/{levelId}`, `PUT /levels/order`, `PUT /levels/entry-level` | admin | `AddLevel`, `RenameLevel`, `ReorderLevels`, `ChangeEntryLevel` (US-03): each answers with the levels |
 | `POST /venues`, `PUT /venues/{venueId}`, `DELETE /venues/{venueId}` | admin | `CreateVenue`, `EditVenue`, `DeleteVenue` (US-02) |
 | `POST /training-groups`, `PUT /training-groups/{groupId}`, `POST /training-groups/{groupId}/archival` | admin | `CreateTrainingGroup`, `EditTrainingGroup`, `ArchiveTrainingGroup` (US-09) |
@@ -632,6 +635,7 @@ errors are the one `ApiError` body (section 11). Lists return a JSON array.
 | `PUT /members/{memberId}/roles/{role}`, `DELETE .../roles/{role}` | admin | `GrantRole`, `RevokeRole` (US-07) |
 | `POST /members/{memberId}/deactivation` | admin | `DeactivateMember` (US-08) |
 | `POST /members/{memberId}/subscriptions` | admin | `AssignPlan` (US-20) |
+| `POST /members/{memberId}/activation-links` | admin | `ResendActivationLink` (threat model section 6, P7): always `202 {"status":"RECEIVED"}` whether or not a link was sent (PENDING member: a new link supersedes the old and is mailed to the *account's* address; already activated, disabled account, deactivated or anonymised member: nothing; no membership yet: provisioned again); the work runs through `BackgroundWork`'s `ADMIN_RESEND` lane and re-reads the member first; 30 an hour per association, 3 per member, 6 mails per address (429 `Retry-After`); another association's member is a 404; the body is ignored |
 | `GET /subscriptions?paymentStatus=&endingFrom=&endingTo=`, `GET /subscriptions/export?...` | admin | `ListSubscriptionsByPaymentStatus` (US-22), JSON or CSV; the window is on the subscription's end date, at most two years, one year either side of today by default |
 | `POST /subscriptions/{subscriptionId}/overdue-marking` | admin | `MarkSubscriptionOverdue` (RN-18) |
 | `POST /subscriptions/{subscriptionId}/payments` | admin | `RecordPayment` (US-21, RN-17) |

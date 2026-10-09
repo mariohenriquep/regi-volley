@@ -400,9 +400,17 @@ What was built against this model, and where it differs.
      short name is still a 409 (public information).
   3. M7 (page size at most 100) is met by bounding the two lists that could grow instead of paginating them: pending join requests are capped
      at 100 oldest first, and the payment-status list and CSV are limited to a window of at most two years on the subscription's end date.
-  4. `POST /members/{id}/activation-links` (admin re-sends an activation link, section 6 and P7) was not built: no use case exists for it yet.
-  5. There is no way over HTTP to read a session's roster, so a coach cannot learn the booking ids that `PUT /sessions/{id}/attendance`
-     needs. No use case reads a session by id; it is the first follow-up for the attendance screen.
+  4. `POST /members/{id}/activation-links` (admin re-sends an activation link, section 6 and P7) was built in issue #38
+     (`ResendActivationLinkService`): admin only, `202 {"status":"RECEIVED"}` whatever was found (a PENDING member, one who has already
+     activated, a disabled account, a deactivated member), the work done off the request thread (`BackgroundWork`, as for password-reset
+     requests, D-10, but in its own `ADMIN_RESEND` lane so resends cannot starve reset mail or drop it), 30 per hour per association, 3 per hour
+     per member and 6 mails per hour per recipient address across associations (`ASSOCIATION_RESEND`, `ACTIVATION_RESEND`,
+     `LINK_MAIL_PER_ADDRESS`; 429 `Retry-After`), the new link superseding the old one and
+     mailed to the *account's* address. A member with no membership at all (provisioning failed after the commit, P7) is provisioned again
+     through the idempotent `AccountProvisioner`. The only distinction a caller can observe is 404 for an id outside their own association,
+     as on every other route (D-12).
+  5. `GET /sessions/{id}/roster` (issue #38, `GetSessionRosterService`) gives the session's coach or an administrator the live bookings with
+     booking ids, member ids and display names (no email, no phone), so a coach can call `PUT /sessions/{id}/attendance`.
   6. The OpenAPI document is generated at build time (springdoc in test scope) and committed; the application serves no documentation
      endpoint, so "off under `prod`" holds by construction (section 7, HTTP hygiene).
 - **Added after review:** every refusal that depends on the input alone now precedes the throttle and every lookup in `SubmitJoinRequestService`

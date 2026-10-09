@@ -1583,6 +1583,52 @@ class SessionTest {
     }
 
     @Nested
+    class SeatHolders {
+        @Test
+        void listsConfirmedAttendedAndNoShowBookingsInBookingOrderAndLeavesOutTheWaitlistAndCancelled() {
+            // Arrange
+            List<MemberId> people = members(5);
+            Session session = bookedBy(3, people);
+            session = session.cancelBooking(bookingOf(session, people.get(1)).id(), POLICY, at(OPENS_AT.plusSeconds(60)), EVERYONE).session();
+            session = session.markAttended(bookingOf(session, people.get(0)).id(), at(START));
+            session = session.markNoShow(bookingOf(session, people.get(3)).id(), at(START));
+
+            // Act
+            List<Booking> holders = session.seatHolders();
+
+            // Assert - 0 attended, 1 cancelled (so 3 moved up into the freed seat), 2 and 3 confirmed or marked, 4 still waiting
+            assertThat(holders).extracting(Booking::memberId).containsExactly(people.get(0), people.get(2), people.get(3));
+            assertThat(holders).extracting(Booking::status)
+                    .containsExactly(BookingStatus.ATTENDED, BookingStatus.CONFIRMED, BookingStatus.NO_SHOW);
+            assertThat(session.waitlist()).extracting(Booking::memberId).containsExactly(people.get(4));
+        }
+
+        @Test
+        void isEmptyForASessionNobodyBooked() {
+            // Arrange
+            Session session = newSession(12);
+
+            // Act
+            List<Booking> holders = session.seatHolders();
+
+            // Assert
+            assertThat(holders).isEmpty();
+        }
+
+        @Test
+        void isEmptyForACancelledSessionWhoseBookingsWereAllCancelled() {
+            // Arrange
+            Session session = bookedBy(2, members(3)).cancel("Venue unavailable");
+
+            // Act
+            List<Booking> holders = session.seatHolders();
+
+            // Assert
+            assertThat(holders).isEmpty();
+        }
+    }
+
+    @Nested
     class Attendance {
         @Test
         void marksAConfirmedBookingAttendedFromTheStart() {
