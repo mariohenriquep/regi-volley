@@ -319,6 +319,15 @@ record JavaSourceFile(String name, String packageName, Set<String> references,
                 .toList();
     }
 
+    /**
+     * Whether the top-level type is annotated with {@code @simpleName} (written by its simple name before its declaration, with or
+     * without arguments; a package-qualified annotation is not recognised, which makes the rules built on this fail safe); annotations on members, in comments or in strings do not count.
+     */
+    boolean hasTypeAnnotation(String simpleName) {
+        Matcher type = TYPE_DECLARATION.matcher(code);
+        return type.find() && Pattern.compile("@(?:[\\w.]+\\.)?" + Pattern.quote(simpleName) + "\\b").matcher(type.group(1)).find();
+    }
+
     boolean isFinal() {
         return modifiers.contains("final");
     }

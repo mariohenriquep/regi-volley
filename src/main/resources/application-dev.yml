@@ -1,0 +1,6 @@
+# Profile `dev` only (never read under `prod`, and DevSeedOnly beans also refuse `prod,dev`).
+regi-volley:
+  dev-seed:
+    # Creates the ready-to-use association `volei-lisboa` on start-up when it does not exist yet (issue #59, README "Dev data").
+    # DEV_SEED_ENABLED=false turns it off. The accounts' password defaults to `dev-password-volley`; this database is a throwaway.
+    enabled: ${DEV_SEED_ENABLED:true}

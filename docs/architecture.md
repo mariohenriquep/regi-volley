@@ -97,6 +97,7 @@ never appears in `domain/`.
 | Notification sending: `SmtpNotifier` (adapter for `Notifier`) and `SmtpAccountLinkMailer` (adapter for `AccountLinkMailer`; account links, section 11 *Emailed links*), their machinery (`MailDispatcher` asynchronous bounded sender with retries and `PermanentMailFailure` the "do not retry" mark, `MailDelivery` the MIME message over `JavaMailSender`, `MailTemplates` + `NoticeKind` + `MailContent` the text / HTML rendering, `MailLinks`, `MailFormats`) and the stand-ins `LoggingNotifier` / `LoggingAccountLinkMailer` (log ids and link references only), active when no SMTP host is configured (profiles `dev` / `test` only) | `infrastructure.notification` |
 | `TransactionRunner` implementation (`REQUIRES_NEW` template) | `infrastructure.persistence.adapter` |
 | Spring `@Configuration` beans that are not security (clock, schedulers, the start-up guard on the database secret and the mail settings, `MailConfiguration` choosing the SMTP or the logging adapters, `MailSettings` the SMTP environment) | `infrastructure.config` |
+| The development data seed (issue #59): `DevDataInitializer` (`ApplicationRunner`), `DevDataSeeder` (drives the use cases), `DevAccountActivator` (sets the password and confirms the membership through the credential ports, in place of the emailed link) and the `@DevSeedOnly` marker (`@Profile("dev & !prod")` + `regi-volley.dev-seed.enabled`); see section 11, *Dev data seed* | `infrastructure.devseed` |
 | The credential `*Store` adapters and `SecurityAccountLookupAdapter` (`*StoreAdapter`) | `infrastructure.persistence.adapter` |
 | `app_user` / `membership` / `refresh_token` / `email_link` JPA entities (`UserAccountJpaEntity`, ...) and their `*PersistenceMapper`s | `infrastructure.persistence.entity` / `.mapper` |
 | Credential endpoints (`AuthController`), its package-private `RefreshCookie` helper, the request/response records (`LoginRequest`, `AccessTokenResponse`, ...) and `AuthWebMapper` | `infrastructure.web.controller` / `.dto` / `.mapper` |
@@ -510,6 +511,16 @@ transaction; it is idempotent and repeats the transaction when it loses a race o
 account's address) and calls the provisioner for a member that has no membership yet. `CredentialsEraser`
 (`CredentialsEraserService`) is the port seam for the future erasure use case: it deletes the membership and, when it was the user's
 only one, the account with its tokens and links.
+
+**Dev data seed** (issue #59, `infrastructure.devseed`). Under profile `dev` and never `prod` (`@DevSeedOnly` = `@Profile("dev & !prod")` +
+`@ConditionalOnProperty regi-volley.dev-seed.enabled=true`, which only `application-dev.yml` sets, from `DEV_SEED_ENABLED`, default true), the
+`DevDataInitializer` runs once at start and, unless the association `volei-lisboa` exists, has `DevDataSeeder` create it through the use cases
+(`RegisterAssociation`, `SubmitJoinRequest` + `ApproveJoinRequest` for the coach, `GrantRole`, `CreateVenue`, `CreateTrainingGroup`,
+`CreatePlan`, `AssignPlan`, `RecordPayment`, `GenerateSessions`), so every rule applies; the use cases get their `Actor` from `AuthenticatedActor`, the
+one place an actor is built. `DevAccountActivator` is the only shortcut: it sets the dev password, confirms the membership and closes the activation
+link that provisioning issued, in one transaction through `UserAccountStore` / `MembershipStore` / `EmailLinkStore`, because a fresh database has no
+mailbox to read. It is a bean of the same profile only, no endpoint reaches it and the activation flow of the previous paragraphs is unchanged. A
+failed seed is logged by exception class and does not stop the start; the log has ids only. `OnionArchitectureTest` pins it: every type in `infrastructure.devseed` (the marker itself aside) carries `@DevSeedOnly`, and nothing outside the package references it (each rule with a planted-violation test).
 
 **Rate limiting** (D-9, `RateLimiter`, `RateLimitFilter`). bucket4j token buckets in bounded, expiring Caffeine caches (one per rule;
 100 000 keys for address rules, 20 000 for the email-keyed ones, which an attacker controls; in memory, so a restart resets them and a
