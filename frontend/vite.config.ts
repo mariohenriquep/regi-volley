@@ -8,14 +8,22 @@ import { pwaOptions } from './pwa.config.ts';
 // The API is reached same-origin, under /api (threat model D-7b): in development through this proxy, in production
 // through the reverse proxy that serves dist/ (docs/architecture.md, "Frontend").
 const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8080';
+// WEB_PORT lets a second dev server run beside the usual one (e.g. an E2E run against its own API instance).
+const webPort = Number(process.env.WEB_PORT ?? 5173);
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), VitePWA(pwaOptions)],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Radix's scroll lock would inject a <style> element, which the production CSP blocks (see the shim).
+      'react-style-singleton': fileURLToPath(
+        new URL('./src/shims/react-style-singleton.ts', import.meta.url),
+      ),
+    },
   },
   server: {
-    port: 5173,
+    port: webPort,
     strictPort: true,
     proxy: {
       '/api': {

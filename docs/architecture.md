@@ -692,8 +692,8 @@ or a version.
 | `src/api/` | `schema.gen.ts` (generated, never edited), `errors.ts` (`ApiError`, `toApiError`, `unwrap`) |
 | `src/auth/` | `session.ts` (tokens, refresh, the authenticated client), `AuthProvider` + `useAuth`, route guards |
 | `src/app/` | providers, the `QueryClient`, the route table |
-| `src/features/` | feature folders: `association/` (public page, join, register) and `account/` (activate and reset password, forgot password) |
-| `src/pages/`, `src/layout/`, `src/components/` | the F1 screens (login, home, 404, privacy, the account-link loader), the shell, shared components; `components/ui/` holds the shadcn/ui sources, `components/form/` the form kit (see *Screens*) |
+| `src/features/` | feature folders: `association/` (public page, join, register), `account/` (activate and reset password, forgot password), `sessions/` (the week, book, cancel), `plan/` (My plan, the credit note) and `history/` |
+| `src/pages/`, `src/layout/`, `src/components/` | the F1 screens (login, 404, privacy, the account-link loader), the shell (header, account menu, bottom bar), shared components (`QueryState`, `ErrorAlert`); `components/ui/` holds the shadcn/ui sources, `components/form/` the form kit (see *Screens*) |
 | `src/pwa/` | the service-worker update store, its "reload" notice and the registration glue |
 | `src/lib/` | small helpers (`fragment.ts`, `email.ts`, `privacy.ts`, `usePageTitle.ts`, `utils.ts`) |
 | `src/styles/shadcn.css` | shadcn's stylesheet, vendored (see *Dependencies*) |
@@ -807,6 +807,63 @@ body.
 - **Public text is text.** The association's name, venues and contact email are typed by visitors: they render as text only (no
   HTML), and the contact email is a `mailto:` link only when it is a plain address.
 
+**Member screens** (F3, issue #47). All are behind `RequireAuth`; the shell shows a bottom bar (*Sessions*, *My plan*, *History*)
+and an *Account* menu (*Sign out*, *Sign out on all devices*) to signed-in members only.
+
+| Route | Screen | API |
+|---|---|---|
+| `/` | this week's sessions grouped by Lisbon day; previous / next week in `?week=` (not before this week, at most 8 weeks ahead); book, cancel | `GET /sessions?weekOf=`, `POST /sessions/{id}/bookings`, `POST .../bookings/{id}/cancellation` |
+| `/me/plan` | subscriptions: plan, type, validity, credits or sessions left, payment status, overdue warning | `GET /me/plan` |
+| `/me/history` | last three months as the API orders them, status per booking, this month's no-shows and the near-the-limit warning | `GET /me/history` |
+
+- **Lisbon time** (`lib/lisbon.ts`). Every instant is formatted with `Intl.DateTimeFormat` and `timeZone: 'Europe/Lisbon'`; calendar
+  days are `YYYY-MM-DD` strings moved on UTC dates at midday, so neither the device zone nor a clock change shifts them. "This week"
+  is the Monday of today's *Lisbon* date (a phone in Los Angeles on Sunday night asks for the Lisbon week that has begun). Tests run
+  under other `TZ` values.
+- **Two taps, decided.** Tap 1 is *Book* on the card, tap 2 is *Confirm booking* in a bottom sheet (`BookDialog`) that shows the
+  session, "You'll use 1 credit (N left)" when every plan covering that day is made of credits (a mix says "may", unlimited and weekly
+  plans say nothing: the API does not say which subscription a booking charges), and the waitlist warning when no seat is free. One
+  tap was rejected: a scrolling list books by accident and a late cancellation costs a credit; two taps is the product goal and
+  this sheet is the only place the member learns what a credit does. Focus starts on *Confirm booking*, so Enter-Enter books.
+- **The server decides, the client shows.** Nothing is optimistic: the sheet closes on the API's answer and a notice (`role=status`,
+  focused, because the Book button has turned into Cancel) says confirmed or "number N on the waitlist". A booking, a cancellation
+  or a refusal invalidates `sessions`, `plan` and `history`. *Book* is offered whenever the member has no booking, even when
+  `bookingOpensAt` is in the future (shown as "Booking opens ..."): the API decides on submit.
+- **Refusals.** The API gives every business refusal the code `BUSINESS_RULE_VIOLATION` (422, or `CONFLICT` 409 for a duplicate) and
+  tells them apart by message only. The sheet shows the API's message verbatim (`ErrorAlert`, with the request id), then
+  `bookingAdvice.ts` adds what to do next for the messages the backend is known to send (overdue, no balance, no valid
+  subscription, level, plan level, inactive, window not open / closed, overlap, duplicate, session not scheduled); an unknown message
+  gets none. The sheet stays open so the member can read it, retry or close it.
+- **Cancelling.** An `alertdialog` whose safe answer (*Keep booking*) has the initial focus. The API does not say beforehand whether a
+  cancellation would be late, so the text is generic ("close to the start (6 hours by default) counts as a used session"; a waitlist
+  place is "always free"), and the outcome after the call (`late`, `creditRefunded`, `promotedCount`) is shown as the API reports it.
+- **Backend gaps that limit the screens** (to be fixed in the API, then these workarounds go away):
+  1. `GET /sessions` has no `myBookingId`, and no upcoming booking can be found elsewhere (`/me/history` lists sessions up to now).
+     Cancelling therefore needs the id returned by a booking made *since the page was opened*; it is kept in the query cache
+     (`bookingMemory.ts`: memory only, cleared on sign-out, lost on reload). After a reload a card shows the status and says
+     cancelling "isn't available for this booking in the app yet".
+  2. No `venue` on a session, no waitlist `position` for the member's own waitlisted booking (only in the booking response), no
+     free-cancellation deadline (`freeCancellationUntil`), and no group name in the history entries.
+  3. `docs/api/openapi.json` publishes the roster's `EntryView` (bookingId, memberId, memberName, status) for the history entries,
+     because two nested records share the schema name; the real wire shape has `sessionId`, `trainingGroupId`, `startsAt`,
+     `endsAt`, `bookingId`, `status`. `features/history/entries.ts` reads and validates that shape from `unknown`, the only place
+     the client does not use the generated type.
+  4. Booking refusals share one error code; the reason is only in the message text.
+- **Sign-out and calls in flight.** `useAuth().epoch()` counts user changes (sign-in, sign-out, session end). A booking or
+  cancellation compares it before and after its call and writes the booking-id cache only if it is unchanged, so an answer that
+  arrives after sign-out cannot leave the previous user's ids in the next user's cache. The "sign out on all devices" error
+  shows only while signed in, is reset on every user change and on a new attempt, and the menu item is disabled while it runs.
+- **Reading responses.** The generated types make every field optional, so `toSession`, `toPlan` and `toEntry` read each response
+  once into a type with nothing missing: a row with an unreadable date (`lib/dates.ts`) is dropped like any bad row, a payload that
+  is not a list is empty (`Array.isArray`), and the status and type words (the API's text) are looked up in a `Map`, so an unknown
+  word is shown as written.
+- **Failures and size.** Every route screen except the shell, the guards, sign-in and the 404 page is a lazy route (the first
+  download is the shell, under Vite's 500 kB chunk warning; the service worker precaches every chunk). The pages sit under an
+  `errorElement` (`pages/RouteError.tsx`: "Something went wrong" and a full reload, no error detail), so a render error or a failed
+  chunk load keeps the header and the bar instead of blanking the app; the shell has one too.
+- **Shared states.** `QueryState` gives My plan and History the same loading skeleton (`role=status` with a name), error with *Try
+  again* and data; the week has its own skeleton, empty state ("No sessions this week") and error.
+
 **Same origin.**
 - In development the Vite proxy forwards `/api` to `http://localhost:8080` with `changeOrigin: false`. The API then sees
   `Host: localhost:5173`, so the request is same-origin: Spring's CORS filter is not involved, and the cookie guard accepts
@@ -834,6 +891,15 @@ body.
 
 **CSP readiness.** The build has no inline scripts and no inlined assets (`assetsInlineLimit: 0`), and ESLint forbids
 `dangerouslySetInnerHTML`.
+**CSP verified against the dialogs.** `npm run e2e:csp` (`playwright.csp.config.ts`, `e2e-csp/`) serves the production build with the
+exact header below (`e2e-csp/server.mjs` reads it from this document), mocks the API with `page.route` (no backend, so it can run
+in CI) and drives the Book dialog, the Cancel dialog and the Account menu on a phone profile, failing on any
+`securitypolicyviolation` or CSP console error. It found one: Radix modals lock the page scroll through `react-remove-scroll`,
+which injects a `<style>` element that `style-src 'self'` blocks. The policy was not loosened (a nonce needs a server-made header
+per response): `vite.config.ts` aliases `react-style-singleton` to `src/shims/react-style-singleton.ts`, which injects nothing,
+and the rule for `body[data-scroll-locked]` ships in `src/index.css` (the library still sets the attribute). The check also
+asserts the body really is `overflow: hidden` while a dialog is open. Inline `style` set through the DOM (Radix's popper
+positioning) is not an attribute and raises nothing.
 
 **Deployment notes** (for the container / reverse-proxy work; nothing is deployed yet):
 - Serve `index.html`, `sw.js` and `manifest.webmanifest` with `Cache-Control: no-cache` so a new version is picked up. The hashed
@@ -862,7 +928,8 @@ body.
   association through the form, read the activation mail, open the link (the fragment leaves the address bar at once), set the
   password, see the link refused the second time, sign in, reload (refresh cookie through the proxy), sign out; a visitor opens
   the public page and sends a join request; a member requests a reset link from the sign-in page, resets the password from the
-  mail and signs in with it. It runs locally only for now; registration is limited to 3 an hour per address, and the journey
+  mail and signs in with it; a member on a phone books a session in two taps, cancels it, and checks My plan and History (the
+  sessions are inserted with SQL, see the README: they have no HTTP route). It runs locally only for now; registration is limited to 3 an hour per address, and the journey
   registers once.
 - **CI:** the `frontend` job runs `npm ci --ignore-scripts`, `npm audit --omit=dev --audit-level=high`, `api:check`, lint, format
   check, typecheck, unit tests and build. The `sast` job adds Semgrep's `p/typescript` and `p/react` rule sets.
