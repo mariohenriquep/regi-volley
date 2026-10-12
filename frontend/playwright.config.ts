@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * End-to-end smoke against the real, dockerised backend (not run in CI yet). Needs `docker compose up -d` and the API
+ * End-to-end journeys through the real UI against the real, dockerised backend (not run in CI yet). Needs `docker compose up -d` and the API
  * on :8080 with the dev profile and Mailpit as SMTP server (README, "Frontend"). Playwright starts `npm run dev`
  * (Vite on :5173, proxying /api to the API) unless it is already running.
  */

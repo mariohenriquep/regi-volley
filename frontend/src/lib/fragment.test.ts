@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { takeFragmentToken } from './fragment';
+import { takeFragmentToken, tokenFromHash } from './fragment';
 
 const visit = (url: string, state: unknown = null) => {
   window.history.replaceState(state, '', url);
@@ -102,5 +102,21 @@ describe('takeFragmentToken', () => {
     // Assert
     expect(token).toBeNull();
     expect(replaceState).not.toHaveBeenCalled();
+  });
+});
+
+describe('tokenFromHash', () => {
+  it.each([
+    ['#token=abc', 'abc'],
+    ['#a=1&token=a%2Bb', 'a+b'],
+    ['#other=1', null],
+    ['', null],
+    ['#token=%E0%A4%A', null],
+  ])('reads %s as %s', (hash, expected) => {
+    // Arrange / Act
+    const token = tokenFromHash(hash);
+
+    // Assert
+    expect(token).toBe(expected);
   });
 });

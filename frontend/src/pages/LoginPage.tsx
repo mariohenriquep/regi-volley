@@ -1,10 +1,11 @@
 import { useMutation } from '@tanstack/react-query';
 import { type SubmitEvent, useState } from 'react';
+import { Link } from 'react-router';
 import { ErrorAlert } from '@/components/ErrorAlert';
 import { useAuth } from '@/auth/context';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
@@ -46,7 +47,7 @@ export function LoginPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form className="grid gap-4" onSubmit={onSubmit} noValidate>
+          <form className="grid gap-4" method="post" onSubmit={onSubmit} noValidate>
             <div className="grid gap-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -74,11 +75,19 @@ export function LoginPage() {
               />
             </div>
             {signIn.error && <ErrorAlert error={signIn.error} />}
-            <Button type="submit" disabled={signIn.isPending}>
+            <Button type="submit" size="lg" className="h-11" disabled={signIn.isPending}>
               {signIn.isPending ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
         </CardContent>
+        <CardFooter className="grid gap-2 text-sm">
+          <Link to="/forgot-password" className="w-fit text-primary underline underline-offset-4">
+            Forgot password?
+          </Link>
+          <Link to="/register" className="w-fit text-primary underline underline-offset-4">
+            Register an association
+          </Link>
+        </CardFooter>
       </Card>
     </div>
   );

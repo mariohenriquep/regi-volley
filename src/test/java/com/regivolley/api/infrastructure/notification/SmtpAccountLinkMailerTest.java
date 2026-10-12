@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /** Issue #40, threat model D-11 / G3: the activation and reset links reach the account's mailbox over a real SMTP conversation. */
 class SmtpAccountLinkMailerTest {
 
-    private static final String TOKEN = "Tk3-abcDEF_0123456789abcdefghijklmnopqrstuvw";
+    private static final String TOKEN = "test_link-token-fixture-not-a-real-token-000";
     private static final String ORIGIN = "https://app.example.org";
 
     private SmtpTestServer smtp;

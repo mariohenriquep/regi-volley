@@ -21,6 +21,11 @@ export type ApiClient = Client<paths>;
 export interface AuthSession {
   /** The typed API client for every authenticated call. */
   readonly api: ApiClient;
+  /**
+   * The typed API client for the public routes (the association page, join request, registration and the password
+   * links): never a bearer header and no refresh on a 401, so an account's token goes nowhere it is not needed.
+   */
+  readonly publicApi: ApiClient;
   readonly getStatus: () => AuthStatus;
   readonly subscribe: (listener: () => void) => () => void;
   /** Restores the session from the refresh cookie, if there is one. */
@@ -91,7 +96,7 @@ export function createAuthSession(options: AuthSessionOptions): AuthSession {
   };
 
   // Redirects are refused: an API answer is never followed somewhere else.
-  /** Credential routes: never a bearer header, never the 401 retry. */
+  /** Credential and public routes: never a bearer header, never the 401 retry. */
   const credentials = createClient<paths>({
     baseUrl: options.baseUrl,
     fetch: send,
@@ -160,6 +165,7 @@ export function createAuthSession(options: AuthSessionOptions): AuthSession {
 
   return {
     api,
+    publicApi: credentials,
     getStatus: () => status,
     subscribe: (listener) => {
       listeners.add(listener);

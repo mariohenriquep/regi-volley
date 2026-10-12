@@ -692,8 +692,10 @@ or a version.
 | `src/api/` | `schema.gen.ts` (generated, never edited), `errors.ts` (`ApiError`, `toApiError`, `unwrap`) |
 | `src/auth/` | `session.ts` (tokens, refresh, the authenticated client), `AuthProvider` + `useAuth`, route guards |
 | `src/app/` | providers, the `QueryClient`, the route table |
-| `src/pages/`, `src/layout/`, `src/components/` | screens, the shell, shared components; `components/ui/` holds the shadcn/ui sources |
-| `src/lib/` | small helpers (`fragment.ts`, `utils.ts`) |
+| `src/features/` | feature folders: `association/` (public page, join, register) and `account/` (activate and reset password, forgot password) |
+| `src/pages/`, `src/layout/`, `src/components/` | the F1 screens (login, home, 404, privacy, the account-link loader), the shell, shared components; `components/ui/` holds the shadcn/ui sources, `components/form/` the form kit (see *Screens*) |
+| `src/pwa/` | the service-worker update store, its "reload" notice and the registration glue |
+| `src/lib/` | small helpers (`fragment.ts`, `email.ts`, `privacy.ts`, `usePageTitle.ts`, `utils.ts`) |
 | `src/styles/shadcn.css` | shadcn's stylesheet, vendored (see *Dependencies*) |
 | `src/test/` | the MSW server, handlers and the `renderApp` helper |
 | `e2e/` | Playwright specs against the real backend |
@@ -736,7 +738,8 @@ and fails when the committed file differs; CI runs it.
   error.
 - **`AuthProvider`** exposes the status (`unknown` until the start-up refresh answered, then `authenticated` or `anonymous`), the
   client, the actions and `logoutFailed` through `useAuth`. On every status change, sign-in included, it cancels the running queries
-  and clears the query cache before the next user's pages render.
+  and clears the query cache before the next user's pages render. The first answer after start-up (`unknown` to anything) changes
+  no user, so what a public page loaded meanwhile is kept instead of fetched twice.
 - **Guards.** `RequireAuth` sends an anonymous visitor to `/login` and remembers the page. `PublicOnly` sends a signed-in user back
   there only if `new URL(from, location.origin)` stays on this origin (no open redirect through `//evil.com` or `/\evil.com`).
   Both show a loading state while the status is unknown.
@@ -752,11 +755,57 @@ body.
 **Account links** (D-11).
 - The loaders of `/activate` and `/reset-password` call `takeFragmentToken` before the page renders. It reads `token` from the
   fragment, removes the whole fragment with `history.replaceState` (keeping the path, the query string and the router's history
-  state) and returns the token. The token then lives in memory only and is never rendered.
-- These routes never revalidate, so the loader runs once per visit.
+  state) and returns it in a one-shot holder (`take()` gives the token once, then `null`): the router keeps loader data while the
+  route is shown, so the token is not left in it. The form takes the token once into its own state. It lives in memory only and
+  is never rendered.
+- These routes never revalidate. A second emailed link opened in the tab that still shows the first changes the fragment alone
+  (no page load, no loader run), so the form listens to `hashchange`, scrubs that token the same way and starts over with it,
+  even when it is the same link again. While a password is being sent the new link is scrubbed and ignored, so the attempt in
+  flight is never replaced under the user's eyes.
+- A browser router starts from `/activate#token=...`, and `router.state.location.hash` keeps the fragment (`history.replaceState`
+  does not update it, and a hash-only navigation sets it). The page therefore replaces its location with the bare path
+  (a hash removal runs no loader), so no token survives in the router; a test pins this.
 - `index.html` sets `<meta name="referrer" content="no-referrer">`, and the app loads no third-party resource at all (the font is
   self-hosted from `@fontsource-variable/geist`).
-- F2 adds the password forms that POST the token.
+- The forms (`features/account/PasswordLinkPage.tsx`) POST the token in the **body** only, through the public client. It is never
+  in a URL, a query key or the DOM, and is cleared from the form's state once the API accepted it or answered `INVALID_LINK`.
+  Every form is `method="post"` as insurance: if one were ever submitted without the script, nothing typed would reach an address.
+
+**Screens** (F2, issue #46). Public routes are open to everyone, signed in or not; `login`, `register` and `forgot-password` are
+`PublicOnly` (a signed-in user goes home); `/` stays the authenticated home and sends an anonymous visitor to `/login`.
+
+| Route | Screen | API |
+|---|---|---|
+| `/a/:shortName` | the association's public page: contact, levels (lowest first), groups with the Lisbon weekly schedule, venues; 404 is a friendly page; "Want to try it?" | `GET /public/associations/{shortName}` |
+| `/a/:shortName/join` | join request (name, email, phone, RGPD consent); a 202 always shows "If this email can join, the association will review your request" | `POST .../join-requests` |
+| `/register` | register an association: live preview of the public address, levels (add, remove, reorder; the first is the entry level), founder, consent; 201 shows "Check your email to activate your account" | `POST /public/associations` |
+| `/login` | sign in, with links to `/forgot-password` and `/register` | `POST /auth/login` |
+| `/activate`, `/reset-password` | new password and confirmation, from the emailed link | `POST /auth/activate`, `POST /auth/password-resets` |
+| `/forgot-password` | always the same confirmation for a 202 | `POST /auth/password-reset-requests` |
+| `/privacy` | the privacy policy (a stub, see below) | none |
+
+- **Public client.** `useAuth().publicApi` (`session.publicApi`) calls every public route: no bearer header and no refresh on a
+  401. Only authenticated calls use `api`.
+- **Form kit** (`components/form/`). `TextField` ties label, hint and error together (`aria-describedby`, `aria-invalid`);
+  `ErrorSummary` is a focusable `role="alert"` that takes focus on every failed attempt and lists each control at fault as a button
+  that focuses it; `Confirmation` replaces a form with a `role="status"` whose heading takes focus. Forms are `noValidate` with
+  their own checks (required, email shape, passwords match) and `maxLength` equal to the API's request limits; every other rule is
+  the API's.
+- **Reading an error** (`problems.ts`). The API names a field two ways: a 400 by request property (`levelNames[0]`), a 422 by the
+  rule's label (`short name`). `normaliseFieldName` makes both one key, and each form maps keys to control ids. A 422 shows the
+  API's English message on that control; a 400 only marks the controls (its message is a generic "Invalid request"); a field with
+  no control (the register form's ambiguous `email`) and a 422 without a field (consent refused) go to the summary; a 409 on
+  registration is a short-name conflict on that field; a 429 says "Please wait 15 minutes" from `Retry-After`; a 5xx is generic text
+  and the request id.
+- **Uniform answers.** The join and forgot-password pages show one confirmation for every 202 and never mention membership or
+  accounts (D-14, D-10); the activation page says only "invalid or has expired" for a dead link and "ask your association to
+  resend it" (resending is an admin action, P7).
+- **Privacy policy version.** `src/lib/privacy.ts` holds `POLICY_VERSION` (`2026-01`), sent as `policyVersion` with every consent
+  and named in the checkbox label, which links `/privacy` in a new tab so the form is not lost. `/privacy` is a stub that says what
+  the app does today; the final legal text replaces it and bumps the version. `PrivacyPage.test.tsx` pins a hash of the text per version and fails
+  when the text changes without a new `POLICY_VERSION`. The API stores the version and does not validate it.
+- **Public text is text.** The association's name, venues and contact email are typed by visitors: they render as text only (no
+  HTML), and the contact email is a `mailto:` link only when it is a plain address.
 
 **Same origin.**
 - In development the Vite proxy forwards `/api` to `http://localhost:8080` with `changeOrigin: false`. The API then sees
@@ -772,14 +821,16 @@ body.
 - **Precache:** the built app shell only (scripts, styles, `index.html`, images, the manifest, fonts).
 - **No runtime caching:** no API response, and so no personal data, is ever stored by the service worker. Its navigation
   fallback to `index.html` excludes `/api`.
-- **Updates:** a new worker activates at once (`skipWaiting`) and takes control of the open pages (`clientsClaim`). The app
-  registers it from its own bundle (`virtual:pwa-register` in `main.tsx`, `registerType: 'autoUpdate'`), and the helper reloads
-  every open page when the new version activates. A reload costs only the in-memory access token, which the start-up refresh
-  restores.
-- **Later:** once screens hold unsaved input (F2+), this may become an update prompt.
-- **Tests:** `pwa.config.test.ts` pins the options and builds the app to check the generated `sw.js`: `skipWaiting` and
-  `clientsClaim`, a single navigation route with the `/api` denylist, no API URL in the precache, and no inline or extra script in
-  `index.html`.
+- **Updates (prompt).** The forms hold unsaved input, so a new version never reloads a page by itself
+  (`registerType: 'prompt'`, `skipWaiting: false`, `clientsClaim: true`). A new worker installs and waits; `startServiceWorker`
+  (`src/pwa/register.ts`, from `main.tsx`) hands it to an `UpdateStore`, and `UpdatePrompt` in the shell shows "A new version is
+  available — reload" with *Reload* and *Later*. *Reload* posts `SKIP_WAITING`, the worker activates and claims the pages, and
+  the open pages reload; a waiting version also activates once every tab is closed. A reload costs only the in-memory access
+  token, which the start-up refresh restores.
+- **Tests:** `pwa.config.test.ts` pins the options and builds the app to check the generated `sw.js`: `skipWaiting` only inside
+  the `SKIP_WAITING` message handler, `clientsClaim`, a single navigation route with the `/api` denylist, no API URL in the
+  precache, and no inline or extra script in `index.html`. `src/pwa/updates.test.tsx` covers the store, the notice and the
+  registration glue.
 
 **CSP readiness.** The build has no inline scripts and no inlined assets (`assetsInlineLimit: 0`), and ESLint forbids
 `dangerouslySetInnerHTML`.
@@ -802,10 +853,17 @@ body.
   `// Act` / `// Assert`.
 - **Session tests:** start-up refresh, login, the single-flight refresh, one retry and sign-out after a refused retry, the
   sign-out epoch, logout and logout-all failures, the bearer boundary, `redirect: 'error'`, and the Web Lock (mocked).
-- **App tests:** the guards and the return path, login errors, sign-out and its failures, the query cache across users, the
-  account-link routes and the 404 page.
-- **E2E:** Playwright (`e2e/`, Chromium) runs a smoke against the real backend and Mailpit: register through the API, activate
-  with the mailed token, sign in through the UI, reload (refresh cookie through the proxy), sign out. It runs locally only for now.
+- **App tests:** the guards and the return path, login errors and its links, navigation by auth state, sign-out and its failures,
+  the query cache across users, the account-link routes and the 404 page.
+- **Screen tests** (next to each screen): the happy path, client checks, the API's 400 / 422 field errors on the controls, 409,
+  429 with `Retry-After`, 5xx, the uniform confirmations, the token only in the POST body and scrubbed before render, the
+  `PublicOnly` redirects, and focus on the error summary and the confirmation heading.
+- **E2E:** Playwright (`e2e/journey.spec.ts`, Chromium) drives the real UI against the real backend and Mailpit: register an
+  association through the form, read the activation mail, open the link (the fragment leaves the address bar at once), set the
+  password, see the link refused the second time, sign in, reload (refresh cookie through the proxy), sign out; a visitor opens
+  the public page and sends a join request; a member requests a reset link from the sign-in page, resets the password from the
+  mail and signs in with it. It runs locally only for now; registration is limited to 3 an hour per address, and the journey
+  registers once.
 - **CI:** the `frontend` job runs `npm ci --ignore-scripts`, `npm audit --omit=dev --audit-level=high`, `api:check`, lint, format
   check, typecheck, unit tests and build. The `sast` job adds Semgrep's `p/typescript` and `p/react` rule sets.
 

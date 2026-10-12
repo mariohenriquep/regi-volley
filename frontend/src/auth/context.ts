@@ -5,6 +5,8 @@ export interface AuthContextValue {
   status: AuthStatus;
   /** The typed API client: bearer token, refresh on 401 and one retry built in. */
   api: ApiClient;
+  /** The typed API client for the public routes: no bearer token, no refresh. */
+  publicApi: ApiClient;
   login: (email: string, password: string) => Promise<void>;
   /** Signs out here at once; never rejects. When the server did not confirm, `logoutFailed` turns true. */
   logout: () => Promise<void>;
