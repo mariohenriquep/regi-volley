@@ -1,0 +1,6 @@
+# Exact findings reviewed and confirmed as false positives. Each line is one fingerprint
+# (commit:file:rule:line), so it covers only that historical occurrence - any new finding still fails.
+#
+# Fake account-link token used as a unit-test fixture (never a credential); the fixture was
+# replaced by an obviously fake value in the following commit (#46).
+b5c976ce11e8c8253317a085e8ec42ad22e61db5:frontend/src/features/account/PasswordLinkPage.test.tsx:generic-api-key:10

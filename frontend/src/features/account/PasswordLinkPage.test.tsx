@@ -7,7 +7,7 @@ import { server } from '@/test/server';
 
 type User = ReturnType<typeof renderApp>['user'];
 
-const TOKEN = 'tok-secret-0123456789';
+const TOKEN = 'test-link-token-fixture';
 const PASSWORD = 'a long passphrase 42';
 
 const CASES = [
