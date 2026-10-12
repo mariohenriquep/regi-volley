@@ -311,7 +311,8 @@ A Fase 1 é a prioridade: sem reservas fiáveis, nada mais tem valor.
 - [x] Membros com pagamento em atraso podem reservar (RN-18)? **Não, por agora** (7/10/2026).
 - [x] O treinador conta para a lotação quando também joga? **Não** — ver RN-02 (7/10/2026).
 - [ ] Haverá uma sessão experimental gratuita para visitantes?
-- [ ] Frontend: PWA em React/Next.js ou renderizado no servidor (Thymeleaf + HTMX)?
+- [x] Frontend: PWA em React/Next.js ou renderizado no servidor (Thymeleaf + HTMX)? **SPA React + Vite + TypeScript,
+  Tailwind + shadcn/ui, na pasta `frontend/` deste repositório** (9/10/2026). HATEOAS adiado — só se for preciso.
 - [ ] Modelo de negócio: gratuito, mensalidade por associação ou valor por membro?
 - [ ] Um membro promovido da lista de espera depois do prazo de cancelamento gratuito (RN-10)
   pode cancelar sem custo? *Por agora: não — conta como tardio.*
