@@ -61,7 +61,8 @@ describe('association public page', () => {
     // Act
     await user.click(await screen.findByRole('link', { name: 'Want to try it?' }));
 
-    // Assert
+    // Assert: the join page's code loads on demand, so the router arrives a moment later
+    expect(await screen.findByRole('heading', { name: 'Request to join' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/a/lisbon-spikers/join');
   });
 

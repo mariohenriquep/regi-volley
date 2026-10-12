@@ -128,3 +128,10 @@
     @apply font-sans;
   }
 }
+
+/* The page scroll lock of Radix dialogs and menus. The library sets data-scroll-locked on <body>; its own <style> element is
+   replaced by this rule because the production CSP (style-src 'self') blocks injected styles (src/shims). */
+body[data-scroll-locked] {
+  overflow: hidden !important;
+  overscroll-behavior: contain;
+}

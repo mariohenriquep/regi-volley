@@ -574,14 +574,14 @@ describe('forgot password', () => {
       http.post('/api/v1/auth/refresh', () =>
         HttpResponse.json({ accessToken: 'tok', tokenType: 'Bearer', expiresIn: 600 }),
       ),
-      http.get('/api/v1/me', () => HttpResponse.json({ associationId: 'a', memberId: 'm' })),
+      http.get('/api/v1/sessions', () => HttpResponse.json([])),
     );
 
     // Act
     const { router } = renderApp('/forgot-password');
 
     // Assert
-    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sessions' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
   });
 });

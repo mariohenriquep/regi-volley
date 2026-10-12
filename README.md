@@ -68,6 +68,7 @@ From `frontend/`:
 | `npm run api:generate` | regenerates `src/api/schema.gen.ts` from `docs/api/openapi.json`; commit it with the contract |
 | `npm run api:check` | fails when the generated client is stale (CI runs it) |
 | `npm run e2e` | the Playwright journeys against the real backend (below) |
+| `npm run e2e:csp` | builds, serves `dist/` with the documented Content-Security-Policy and checks the dialogs and the account menu raise no violation (API mocked; no backend needed) |
 
 **Trying the app without curl.** With the three commands above running, open <http://localhost:5173>:
 
@@ -75,7 +76,10 @@ From `frontend/`:
 |---|---|---|
 | Register an association | `/register` | fill the form (levels: first = entry level) and submit; the activation mail lands in Mailpit (<http://localhost:8025>) |
 | Activate your account | `/activate#token=...` | open the link from the mail, choose a password, then sign in |
-| Sign in / sign out | `/login` | the founder's email and password; `/` is the signed-in home |
+| Sign in / sign out | `/login` | the founder's email and password; sign out is in the *Account* menu of the header (with *Sign out on all devices*) |
+| Sessions (home) | `/` | this week's sessions by day (Lisbon time), seats, waitlist and your own status; *Book* then *Confirm booking*; *Cancel* on a booking made in this visit; previous/next week. Needs a group with sessions and a paid plan (no admin screens yet: see the E2E note below) |
+| My plan | `/me/plan` | your subscriptions: plan, validity, credits or sessions left, payment status and the overdue warning |
+| History | `/me/history` | your last three months, newest first, and this month's no-shows with the near-the-limit warning |
 | Forgot password | `/forgot-password` | request a link (the answer is the same for any address), open it from Mailpit, choose a new password |
 | Public page of an association | `/a/<short-name>` | levels, groups with the weekly schedule, venues; "Want to try it?" opens the join form |
 | Join request | `/a/<short-name>/join` | name, email, phone and the consent; the answer is the same whatever the email |
@@ -87,7 +91,19 @@ Rate limits (threat model D-9) show as "Please wait N minutes"; restart the API 
 SMTP), run `npx playwright install chromium` once, then `npm run e2e`. The journey registers an association through the UI,
 reads the activation email from Mailpit's API, opens the link in the browser, sets the password, signs in, reloads (the session
 comes back through the refresh cookie) and signs out; a visitor then opens the public page and sends a join request; and a member
-resets a forgotten password through the UI. Playwright starts `npm run dev` itself unless it is already running.
+resets a forgotten password through the UI. A fourth step runs the member journey on a phone-sized screen: it books a session in two
+taps, sees it confirmed, checks *My plan*, cancels for free (the credit comes back), then checks *History* and signs out
+everywhere. Playwright starts `npm run dev` itself unless it is already running.
+
+*Test data for the member journey* (`e2e/seed.ts`). Everything with an HTTP route is created through the REST API as the founder
+(a second member as coach through a join request, the coach role, venue, group, plan, subscription, payment). **Sessions are
+inserted with SQL**: the generation has no HTTP route (it is the scheduler's, `docs/architecture.md` section 14) and a dev-only
+endpoint was rejected. The SQL goes through `docker exec regi-volley-postgres psql` (credentials from `docker-compose.yml`;
+`E2E_POSTGRES_CONTAINER` overrides the container name) and only inserts rows with ids and timestamps the test made. Replace it
+when a generation route or the admin screens (F5) exist.
+
+To run the journey beside the usual dev servers, give it its own ports: start the API with `SERVER_PORT=8081
+WEB_ORIGIN=http://localhost:5174` (plus the SMTP variables) and run `WEB_PORT=5174 API_PROXY_TARGET=http://localhost:8081 npm run e2e`.
 Registration is limited to 3 per hour per address and one run registers once, so a fourth run within the hour gets 429: restart
 the API (the limiter is in memory).
 

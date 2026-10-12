@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const webPort = process.env.WEB_PORT ?? '5173';
+const baseURL = `http://localhost:${webPort}`;
+
 /**
  * End-to-end journeys through the real UI against the real, dockerised backend (not run in CI yet). Needs `docker compose up -d` and the API
  * on :8080 with the dev profile and Mailpit as SMTP server (README, "Frontend"). Playwright starts `npm run dev`
@@ -13,13 +16,13 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL,
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5173',
+    url: baseURL,
     reuseExistingServer: true,
     timeout: 60_000,
   },

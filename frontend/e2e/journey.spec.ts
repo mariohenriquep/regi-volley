@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { emailedToken } from './mailpit';
+import { seedMemberWithSessions } from './seed';
 
 const PASSWORD = 'correct horse battery staple 42';
 const NEW_PASSWORD = 'a different long passphrase 43';
@@ -26,10 +27,20 @@ async function signIn(page: Page, email: string, password: string) {
   await page.getByRole('button', { name: 'Sign in' }).click();
 }
 
+/** The sessions are a day or two ahead: on a Saturday or Sunday that is next week. Shows the week that has `card`. */
+async function showWeekWith(page: Page, card: Locator) {
+  await expect(page.getByRole('heading', { level: 1, name: 'Sessions' })).toBeVisible();
+  await expect(card.or(page.getByText('No sessions this week'))).toBeVisible();
+  if (!(await card.isVisible())) {
+    await page.getByRole('button', { name: 'Next week' }).click();
+  }
+  await expect(card).toBeVisible();
+}
+
 // Registration is limited to 3 an hour per address, so one registration serves the whole journey: the founder
 // created and activated in the first test is the member who forgets the password in the second.
 test.describe.configure({ mode: 'serial' });
-let founder = { email: '', password: PASSWORD };
+let founder = { email: '', password: PASSWORD, shortName: '' };
 
 test('a founder registers through the UI, activates by the emailed link and signs in; a visitor finds the page and asks to join', async ({
   page,
@@ -38,7 +49,7 @@ test('a founder registers through the UI, activates by the emailed link and sign
   const suffix = unique();
   const shortName = `e2e-${suffix}`;
   const founderEmail = `founder-${suffix}@example.com`;
-  founder = { email: founderEmail, password: PASSWORD };
+  founder = { email: founderEmail, password: PASSWORD, shortName };
 
   // Register an association through the form
   await page.goto('/');
@@ -76,13 +87,14 @@ test('a founder registers through the UI, activates by the emailed link and sign
   // Sign in, see the home page, survive a reload through the refresh cookie, sign out
   await page.goto('/login');
   await signIn(page, founderEmail, PASSWORD);
-  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
-  await expect(page.getByText(/^[0-9a-f-]{36}$/)).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Sessions' })).toBeVisible();
+  await expect(page.getByText('No sessions this week')).toBeVisible();
   const refresh = page.waitForResponse('**/api/v1/auth/refresh');
   await page.reload();
   expect((await refresh).status()).toBe(200);
-  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
-  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Sessions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Account' }).click();
+  await page.getByRole('menuitem', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
 
   // A visitor opens the public page and asks to join: the same confirmation as for anyone
@@ -132,7 +144,75 @@ test('a member who forgot the password resets it through the UI', async ({ page,
   await expect(page.getByRole('alert')).toContainText('Invalid email or password');
   await page.getByLabel('Password').fill(NEW_PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Sessions' })).toBeVisible();
+});
+
+test.describe('a member on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('books a session in two taps, sees it confirmed, cancels it for free, then checks the plan and the history', async ({
+    page,
+    request,
+  }) => {
+    // Arrange: the activated founder of the first test holds a paid pack and there are sessions to book (see seed.ts)
+    const { email, shortName } = founder;
+    const suffix = unique();
+    const { groupName, planName } = await seedMemberWithSessions(
+      request,
+      { email, password: NEW_PASSWORD },
+      suffix,
+      shortName,
+    );
+    await page.goto('/login');
+    await signIn(page, email, NEW_PASSWORD);
+    const firstCard = page.getByRole('article', { name: groupName }).first();
+    await showWeekWith(page, firstCard);
+    await expect(firstCard).toContainText('12 of 12 seats free');
+
+    // Act: tap 1 (Book) and tap 2 (Confirm booking)
+    await firstCard.getByRole('button', { name: /^Book/ }).tap();
+    const dialog = page.getByRole('dialog', { name: 'Book this session?' });
+    await expect(dialog).toContainText("You'll use 1 credit (10 left).");
+    await dialog.getByRole('button', { name: 'Confirm booking' }).tap();
+
+    // Assert: the server's answer, in the notice and on the card
+    await expect(page.getByText("You're booked and confirmed.")).toBeVisible();
+    await expect(firstCard.getByText("You're confirmed")).toBeVisible();
+    await expect(firstCard).toContainText('11 of 12 seats free');
+
+    // My plan: one credit used, paid
+    await page.getByRole('link', { name: 'My plan' }).tap();
+    const plan = page.getByRole('article', { name: planName });
+    await expect(plan.getByText('9 credits left')).toBeVisible();
+    await expect(plan.getByText('Paid')).toBeVisible();
+
+    // Cancel (free: more than a day ahead): the credit comes back
+    await page.getByRole('link', { name: 'Sessions' }).tap();
+    await showWeekWith(page, firstCard);
+    await firstCard.getByRole('button', { name: /^Cancel/ }).tap();
+    const cancelDialog = page.getByRole('alertdialog', { name: 'Cancel your booking?' });
+    await expect(cancelDialog).toContainText('counts as a used session');
+    await cancelDialog.getByRole('button', { name: 'Cancel booking' }).tap();
+    await expect(
+      page.getByText('Booking cancelled. It was free and your credit was given back.'),
+    ).toBeVisible();
+    await expect(firstCard.getByRole('button', { name: /^Book/ })).toBeVisible();
+    await expect(firstCard).toContainText('12 of 12 seats free');
+
+    // My plan again, and the history
+    await page.getByRole('link', { name: 'My plan' }).tap();
+    await expect(plan.getByText('10 credits left')).toBeVisible();
+    await page.getByRole('link', { name: 'History' }).tap();
+    await expect(page.getByRole('heading', { level: 1, name: 'History' })).toBeVisible();
+    await expect(page.getByText('Attended')).toBeVisible();
+    await expect(page.getByText('No-show', { exact: true })).toBeVisible();
+    await expect(page.getByText(/\d of 3 no-shows this month/)).toBeVisible();
+
+    // Sign out everywhere is in the account menu
+    await page.getByRole('button', { name: 'Account' }).tap();
+    await page.getByRole('menuitem', { name: 'Sign out on all devices' }).tap();
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  });
 });
 
 test('asking for a reset link looks the same for an address nobody registered', async ({

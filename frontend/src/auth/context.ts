@@ -7,6 +7,11 @@ export interface AuthContextValue {
   api: ApiClient;
   /** The typed API client for the public routes: no bearer token, no refresh. */
   publicApi: ApiClient;
+  /**
+   * Counts the times the signed-in user changed (sign-in, sign-out, session end). A call that started in one epoch must not
+   * write its answer into the cache of the next: compare the value before and after it.
+   */
+  epoch: () => number;
   login: (email: string, password: string) => Promise<void>;
   /** Signs out here at once; never rejects. When the server did not confirm, `logoutFailed` turns true. */
   logout: () => Promise<void>;

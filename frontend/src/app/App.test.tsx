@@ -1,16 +1,26 @@
 import { screen, waitFor, within } from '@testing-library/react';
+import type { UserEvent } from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import { me, recorder, refreshRejected, tokenResponse, unauthenticated } from '@/test/handlers';
+import { recorder, refreshRejected, tokenResponse, unauthenticated } from '@/test/handlers';
 import { renderApp } from '@/test/render';
 import { server } from '@/test/server';
 
+/** The home page's call: answers only for `token`, so a request without the right bearer is a 401. */
 const meWith = (token: string) =>
-  http.get('/api/v1/me', ({ request }) =>
+  http.get('/api/v1/sessions', ({ request }) =>
     request.headers.get('Authorization') === `Bearer ${token}`
-      ? HttpResponse.json(me)
+      ? HttpResponse.json([])
       : unauthenticated(),
   );
+
+const homeHeading = { level: 1, name: 'Sessions' } as const;
+
+/** Opens the account menu and picks an item, the way a member signs out. */
+async function chooseFromAccountMenu(user: UserEvent, item: string) {
+  await user.click(screen.getByRole('button', { name: 'Account' }));
+  await user.click(await screen.findByRole('menuitem', { name: item }));
+}
 
 describe('start-up', () => {
   it('restores the session from the refresh cookie and shows the home page', async () => {
@@ -24,8 +34,8 @@ describe('start-up', () => {
     renderApp('/');
 
     // Assert
-    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
-    expect(await screen.findByText(me.memberId)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', homeHeading)).toBeInTheDocument();
+    expect(await screen.findByText('No sessions this week')).toBeInTheDocument();
   });
 
   it('shows a loading state while the session is being restored', () => {
@@ -64,7 +74,7 @@ describe('route guards', () => {
     const { router } = renderApp('/login');
 
     // Assert
-    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', homeHeading)).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
   });
 
@@ -73,7 +83,7 @@ describe('route guards', () => {
     server.use(
       http.post('/api/v1/auth/refresh', () => tokenResponse('restored'), { once: true }),
       refreshRejected,
-      http.get('/api/v1/me', () => unauthenticated()),
+      http.get('/api/v1/sessions', () => unauthenticated()),
     );
 
     // Act
@@ -94,7 +104,7 @@ describe('route guards', () => {
     const { router } = renderApp({ pathname: '/login', state: { from: '/\\evil.com' } });
 
     // Assert
-    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', homeHeading)).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
   });
 
@@ -134,7 +144,7 @@ describe('sign in', () => {
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
     // Assert
-    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', homeHeading)).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
     expect(JSON.parse(seen[0]?.body ?? '')).toEqual({
       email: 'ana@example.com',
@@ -220,9 +230,80 @@ describe('navigation', () => {
     renderApp('/privacy');
 
     // Assert
-    expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Account' })).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(within(nav).queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
+  it('gives a signed-in member a bottom bar to the three member screens, marking the current one', async () => {
+    // Arrange
+    server.use(
+      http.post('/api/v1/auth/refresh', () => tokenResponse('restored')),
+      meWith('restored'),
+      http.get('/api/v1/me/plan', () =>
+        HttpResponse.json({ asOf: '2026-07-15', subscriptions: [] }),
+      ),
+    );
+    const { user, router } = renderApp('/');
+
+    // Act
+    const bar = await screen.findByRole('navigation', { name: 'Sections' });
+    expect(within(bar).getByRole('link', { name: 'Sessions' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await user.click(within(bar).getByRole('link', { name: 'My plan' }));
+
+    // Assert
+    expect(await screen.findByRole('heading', { level: 1, name: 'My plan' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/me/plan');
+    expect(within(bar).getByRole('link', { name: 'My plan' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(bar).getByRole('link', { name: 'Sessions' })).not.toHaveAttribute('aria-current');
+    expect(within(bar).getByRole('link', { name: 'History' })).toHaveAttribute(
+      'href',
+      '/me/history',
+    );
+  });
+
+  it('shows no bottom bar to a visitor', async () => {
+    // Arrange
+    server.use(refreshRejected);
+
+    // Act
+    renderApp('/privacy');
+
+    // Assert
+    await screen.findByRole('navigation', { name: 'Main' });
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).not.toBeInTheDocument();
+  });
+
+  it('keeps sign out in an account menu that opens from the keyboard and closes on Escape', async () => {
+    // Arrange
+    server.use(
+      http.post('/api/v1/auth/refresh', () => tokenResponse('restored')),
+      meWith('restored'),
+    );
+    const { user } = renderApp('/');
+    const account = await screen.findByRole('button', { name: 'Account' });
+    account.focus();
+
+    // Act
+    await user.keyboard('{Enter}');
+    const menu = await screen.findByRole('menu');
+
+    // Assert
+    expect(within(menu).getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
+    expect(
+      within(menu).getByRole('menuitem', { name: 'Sign out on all devices' }),
+    ).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+    expect(account).toHaveFocus();
   });
 
   it('links the privacy policy from every page', async () => {
@@ -299,10 +380,10 @@ describe('sign out', () => {
       }),
     );
     const { user } = renderApp('/');
-    await screen.findByRole('heading', { name: 'Welcome back' });
+    await screen.findByRole('heading', homeHeading);
 
     // Act
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await chooseFromAccountMenu(user, 'Sign out');
 
     // Assert
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
@@ -322,10 +403,10 @@ describe('sign out', () => {
       }),
     );
     const { user } = renderApp('/');
-    await screen.findByRole('heading', { name: 'Welcome back' });
+    await screen.findByRole('heading', homeHeading);
 
     // Act
-    await user.click(screen.getByRole('button', { name: 'Sign out on all devices' }));
+    await chooseFromAccountMenu(user, 'Sign out on all devices');
 
     // Assert
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
@@ -355,10 +436,10 @@ describe('sign-out failures', () => {
       }),
     );
     const { user } = renderApp('/');
-    await screen.findByRole('heading', { name: 'Welcome back' });
+    await screen.findByRole('heading', homeHeading);
 
     // Act
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await chooseFromAccountMenu(user, 'Sign out');
     const notice = await screen.findByRole('alert');
     answer = 204;
     await user.click(screen.getByRole('button', { name: 'Try again' }));
@@ -382,16 +463,103 @@ describe('sign-out failures', () => {
       ),
     );
     const { user } = renderApp('/');
-    await screen.findByRole('heading', { name: 'Welcome back' });
+    await screen.findByRole('heading', homeHeading);
 
     // Act
-    await user.click(screen.getByRole('button', { name: 'Sign out on all devices' }));
+    await chooseFromAccountMenu(user, 'Sign out on all devices');
 
     // Assert
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Something went wrong. Please try again.');
     expect(alert).toHaveTextContent('r-8');
-    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', homeHeading)).toBeInTheDocument();
+  });
+});
+
+describe('the sign-out-everywhere error', () => {
+  it('disappears with the session: signing out, and the next sign-in, show no trace of it', async () => {
+    // Arrange
+    server.use(
+      http.post('/api/v1/auth/refresh', () => tokenResponse('restored'), { once: true }),
+      refreshRejected,
+      http.post('/api/v1/auth/login', () => tokenResponse('restored')),
+      meWith('restored'),
+      http.post('/api/v1/auth/logout-all', () =>
+        HttpResponse.json({ code: 'INTERNAL_ERROR', requestId: 'r-9' }, { status: 500 }),
+      ),
+      http.post('/api/v1/auth/logout', () => new HttpResponse(null, { status: 204 })),
+    );
+    const { user } = renderApp('/');
+    await screen.findByRole('heading', homeHeading);
+    await chooseFromAccountMenu(user, 'Sign out on all devices');
+    expect(await screen.findByRole('alert')).toHaveTextContent('r-9');
+
+    // Act: sign out normally, then sign in again
+    await chooseFromAccountMenu(user, 'Sign out');
+    await screen.findByRole('heading', { name: 'Sign in' });
+    const afterSignOut = screen.queryByText(/r-9/);
+    await user.type(screen.getByLabelText('Email'), 'ana@example.com');
+    await user.type(screen.getByLabelText('Password'), 'a long passphrase');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    await screen.findByRole('heading', homeHeading);
+
+    // Assert
+    expect(afterSignOut).not.toBeInTheDocument();
+    expect(screen.queryByText(/r-9/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('is cleared when the member tries again', async () => {
+    // Arrange
+    let calls = 0;
+    server.use(
+      http.post('/api/v1/auth/refresh', () => tokenResponse('restored'), { once: true }),
+      refreshRejected,
+      meWith('restored'),
+      http.post('/api/v1/auth/logout-all', () => {
+        calls += 1;
+        return calls === 1
+          ? HttpResponse.json({ code: 'INTERNAL_ERROR', requestId: 'r-10' }, { status: 500 })
+          : new Promise<never>(() => undefined);
+      }),
+    );
+    const { user } = renderApp('/');
+    await screen.findByRole('heading', homeHeading);
+    await chooseFromAccountMenu(user, 'Sign out on all devices');
+    await screen.findByRole('alert');
+
+    // Act
+    await chooseFromAccountMenu(user, 'Sign out on all devices');
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
+
+  it('cannot be started twice: the menu item is disabled while the call is pending', async () => {
+    // Arrange
+    let calls = 0;
+    server.use(
+      http.post('/api/v1/auth/refresh', () => tokenResponse('restored')),
+      meWith('restored'),
+      http.post('/api/v1/auth/logout-all', () => {
+        calls += 1;
+        return new Promise<never>(() => undefined);
+      }),
+    );
+    const { user } = renderApp('/');
+    await screen.findByRole('heading', homeHeading);
+    await chooseFromAccountMenu(user, 'Sign out on all devices');
+
+    // Act
+    await user.click(screen.getByRole('button', { name: 'Account' }));
+    const item = await screen.findByRole('menuitem', { name: 'Sign out on all devices' });
+    await user.click(item);
+
+    // Assert
+    expect(item).toHaveAttribute('aria-disabled', 'true');
+    expect(calls).toBe(1);
   });
 });
 
@@ -412,14 +580,14 @@ describe('cached data', () => {
     await user.type(email, 'ana@example.com');
     await user.type(screen.getByLabelText('Password'), 'a long passphrase');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
-    await screen.findByText(me.memberId);
+    await screen.findByText('No sessions this week');
     const afterLogin = queryClient.getQueryData(['left-over']);
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await chooseFromAccountMenu(user, 'Sign out');
     await screen.findByRole('heading', { name: 'Sign in' });
 
     // Assert
     expect(afterLogin).toBeUndefined();
-    expect(queryClient.getQueryData(['me'])).toBeUndefined();
+    expect(queryClient.getQueryCache().findAll({ queryKey: ['sessions'] })).toHaveLength(0);
   });
 });
 
