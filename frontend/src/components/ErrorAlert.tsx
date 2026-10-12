@@ -1,13 +1,16 @@
 import { ApiError, GENERIC_ERROR_MESSAGE } from '@/api/errors';
+import { rateLimitText } from '@/components/form/problems';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 /** Shows an error the way the API contract allows: its safe message, plus the request id for support. */
 export function ErrorAlert({ error }: { error: unknown }) {
   const apiError = error instanceof ApiError ? error : null;
+  const message =
+    apiError?.status === 429 ? rateLimitText(apiError.retryAfterSeconds) : apiError?.message;
   return (
     <Alert variant="destructive">
       <AlertDescription>
-        <p>{apiError?.message ?? GENERIC_ERROR_MESSAGE}</p>
+        <p>{message ?? GENERIC_ERROR_MESSAGE}</p>
         {apiError?.requestId && <p className="text-xs">Reference: {apiError.requestId}</p>}
       </AlertDescription>
     </Alert>

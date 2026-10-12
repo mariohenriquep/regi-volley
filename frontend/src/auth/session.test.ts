@@ -536,6 +536,53 @@ describe('AuthSession.api boundaries', () => {
   });
 });
 
+describe('AuthSession.publicApi', () => {
+  it('calls public routes without the bearer token, even when signed in, and never refreshes on a 401', async () => {
+    // Arrange
+    const { seen, record } = recorder();
+    server.use(
+      http.post('/api/v1/auth/refresh', () => tokenResponse('access-1'), { once: true }),
+      http.get('/api/v1/public/associations/:shortName', async ({ request }) => {
+        await record(request);
+        return unauthenticated();
+      }),
+    );
+    const session = newSession();
+    await session.start();
+
+    // Act
+    const result = await session.publicApi.GET('/api/v1/public/associations/{shortName}', {
+      params: { path: { shortName: 'club' } },
+    });
+
+    // Assert
+    expect(result.response.status).toBe(401);
+    expect(seen).toEqual([
+      expect.objectContaining({ path: '/api/v1/public/associations/club', authorization: null }),
+    ]);
+  });
+
+  it('refuses to follow redirects', async () => {
+    // Arrange
+    server.use(
+      http.get(
+        '/api/v1/public/associations/:shortName',
+        () =>
+          new HttpResponse(null, { status: 302, headers: { Location: 'https://evil.example/' } }),
+      ),
+    );
+    const session = newSession();
+
+    // Act
+    const call = session.publicApi.GET('/api/v1/public/associations/{shortName}', {
+      params: { path: { shortName: 'club' } },
+    });
+
+    // Assert
+    await expect(call).rejects.toThrow();
+  });
+});
+
 describe('AuthSession refresh across tabs', () => {
   /** A Web Locks stand-in shared by the "tabs": one holder at a time, in request order. */
   function fakeLocks() {

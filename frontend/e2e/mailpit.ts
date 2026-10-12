@@ -5,15 +5,22 @@ const MAILPIT = process.env.MAILPIT_URL ?? 'http://localhost:8025';
 
 interface Summary {
   ID: string;
-  To: { Address: string }[];
 }
 
-/** Waits for the activation mail to `address` and returns the token of its `/activate#token=...` link. */
-export async function activationToken(
+/** The account links the API mails: `WEB_ORIGIN/activate#token=...` and `WEB_ORIGIN/reset-password#token=...`. */
+export type LinkPath = '/activate' | '/reset-password';
+
+/**
+ * Waits for a mail to `address` that carries a link to `path` and returns the token of its fragment. Mails are
+ * searched newest first, so a second link (a reset after an activation) is the one returned.
+ */
+export async function emailedToken(
   request: APIRequestContext,
   address: string,
+  path: LinkPath,
 ): Promise<string> {
-  let messageId: string | undefined;
+  const pattern = new RegExp(`${path}#token=([^\\s"<>]+)`);
+  let token: string | undefined;
   await expect
     .poll(
       async () => {
@@ -21,16 +28,19 @@ export async function activationToken(
           params: { query: `to:"${address}"` },
         });
         const { messages } = (await response.json()) as { messages: Summary[] };
-        messageId = messages[0]?.ID;
-        return messageId;
+        for (const { ID } of messages) {
+          const message = await request.get(`${MAILPIT}/api/v1/message/${ID}`);
+          const { Text } = (await message.json()) as { Text: string };
+          const match = pattern.exec(Text);
+          if (match?.[1]) {
+            token = decodeURIComponent(match[1]);
+            return token;
+          }
+        }
+        return undefined;
       },
-      { message: `activation mail to ${address}`, timeout: 20_000 },
+      { message: `mail to ${address} with a ${path} link`, timeout: 20_000 },
     )
     .toBeTruthy();
-
-  const message = await request.get(`${MAILPIT}/api/v1/message/${messageId ?? ''}`);
-  const { Text } = (await message.json()) as { Text: string };
-  const match = /\/activate#token=([^\s"<>]+)/.exec(Text);
-  if (!match?.[1]) throw new Error('No activation link in the mail');
-  return decodeURIComponent(match[1]);
+  return token ?? '';
 }

@@ -67,14 +67,29 @@ From `frontend/`:
 | `npm run build` | production build into `frontend/dist` (app shell, manifest, service worker) |
 | `npm run api:generate` | regenerates `src/api/schema.gen.ts` from `docs/api/openapi.json`; commit it with the contract |
 | `npm run api:check` | fails when the generated client is stale (CI runs it) |
-| `npm run e2e` | the Playwright smoke against the real backend (below) |
+| `npm run e2e` | the Playwright journeys against the real backend (below) |
 
-**End-to-end smoke (local only for now).** With `docker compose up -d` and the API running as above (dev profile, Mailpit
-SMTP), run `npx playwright install chromium` once, then `npm run e2e`. It registers an association through the API, reads
-the activation email from Mailpit's API, activates the account, signs in through the UI, checks that a reload restores the
-session through the refresh cookie, and signs out. Playwright starts `npm run dev` itself unless it is already running.
-Registration is limited to 3 per hour per address, so a fourth run within the hour gets 429: restart the API (the limiter
-is in memory).
+**Trying the app without curl.** With the three commands above running, open <http://localhost:5173>:
+
+| Screen | Route | What to do |
+|---|---|---|
+| Register an association | `/register` | fill the form (levels: first = entry level) and submit; the activation mail lands in Mailpit (<http://localhost:8025>) |
+| Activate your account | `/activate#token=...` | open the link from the mail, choose a password, then sign in |
+| Sign in / sign out | `/login` | the founder's email and password; `/` is the signed-in home |
+| Forgot password | `/forgot-password` | request a link (the answer is the same for any address), open it from Mailpit, choose a new password |
+| Public page of an association | `/a/<short-name>` | levels, groups with the weekly schedule, venues; "Want to try it?" opens the join form |
+| Join request | `/a/<short-name>/join` | name, email, phone and the consent; the answer is the same whatever the email |
+| Privacy policy (stub) | `/privacy` | the text the consent boxes link to; `src/lib/privacy.ts` holds its version |
+
+Rate limits (threat model D-9) show as "Please wait N minutes"; restart the API to clear its in-memory counters.
+
+**End-to-end journeys (local only for now).** With `docker compose up -d` and the API running as above (dev profile, Mailpit
+SMTP), run `npx playwright install chromium` once, then `npm run e2e`. The journey registers an association through the UI,
+reads the activation email from Mailpit's API, opens the link in the browser, sets the password, signs in, reloads (the session
+comes back through the refresh cookie) and signs out; a visitor then opens the public page and sends a join request; and a member
+resets a forgotten password through the UI. Playwright starts `npm run dev` itself unless it is already running.
+Registration is limited to 3 per hour per address and one run registers once, so a fourth run within the hour gets 429: restart
+the API (the limiter is in memory).
 
 **Production** is same-origin too (threat model D-7b): one reverse proxy serves `frontend/dist` (with `index.html` as the
 fallback for unknown paths) and forwards `/api` to the API, and `WEB_ORIGIN` is set to that origin. Deployment comes with

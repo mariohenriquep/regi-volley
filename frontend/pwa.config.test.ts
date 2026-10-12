@@ -54,10 +54,10 @@ describe('PWA configuration', () => {
 
     // Assert
     expect(injectRegister).toBe(false);
-    expect(options.registerType).toBe('autoUpdate');
+    expect(options.registerType).toBe('prompt');
   });
 
-  it('activates a new version at once and takes control of the open pages', () => {
+  it('waits for the user before a new version takes over, so no form is reloaded away', () => {
     // Arrange
     const workbox = pwaOptions.workbox;
 
@@ -65,7 +65,7 @@ describe('PWA configuration', () => {
     const activation = { skipWaiting: workbox?.skipWaiting, clientsClaim: workbox?.clientsClaim };
 
     // Assert
-    expect(activation).toEqual({ skipWaiting: true, clientsClaim: true });
+    expect(activation).toEqual({ skipWaiting: false, clientsClaim: true });
   });
 
   it('describes the installable app', () => {
@@ -118,16 +118,22 @@ describe('the built service worker', () => {
     await rm(outDir, { recursive: true, force: true });
   });
 
-  it('skips waiting and claims the clients', () => {
+  it('skips waiting only when the page asks (SKIP_WAITING), never on its own', () => {
     // Arrange
     const code = sw;
 
     // Act
-    const skips = code.includes('self.skipWaiting()');
+    const calls = code.match(/self\.skipWaiting\(\)/g) ?? [];
+    const guarded =
+      /SKIP_WAITING"[^}]{0,40}self\.skipWaiting\(\)|self\.skipWaiting\(\)[^}]{0,40}SKIP_WAITING/.test(
+        code,
+      );
     const claims = /clientsClaim\(\)/.test(code);
 
     // Assert
-    expect(skips).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(guarded).toBe(true);
+    expect(code).toContain('addEventListener("message"');
     expect(claims).toBe(true);
   });
 

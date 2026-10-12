@@ -12,7 +12,11 @@ export function takeFragmentToken(
   const { hash, pathname, search } = win.location;
   if (!hash) return null;
   win.history.replaceState(win.history.state, '', pathname + search);
+  return tokenFromHash(hash);
+}
 
+/** The `token` parameter of a fragment (`#token=...`), decoded; null when there is none or it is not decodable. */
+export function tokenFromHash(hash: string): string | null {
   const raw = hash
     .slice(1)
     .split('&')

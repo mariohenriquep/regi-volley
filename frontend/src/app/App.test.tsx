@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { me, recorder, refreshRejected, tokenResponse, unauthenticated } from '@/test/handlers';
@@ -191,6 +191,100 @@ describe('sign in', () => {
   });
 });
 
+describe('navigation', () => {
+  it('offers an anonymous visitor sign in and registration, and nothing to sign out of', async () => {
+    // Arrange
+    server.use(refreshRejected);
+
+    // Act
+    renderApp('/privacy');
+
+    // Assert
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    expect(within(nav).getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/login');
+    expect(within(nav).getByRole('link', { name: 'Register an association' })).toHaveAttribute(
+      'href',
+      '/register',
+    );
+    expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
+  });
+
+  it('offers a signed-in user to sign out instead', async () => {
+    // Arrange
+    server.use(
+      http.post('/api/v1/auth/refresh', () => tokenResponse('restored')),
+      meWith('restored'),
+    );
+
+    // Act
+    renderApp('/privacy');
+
+    // Assert
+    expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    expect(within(nav).queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
+  });
+
+  it('links the privacy policy from every page', async () => {
+    // Arrange
+    server.use(refreshRejected);
+
+    // Act
+    renderApp('/no-such-page');
+
+    // Assert
+    expect(await screen.findByRole('link', { name: 'Privacy policy' })).toHaveAttribute(
+      'href',
+      '/privacy',
+    );
+  });
+});
+
+describe('sign in page links', () => {
+  it('leads to password recovery and to registering an association', async () => {
+    // Arrange
+    server.use(refreshRejected);
+    renderApp('/login');
+
+    // Act
+    const main = within(await screen.findByRole('main'));
+
+    // Assert
+    expect(main.getByRole('link', { name: 'Forgot password?' })).toHaveAttribute(
+      'href',
+      '/forgot-password',
+    );
+    expect(main.getByRole('link', { name: 'Register an association' })).toHaveAttribute(
+      'href',
+      '/register',
+    );
+  });
+
+  it('shows how long to wait when sign-in is rate limited, without saying anything about the account', async () => {
+    // Arrange
+    server.use(
+      refreshRejected,
+      http.post('/api/v1/auth/login', () =>
+        HttpResponse.json(
+          { code: 'TOO_MANY_REQUESTS', message: 'Too many requests', requestId: 'r-429' },
+          { status: 429, headers: { 'Retry-After': '600' } },
+        ),
+      ),
+    );
+    const { user } = renderApp('/login');
+
+    // Act
+    await user.type(await screen.findByLabelText('Email'), 'ana@example.com');
+    await user.type(screen.getByLabelText('Password'), 'a long passphrase');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    // Assert
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Too many attempts. Please wait 10 minutes and try again.',
+    );
+  });
+});
+
 describe('sign out', () => {
   it('signs out of this device and shows the sign-in page', async () => {
     // Arrange
@@ -346,7 +440,7 @@ describe('account links', () => {
     expect(window.location.hash).toBe('');
     expect(window.location.pathname).toBe(path);
     expect(document.body).not.toHaveTextContent('secret-token-123');
-    expect(screen.getByText(/link is ready/i)).toBeInTheDocument();
+    expect(screen.getByLabelText('New password')).toBeInTheDocument();
   });
 
   it('says so when the link has no token', async () => {

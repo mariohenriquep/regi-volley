@@ -7,13 +7,14 @@ export const THEME_COLOR = '#0f3d75';
  * no runtime caching at all, so no API response (personal data) is ever stored by it, and a navigation under /api is
  * never answered with the cached index.html.
  *
- * Updates: a new worker activates at once (skipWaiting) and takes control of the open pages (clientsClaim); the app
- * registers it from its own bundle (`virtual:pwa-register` in main.tsx, so index.html gets no extra script, CSP),
- * whose autoUpdate helper reloads every open page when the new version activates. A reload loses the in-memory access
- * token only, which the start-up refresh restores. An update prompt can replace this once forms hold unsaved input.
+ * Updates (`registerType: 'prompt'`): a new worker installs and then *waits*; it activates only when the user taps
+ * "Reload" in the notice (the page posts SKIP_WAITING, `src/pwa/`), and then claims the open pages and reloads them.
+ * The forms (register, join, activate, reset) hold unsaved input, so an update must never reload a page by itself.
+ * The app registers the worker from its own bundle (`virtual:pwa-register` in main.tsx, so index.html gets no extra
+ * script, CSP). A reload loses the in-memory access token only, which the start-up refresh restores.
  */
 export const pwaOptions: Partial<VitePWAOptions> = {
-  registerType: 'autoUpdate',
+  registerType: 'prompt',
   injectRegister: false,
   manifest: {
     name: 'RegiVolley',
@@ -37,7 +38,7 @@ export const pwaOptions: Partial<VitePWAOptions> = {
     navigateFallback: '/index.html',
     navigateFallbackDenylist: [/^\/api(\/|$)/],
     cleanupOutdatedCaches: true,
-    skipWaiting: true,
+    skipWaiting: false,
     clientsClaim: true,
   },
   devOptions: { enabled: false },

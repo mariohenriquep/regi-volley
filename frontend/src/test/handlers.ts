@@ -39,3 +39,40 @@ export const me = {
   associationId: '11111111-1111-1111-1111-111111111111',
   memberId: '22222222-2222-2222-2222-222222222222',
 };
+
+/** The API's one error body, as MSW answers it. */
+export const apiError = (
+  status: number,
+  code: string,
+  message: string,
+  options: { fields?: string[]; headers?: Record<string, string> } = {},
+) =>
+  HttpResponse.json(
+    { code, message, requestId: `req-${String(status)}`, fields: options.fields },
+    { status, headers: options.headers },
+  );
+
+export const rateLimited = (retryAfter: number) =>
+  apiError(429, 'TOO_MANY_REQUESTS', 'Too many requests', {
+    headers: { 'Retry-After': String(retryAfter) },
+  });
+
+export const publicAssociation = {
+  name: 'Lisbon Spikers',
+  shortName: 'lisbon-spikers',
+  locality: 'Lisbon',
+  contactEmail: 'info@lisbonspikers.example',
+  levels: ['Beginner', 'Intermediate', 'Advanced'],
+  groups: [
+    {
+      name: 'Tuesday evening',
+      levels: ['Beginner', 'Intermediate'],
+      venue: 'Pavilhão Central',
+      schedule: [
+        { dayOfWeek: 'TUESDAY', startTime: '20:30', durationMinutes: 90 },
+        { dayOfWeek: 'THURSDAY', startTime: '21:00', durationMinutes: 60 },
+      ],
+    },
+  ],
+  venues: [{ name: 'Pavilhão Central', address: 'Rua da Bola 1, Lisbon', courts: 2 }],
+};
