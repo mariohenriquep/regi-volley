@@ -82,6 +82,53 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
+  # ---- Frontend (frontend/): contract, lint, types, unit tests, build --------------------------
+  # The Playwright E2E smoke needs the dockerised backend and runs locally only for now (README, "Frontend").
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Exactly the lockfile; no lifecycle scripts of dependencies run at install time.
+      - name: Install (lockfile)
+        run: npm ci --ignore-scripts
+
+      # Runtime dependencies only (what ships to browsers); dev tooling is covered by Dependabot.
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      # Fails when src/api/schema.gen.ts no longer matches docs/api/openapi.json.
+      - name: API client up to date
+        run: npm run api:check
+
+      - name: Lint and format
+        run: |
+          npm run lint
+          npm run format:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
   # ---- Code: secret detection ------------------------------------------------------------------
   secret-scan:
     name: Secret scan (Gitleaks)
@@ -110,4 +157,4 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: semgrep scan --config=p/java --config=p/owasp-top-ten --config=p/secrets --error
+      - run: semgrep scan --config=p/java --config=p/owasp-top-ten --config=p/secrets --config=p/typescript --config=p/react --error

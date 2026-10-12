@@ -40,6 +40,46 @@ export JWT_VERIFICATION_KEYS="kid: dev-1
 $(cat dev-jwt.pub.pem)"
 ```
 
+## Frontend
+
+A mobile-first PWA in [`frontend/`](frontend): React + Vite + TypeScript (strict), Tailwind CSS + shadcn/ui, React Router,
+TanStack Query, and a typed API client generated from `docs/api/openapi.json`. Design and rules: `docs/architecture.md`
+section 15. Needs Node 24 LTS or later (`frontend/.nvmrc` pins 24, which CI uses).
+
+**Running frontend and backend together.** The app talks to the API on its own origin: in development Vite serves it on
+<http://localhost:5173> and proxies `/api` to the API on `:8080`, keeping the browser's `Host`, so the refresh cookie and
+the API's Origin check of the cookie routes work with no CORS (`CORS_ALLOWED_ORIGIN` stays unset).
+
+```bash
+docker compose up -d                                       # Postgres + Mailpit
+SMTP_HOST=localhost SMTP_PORT=1025 SMTP_SECURITY=NONE \
+  ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev     # the API on :8080, mails to Mailpit (http://localhost:8025)
+cd frontend && npm ci && npm run dev                       # the app on http://localhost:5173
+```
+
+From `frontend/`:
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Vite dev server on :5173 with the `/api` proxy (`API_PROXY_TARGET` overrides `http://localhost:8080`) |
+| `npm test` | unit and component tests (Vitest, Testing Library, MSW: no backend needed) |
+| `npm run lint`, `npm run format:check`, `npm run typecheck` | ESLint, Prettier, `tsc -b` |
+| `npm run build` | production build into `frontend/dist` (app shell, manifest, service worker) |
+| `npm run api:generate` | regenerates `src/api/schema.gen.ts` from `docs/api/openapi.json`; commit it with the contract |
+| `npm run api:check` | fails when the generated client is stale (CI runs it) |
+| `npm run e2e` | the Playwright smoke against the real backend (below) |
+
+**End-to-end smoke (local only for now).** With `docker compose up -d` and the API running as above (dev profile, Mailpit
+SMTP), run `npx playwright install chromium` once, then `npm run e2e`. It registers an association through the API, reads
+the activation email from Mailpit's API, activates the account, signs in through the UI, checks that a reload restores the
+session through the refresh cookie, and signs out. Playwright starts `npm run dev` itself unless it is already running.
+Registration is limited to 3 per hour per address, so a fourth run within the hour gets 429: restart the API (the limiter
+is in memory).
+
+**Production** is same-origin too (threat model D-7b): one reverse proxy serves `frontend/dist` (with `index.html` as the
+fallback for unknown paths) and forwards `/api` to the API, and `WEB_ORIGIN` is set to that origin. Deployment comes with
+the container work.
+
 ## Email
 
 The API sends the account links (activation, password reset) and the notices of the booking rules (moved up from the waitlist,
@@ -110,7 +150,8 @@ springdoc is a test-scope dependency only: the running application serves no doc
 |---|---|---|---|
 | `build-and-test` | yes | yes | `./mvnw verify` (tests + JaCoCo >= 85%), CycloneDX SBOM artifact |
 | `secret-scan` | yes | yes | Gitleaks |
-| `sast` | yes | yes | Semgrep (`p/java`, `p/owasp-top-ten`, `p/secrets`) |
+| `sast` | yes | yes | Semgrep (`p/java`, `p/owasp-top-ten`, `p/secrets`, `p/typescript`, `p/react`) |
+| `frontend` | yes | yes | `npm ci`, `npm audit` of the runtime dependencies (high), API client up to date, ESLint + Prettier, typecheck, unit tests, build |
 
-Container image build, scan and publish (CD) come in a later issue. Dependabot covers `maven`
-and `github-actions`.
+Container image build, scan and publish (CD) come in a later issue. Dependabot covers `maven`,
+`github-actions` and `npm` (`/frontend`, minor and patch bumps grouped), each with a 7-day cooldown.

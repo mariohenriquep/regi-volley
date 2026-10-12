@@ -677,3 +677,144 @@ dependency (springdoc and swagger-core are on the test classpath only, never in 
 differs, so it cannot drift (`./mvnw test -Dtest=OpenApiContractTest -Dopenapi.update=true` rewrites it). The running application has no
 documentation endpoint and no swagger-core, so there is nothing to switch off in production; moving springdoc to compile scope and enabling
 it under profile `dev` is a one-line change if a live endpoint is ever wanted (its routes would then need rows in `RouteInventoryTest`).
+
+## 15. Frontend (issue #45, epic #44)
+
+A mobile-first PWA in `frontend/`: React + Vite + TypeScript (`strict`), Tailwind CSS + shadcn/ui, React Router (data router),
+TanStack Query for server state. All UI text is English. The client shows what the API answers and re-implements no business rule
+(booking windows, deadlines, roles); tenant and identity come only from the token, so no request carries an association id, a role
+or a version.
+
+**Structure.**
+
+| Path | Holds |
+|---|---|
+| `src/api/` | `schema.gen.ts` (generated, never edited), `errors.ts` (`ApiError`, `toApiError`, `unwrap`) |
+| `src/auth/` | `session.ts` (tokens, refresh, the authenticated client), `AuthProvider` + `useAuth`, route guards |
+| `src/app/` | providers, the `QueryClient`, the route table |
+| `src/pages/`, `src/layout/`, `src/components/` | screens, the shell, shared components; `components/ui/` holds the shadcn/ui sources |
+| `src/lib/` | small helpers (`fragment.ts`, `utils.ts`) |
+| `src/styles/shadcn.css` | shadcn's stylesheet, vendored (see *Dependencies*) |
+| `src/test/` | the MSW server, handlers and the `renderApp` helper |
+| `e2e/` | Playwright specs against the real backend |
+
+**Client generation.** `npm run api:generate` turns `docs/api/openapi.json` (kept in sync with the controllers by
+`OpenApiContractTest`) into `src/api/schema.gen.ts` with openapi-typescript. Requests go through openapi-fetch, so paths,
+parameters, bodies and responses are typed from the contract and never written by hand. `npm run api:check` regenerates in memory
+and fails when the committed file differs; CI runs it.
+
+**Auth** (section 11, threat model D-7, D-7a, D-7b). `createAuthSession` owns the session:
+
+- **Token storage.** The access token lives in a closure only: never `localStorage`, `sessionStorage` or IndexedDB. ESLint forbids
+  those globals and the same properties on `window`, `globalThis` and `self`. A reload loses the token and the start-up refresh
+  gets a new one.
+- **Cookie routes.** The refresh token is the `__Secure-rt` HttpOnly cookie, which the browser sends to `/api/v1/auth` only.
+  `POST /auth/refresh` and `/auth/logout` are called same-origin with `Content-Type: application/json` (required by
+  `CookieEndpointGuardFilter`) and never with a bearer header.
+- **Bearer only to our API.** `session.api` is the client for every other call. It attaches `Authorization: Bearer` only when the
+  request URL is on the page's own origin and its path starts with `/api/`; anything else throws before a byte is sent. Both
+  clients send `redirect: 'error'`, so no API answer is ever followed somewhere else.
+- **401 handling.** On a 401, `session.api` refreshes and retries that request once. If the retry gets a 401 too, a token the API
+  issued a moment ago was refused (member deactivated, stamp rotated), so the session ends and the guards go to `/login`.
+- **Refresh concurrency.**
+  - In a tab, the refresh is single-flight: concurrent 401s share one `POST /auth/refresh`. A 401 whose token another request
+    already replaced retries without refreshing again; a second refresh would present a rotated token, which the API treats as
+    reuse (D-7).
+  - Across tabs, every refresh runs inside the `rv-refresh` Web Lock (`navigator.locks`). A second tab waits for the first and then
+    presents the rotated cookie, instead of racing it and being refused inside the API's 10-second grace window.
+  - Where Web Locks are missing (no current browser), refreshes are only serialised per tab. A delayed retry of a refused refresh
+    was rejected: it would delay every anonymous start-up by a second.
+- **Refresh failures.** A refresh answered 400 / 401 / 403 ends the session. A transient failure (network, 429, 5xx) keeps a
+  running session and returns the original error to the caller. On start, any failure means anonymous.
+- **Sign-out epoch.** Every sign-out bumps an epoch. A refresh that was in flight when the user signed out discards its answer, so
+  it cannot sign them back in.
+- **`login`** stores the token from `POST /auth/login`.
+- **`logout`** forgets the token at once, then reports whether the server confirmed (204). If it did not, the device's refresh
+  family may still be valid, so `/login` shows "Could not sign out on the server — try again" with a *Try again* button (the call
+  needs only the cookie).
+- **`logoutAll`** (bearer) signs out locally only when the server confirmed. Otherwise the user stays on the page and sees the
+  error.
+- **`AuthProvider`** exposes the status (`unknown` until the start-up refresh answered, then `authenticated` or `anonymous`), the
+  client, the actions and `logoutFailed` through `useAuth`. On every status change, sign-in included, it cancels the running queries
+  and clears the query cache before the next user's pages render.
+- **Guards.** `RequireAuth` sends an anonymous visitor to `/login` and remembers the page. `PublicOnly` sends a signed-in user back
+  there only if `new URL(from, location.origin)` stays on this origin (no open redirect through `//evil.com` or `/\evil.com`).
+  Both show a loading state while the status is unknown.
+
+**Errors.** Every failed call becomes an `ApiError` with `status`, `code`, `message`, `fields` and `requestId` from the API's one error
+body.
+- **Message shown:** the API's own English message for a 4xx (those messages never quote input); generic text for a 5xx or for a
+  body that is not the API's shape.
+- **Reference:** the request id is shown so a user can quote it to support.
+- **No connection:** an unreachable server is `NETWORK_ERROR`.
+- **Retries:** TanStack Query retries no 4xx.
+
+**Account links** (D-11).
+- The loaders of `/activate` and `/reset-password` call `takeFragmentToken` before the page renders. It reads `token` from the
+  fragment, removes the whole fragment with `history.replaceState` (keeping the path, the query string and the router's history
+  state) and returns the token. The token then lives in memory only and is never rendered.
+- These routes never revalidate, so the loader runs once per visit.
+- `index.html` sets `<meta name="referrer" content="no-referrer">`, and the app loads no third-party resource at all (the font is
+  self-hosted from `@fontsource-variable/geist`).
+- F2 adds the password forms that POST the token.
+
+**Same origin.**
+- In development the Vite proxy forwards `/api` to `http://localhost:8080` with `changeOrigin: false`. The API then sees
+  `Host: localhost:5173`, so the request is same-origin: Spring's CORS filter is not involved, and the cookie guard accepts
+  `Origin: http://localhost:5173` as the API's own origin. With `changeOrigin: true` the cookie routes would answer 403.
+- The `__Secure-` cookie works on `http://localhost` because browsers treat localhost as a secure context.
+- In production one reverse proxy serves `frontend/dist` and `/api` on one origin, so CORS stays off and `SameSite=Strict` holds
+  (D-7b).
+
+**PWA** (`pwa.config.ts`, vite-plugin-pwa with Workbox `generateSW`).
+- **Manifest:** RegiVolley, standalone, theme `#0f3d75`, with 192 and 512 icons plus a maskable 512 (placeholders from
+  `npm run icons:generate`).
+- **Precache:** the built app shell only (scripts, styles, `index.html`, images, the manifest, fonts).
+- **No runtime caching:** no API response, and so no personal data, is ever stored by the service worker. Its navigation
+  fallback to `index.html` excludes `/api`.
+- **Updates:** a new worker activates at once (`skipWaiting`) and takes control of the open pages (`clientsClaim`). The app
+  registers it from its own bundle (`virtual:pwa-register` in `main.tsx`, `registerType: 'autoUpdate'`), and the helper reloads
+  every open page when the new version activates. A reload costs only the in-memory access token, which the start-up refresh
+  restores.
+- **Later:** once screens hold unsaved input (F2+), this may become an update prompt.
+- **Tests:** `pwa.config.test.ts` pins the options and builds the app to check the generated `sw.js`: `skipWaiting` and
+  `clientsClaim`, a single navigation route with the `/api` denylist, no API URL in the precache, and no inline or extra script in
+  `index.html`.
+
+**CSP readiness.** The build has no inline scripts and no inlined assets (`assetsInlineLimit: 0`), and ESLint forbids
+`dangerouslySetInnerHTML`.
+
+**Deployment notes** (for the container / reverse-proxy work; nothing is deployed yet):
+- Serve `index.html`, `sw.js` and `manifest.webmanifest` with `Cache-Control: no-cache` so a new version is picked up. The hashed
+  files under `/assets/` can be `public, max-age=31536000, immutable`. Unknown paths outside `/api` fall back to `index.html`.
+- Send this header with the app (the API keeps its own stricter `default-src 'none'`):
+  `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';
+  connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self';
+  frame-ancestors 'none'`. Also send `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, and HSTS at the TLS
+  terminator.
+- Set `WEB_ORIGIN` to the app's origin; it is also the origin of the emailed links.
+- Never upload Playwright traces, videos or reports as CI artifacts: they record tokens, cookies and personal data. The config
+  keeps traces only on failure, locally, and the frontend job uploads nothing.
+
+**Testing.**
+- **Unit and component:** Vitest + Testing Library + MSW, with `onUnhandledFrame: 'error'` so a request without a handler fails the
+  test. Tests check behaviour through roles, labels and the requests on the wire, never class names, and use `// Arrange` /
+  `// Act` / `// Assert`.
+- **Session tests:** start-up refresh, login, the single-flight refresh, one retry and sign-out after a refused retry, the
+  sign-out epoch, logout and logout-all failures, the bearer boundary, `redirect: 'error'`, and the Web Lock (mocked).
+- **App tests:** the guards and the return path, login errors, sign-out and its failures, the query cache across users, the
+  account-link routes and the 404 page.
+- **E2E:** Playwright (`e2e/`, Chromium) runs a smoke against the real backend and Mailpit: register through the API, activate
+  with the mailed token, sign in through the UI, reload (refresh cookie through the proxy), sign out. It runs locally only for now.
+- **CI:** the `frontend` job runs `npm ci --ignore-scripts`, `npm audit --omit=dev --audit-level=high`, `api:check`, lint, format
+  check, typecheck, unit tests and build. The `sast` job adds Semgrep's `p/typescript` and `p/react` rule sets.
+
+**Dependencies.**
+- **Node:** 24 LTS (`.nvmrc`, `engines >= 24.11`, `@types/node` 24); newer Node versions work too.
+- **Versions:** exact versions and a committed `package-lock.json`.
+- **`.npmrc`:** `save-exact`, `engine-strict`, `ignore-scripts=true` (no dependency runs install scripts) and
+  `min-release-age=7` (npm resolves no version younger than a week).
+- **Dependabot:** proposes npm updates weekly after a 7-day cooldown, grouping minor and patch bumps into one PR.
+- **TypeScript:** stays on 5.9 until typescript-eslint and openapi-typescript support 6+ / 7.
+- **shadcn:** the CLI is not a dependency, because its own dependency tree carries audit findings. Its one stylesheet is vendored,
+  and components are added with `npx shadcn@4.21.1 add <name>`.
