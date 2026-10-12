@@ -727,6 +727,11 @@ export interface components {
             code?: string;
             fields?: string[];
             message?: string;
+            /**
+             * @description Why a booking or the cancellation of one was refused, stable for clients to branch on; the message is for people and may change. Present only on a refusal (422 BUSINESS_RULE_VIOLATION, or 409 CONFLICT for DUPLICATE_BOOKING), absent from every other error. `code` is unchanged.
+             * @enum {string}
+             */
+            reason?: "MEMBER_INACTIVE" | "LEVEL_NOT_ALLOWED" | "NO_VALID_SUBSCRIPTION" | "PLAN_LEVEL_NOT_ALLOWED" | "NO_BALANCE" | "PAYMENT_OVERDUE" | "BOOKING_NOT_OPEN" | "BOOKING_CLOSED" | "OVERLAP" | "DUPLICATE_BOOKING" | "COACH_OF_SESSION" | "SESSION_NOT_SCHEDULED" | "CANCELLATION_CLOSED";
             requestId?: string;
         };
         AssignPlanRequest: {
@@ -753,9 +758,13 @@ export interface components {
             capacity?: number;
             /** Format: date-time */
             endsAt?: string;
+            /** Format: date-time */
+            freeCancellationUntil?: string;
             /** Format: int32 */
             freeSeats?: number;
             groupName?: string;
+            /** Format: uuid */
+            myBookingId?: string;
             myBookingStatus?: string;
             /** Format: uuid */
             sessionId?: string;
@@ -763,6 +772,9 @@ export interface components {
             startsAt?: string;
             /** Format: uuid */
             trainingGroupId?: string;
+            venueName?: string;
+            /** Format: int32 */
+            waitlistPosition?: number;
             /** Format: int32 */
             waitlistSize?: number;
         };
@@ -824,22 +836,35 @@ export interface components {
             name: string;
             schedule: components["schemas"]["WeeklySlotRequest"][];
         };
-        EntryView: {
-            /** Format: uuid */
-            bookingId?: string;
-            /** Format: uuid */
-            memberId?: string;
-            memberName?: string;
-            status?: string;
-        };
         ForgotPasswordRequest: {
             email: string;
+        };
+        GroupSlotView: {
+            dayOfWeek?: string;
+            /** Format: int32 */
+            durationMinutes?: number;
+            startTime?: string;
         };
         GroupView: {
             levels?: string[];
             name?: string;
-            schedule?: components["schemas"]["SlotView"][];
+            schedule?: components["schemas"]["PublicSlotView"][];
             venue?: string;
+        };
+        HistoryEntryView: {
+            /** Format: uuid */
+            bookingId?: string;
+            /** Format: date-time */
+            endsAt?: string;
+            /** Format: uuid */
+            sessionId?: string;
+            /** Format: date-time */
+            startsAt?: string;
+            status?: string;
+            /** Format: uuid */
+            trainingGroupId?: string;
+            trainingGroupName?: string;
+            venueName?: string;
         };
         JoinAssociationRequest: {
             consentAccepted: boolean;
@@ -906,7 +931,7 @@ export interface components {
             member?: components["schemas"]["MemberResponse"];
         };
         MemberHistoryResponse: {
-            entries?: components["schemas"]["EntryView"][];
+            entries?: components["schemas"]["HistoryEntryView"][];
             nearLimit?: boolean;
             /** Format: int32 */
             noShowLimit?: number;
@@ -998,6 +1023,12 @@ export interface components {
             shortName?: string;
             venues?: components["schemas"]["VenueView"][];
         };
+        PublicSlotView: {
+            dayOfWeek?: string;
+            /** Format: int32 */
+            durationMinutes?: number;
+            startTime?: string;
+        };
         RecordPaymentRequest: {
             /** Format: int64 */
             amountCents: number;
@@ -1031,6 +1062,14 @@ export interface components {
         ResetPasswordRequest: {
             password: string;
             token: string;
+        };
+        RosterEntryView: {
+            /** Format: uuid */
+            bookingId?: string;
+            /** Format: uuid */
+            memberId?: string;
+            memberName?: string;
+            status?: string;
         };
         SessionCancelledResponse: {
             /** Format: int32 */
@@ -1069,7 +1108,7 @@ export interface components {
             coachId?: string;
             /** Format: date-time */
             endsAt?: string;
-            seats?: components["schemas"]["EntryView"][];
+            seats?: components["schemas"]["RosterEntryView"][];
             /** Format: uuid */
             sessionId?: string;
             /** Format: date-time */
@@ -1077,13 +1116,7 @@ export interface components {
             status?: string;
             /** Format: uuid */
             trainingGroupId?: string;
-            waitlist?: components["schemas"]["EntryView"][];
-        };
-        SlotView: {
-            dayOfWeek?: string;
-            /** Format: int32 */
-            durationMinutes?: number;
-            startTime?: string;
+            waitlist?: components["schemas"]["RosterEntryView"][];
         };
         SubscriptionPaymentEntryResponse: {
             /** Format: date */
@@ -1142,7 +1175,7 @@ export interface components {
             /** Format: uuid */
             id?: string;
             name?: string;
-            schedule?: components["schemas"]["SlotView"][];
+            schedule?: components["schemas"]["GroupSlotView"][];
             status?: string;
             /** Format: uuid */
             venueId?: string;
@@ -1213,7 +1246,7 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description A business rule refuses it; `message` says which. */
+        /** @description A business rule refuses it; `message` says which. A refused booking or cancellation also has a stable `reason`. */
         RuleViolation: {
             headers: {
                 [name: string]: unknown;

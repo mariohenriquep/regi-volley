@@ -3,13 +3,15 @@ import { isInstant } from '@/lib/dates';
 
 type Schemas = components['schemas'];
 
-/** One past booking of the member, as `GET /api/v1/me/history` sends it. */
+/** One past booking of the member, as `GET /api/v1/me/history` sends it (`HistoryEntryView`), read into non-optional ids and dates. */
 export interface HistoryEntry {
   bookingId: string;
   sessionId: string;
   startsAt: string;
   endsAt: string;
   status: string;
+  trainingGroupName: string | undefined;
+  venueName: string | undefined;
 }
 
 export interface History {
@@ -19,20 +21,9 @@ export interface History {
   nearLimit: boolean;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-/**
- * BACKEND DEFECT, and the one place the client does not trust the generated type: the history response carries
- * `MemberHistoryResponse.EntryView` (sessionId, trainingGroupId, startsAt, endsAt, bookingId, status), but springdoc
- * gives two nested records called `EntryView` the same schema name, and `docs/api/openapi.json` publishes the roster's
- * (bookingId, memberId, memberName, status). The generated `entries` items therefore have no `startsAt`. Until the
- * records get distinct schema names, entries are read from `unknown` and validated here; the fixture in
- * `test/fixtures.ts` is the real wire shape. When the contract is fixed this function can read the generated type.
- */
-function toEntry(raw: unknown): HistoryEntry | null {
-  if (!isRecord(raw)) return null;
+/** An entry without an id, a status or readable dates would show "Invalid Date" or throw in `Intl`: it is skipped. */
+function toEntry(raw: Schemas['HistoryEntryView'] | null): HistoryEntry | null {
+  if (typeof raw !== 'object' || raw === null) return null;
   const { bookingId, sessionId, startsAt, endsAt, status } = raw;
   if (
     typeof bookingId !== 'string' ||
@@ -43,14 +34,22 @@ function toEntry(raw: unknown): HistoryEntry | null {
   ) {
     return null;
   }
-  return { bookingId, sessionId, startsAt, endsAt, status };
+  return {
+    bookingId,
+    sessionId,
+    startsAt,
+    endsAt,
+    status,
+    trainingGroupName: raw.trainingGroupName,
+    venueName: raw.venueName,
+  };
 }
 
 export function toHistory(raw: Schemas['MemberHistoryResponse']): History {
   const entries: unknown = raw.entries;
   return {
     entries: Array.isArray(entries)
-      ? entries.flatMap((entry: unknown) => toEntry(entry) ?? [])
+      ? entries.flatMap((entry: Schemas['HistoryEntryView'] | null) => toEntry(entry) ?? [])
       : [],
     noShowsThisMonth: raw.noShowsThisMonth ?? 0,
     noShowLimit: raw.noShowLimit ?? 0,

@@ -13,11 +13,11 @@ public record PublicAssociationResponse(String name, String shortName, String lo
 
     /** An active group: where and when it trains and which levels it welcomes. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record GroupView(String name, List<String> levels, String venue, List<SlotView> schedule) {
+    public record GroupView(String name, List<String> levels, String venue, List<PublicSlotView> schedule) {
     }
 
     /** One weekly slot in Lisbon local time. */
-    public record SlotView(String dayOfWeek, String startTime, int durationMinutes) {
+    public record PublicSlotView(String dayOfWeek, String startTime, int durationMinutes) {
     }
 
     public record VenueView(String name, String address, int courts) {

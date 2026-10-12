@@ -77,9 +77,9 @@ From `frontend/`:
 | Register an association | `/register` | fill the form (levels: first = entry level) and submit; the activation mail lands in Mailpit (<http://localhost:8025>) |
 | Activate your account | `/activate#token=...` | open the link from the mail, choose a password, then sign in |
 | Sign in / sign out | `/login` | the founder's email and password; sign out is in the *Account* menu of the header (with *Sign out on all devices*) |
-| Sessions (home) | `/` | this week's sessions by day (Lisbon time), seats, waitlist and your own status; *Book* then *Confirm booking*; *Cancel* on a booking made in this visit; previous/next week. Needs a group with sessions and a paid plan (no admin screens yet: see the E2E note below) |
+| Sessions (home) | `/` | this week's sessions by day (Lisbon time), seats, waitlist and your own status; venue and your waitlist place; *Book* then *Confirm booking*; *Cancel* (it says whether cancelling now is free, from the API's deadline); previous/next week. Needs a group with sessions and a paid plan (no admin screens yet: see the E2E note below) |
 | My plan | `/me/plan` | your subscriptions: plan, validity, credits or sessions left, payment status and the overdue warning |
-| History | `/me/history` | your last three months, newest first, and this month's no-shows with the near-the-limit warning |
+| History | `/me/history` | your last three months, newest first (group and venue), and this month's no-shows with the near-the-limit warning |
 | Forgot password | `/forgot-password` | request a link (the answer is the same for any address), open it from Mailpit, choose a new password |
 | Public page of an association | `/a/<short-name>` | levels, groups with the weekly schedule, venues; "Want to try it?" opens the join form |
 | Join request | `/a/<short-name>/join` | name, email, phone and the consent; the answer is the same whatever the email |
@@ -92,8 +92,8 @@ SMTP), run `npx playwright install chromium` once, then `npm run e2e`. The journ
 reads the activation email from Mailpit's API, opens the link in the browser, sets the password, signs in, reloads (the session
 comes back through the refresh cookie) and signs out; a visitor then opens the public page and sends a join request; and a member
 resets a forgotten password through the UI. A fourth step runs the member journey on a phone-sized screen: it books a session in two
-taps, sees it confirmed, checks *My plan*, cancels for free (the credit comes back), then checks *History* and signs out
-everywhere. Playwright starts `npm run dev` itself unless it is already running.
+taps (a double booking from another device is refused with advice), cancels for free after a reload (the credit comes back),
+books and cancels again, checks *My plan*, then checks *History* and signs out everywhere. Playwright starts `npm run dev` itself unless it is already running.
 
 *Test data for the member journey* (`e2e/seed.ts`). Everything with an HTTP route is created through the REST API as the founder
 (a second member as coach through a join request, the coach role, venue, group, plan, subscription, payment). **Sessions are
@@ -187,9 +187,13 @@ path, query or body value, and another association's id answers like one that do
 |---|---|
 | Visitor (no token) | `GET /public/associations/{shortName}` (public page), `POST /public/associations` (register an association), `POST /public/associations/{shortName}/join-requests` (always `202 RECEIVED`) |
 | Credentials | `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/activate`, `/auth/password-reset-requests`, `/auth/password-resets` (public); `POST /auth/logout-all`, `GET /me` |
-| Member | `GET /sessions?weekOf=`, `POST /sessions/{id}/bookings`, `POST /sessions/{id}/bookings/{bookingId}/cancellation`, `GET /me/plan`, `GET /me/history` |
+| Member | `GET /sessions?weekOf=` (each line: venue, seats, waitlist, the free-cancellation deadline and, for you only, `myBookingStatus`, `myBookingId` and your `waitlistPosition`), `POST /sessions/{id}/bookings`, `POST /sessions/{id}/bookings/{bookingId}/cancellation`, `GET /me/plan`, `GET /me/history` (each entry with its group and venue name) |
 | Coach / admin of a session | `GET /sessions/{id}/roster` (who is in the session, with the booking ids and display names only), `POST /sessions/{id}/cancellation`, `PUT /sessions/{id}/capacity`, `PUT /sessions/{id}/attendance` |
 | Administrator | `/levels`, `/venues`, `/training-groups`, `/plans`, `/join-requests` (list, approve, reject), `/members/{id}` (level, roles, deactivation, subscriptions, `activation-links`: re-send an activation link, always `202 RECEIVED`), `/subscriptions` (list by payment status, CSV export, overdue-marking, payments), `/payments/{id}/reversal` |
+
+A refused booking or cancellation answers `422 BUSINESS_RULE_VIOLATION` (`409 CONFLICT` for a duplicate) with the unchanged `code` and a
+stable `reason` beside it (`NO_BALANCE`, `PAYMENT_OVERDUE`, `BOOKING_NOT_OPEN`, ...: architecture.md section 12); clients branch on the
+reason and show the `message`.
 
 A quick tour against a local instance (`dev` profile; the activation link of a new association arrives by email, in the Mailpit inbox
 when configured as above; the end-to-end journey is also exercised by `ApiJourneyIntegrationTest`):

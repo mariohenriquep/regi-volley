@@ -6,8 +6,10 @@ import com.regivolley.api.domain.model.valueobject.SessionId;
 import com.regivolley.api.domain.model.valueobject.TrainingGroupId;
 
 import java.time.Instant;
+import java.util.Optional;
 
-/** One past booking of the member (US-18). */
-public record HistoryEntry(SessionId sessionId, TrainingGroupId trainingGroupId, Instant startsAt, Instant endsAt,
-                           BookingId bookingId, BookingStatus status) {
+/** One past booking of the member (US-18), with the name of its group and of the venue it was held at, when they can be found. */
+public record HistoryEntry(SessionId sessionId, TrainingGroupId trainingGroupId, Optional<String> trainingGroupName,
+                           Optional<String> venueName, Instant startsAt, Instant endsAt, BookingId bookingId,
+                           BookingStatus status) {
 }

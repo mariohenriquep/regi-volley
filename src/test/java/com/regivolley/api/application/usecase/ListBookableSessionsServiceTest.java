@@ -7,11 +7,13 @@ import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
+import com.regivolley.api.domain.model.entity.Venue;
 import com.regivolley.api.domain.model.valueobject.BookingStatus;
 import com.regivolley.api.domain.repository.AssociationRepository;
 import com.regivolley.api.domain.repository.MemberRepository;
 import com.regivolley.api.domain.repository.SessionRepository;
 import com.regivolley.api.domain.repository.TrainingGroupRepository;
+import com.regivolley.api.domain.repository.VenueRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -46,6 +48,8 @@ class ListBookableSessionsServiceTest {
     private AssociationRepository associations;
     @Mock
     private TrainingGroupRepository groups;
+    @Mock
+    private VenueRepository venues;
 
     private Association association;
     private Member coach;
@@ -57,7 +61,7 @@ class ListBookableSessionsServiceTest {
         association = Data.association();
         coach = Data.coach(association);
         member = Data.member(association);
-        useCase = new ListBookableSessionsService(sessions, members, associations, groups, Data.CLOCK);
+        useCase = new ListBookableSessionsService(sessions, members, associations, groups, venues, Data.CLOCK);
         lenient().when(members.findById(association.id(), member.id())).thenReturn(Optional.of(member));
         lenient().when(associations.findById(association.id())).thenReturn(Optional.of(association));
     }
@@ -116,7 +120,7 @@ class ListBookableSessionsServiceTest {
         weekReturns();
         Clock lastSunday = Clock.fixed(Instant.parse("2026-10-25T10:00:00Z"), ZoneOffset.UTC);
         ListBookableSessionsUseCase onTheChange = new ListBookableSessionsService(sessions, members, associations,
-                groups, lastSunday);
+                groups, venues, lastSunday);
 
         // Act
         onTheChange.execute(thisWeek());
@@ -292,6 +296,150 @@ class ListBookableSessionsServiceTest {
 
         // Assert
         assertThat(week).extracting(BookableSession::sessionId).containsExactly(first.id(), second.id());
+    }
+
+    @Test
+    void carriesTheIdOfTheMembersOwnLiveBookingOnly() {
+        // Arrange
+        TrainingGroup group = groupAccepting("Beginner");
+        Member other = Data.member(association);
+        Session mine = Data.booked(Data.booked(Data.session(group, 5), other, Data.NOW.minusSeconds(30)), member, Data.NOW.minusSeconds(20));
+        Session notMine = Data.booked(Data.session(group, Data.SESSION_START.plusSeconds(86_400), 5), other, Data.NOW.minusSeconds(30));
+        Session untouched = Data.session(group, Data.SESSION_START.plusSeconds(2 * 86_400), 5);
+        weekReturns(mine, notMine, untouched);
+
+        // Act
+        List<BookableSession> week = useCase.execute(thisWeek());
+
+        // Assert
+        assertThat(week.get(0).myBookingId()).hasValue(Data.bookingOf(mine, member).id());
+        assertThat(week.get(1).myBookingId()).isEmpty();
+        assertThat(week.get(2).myBookingId()).isEmpty();
+        assertThat(week).flatExtracting(line -> line.myBookingId().stream().toList())
+                .doesNotContain(Data.bookingOf(notMine, other).id(), Data.bookingOf(mine, other).id());
+    }
+
+    @Test
+    void aCancelledBookingHasNoIdOnTheLine() {
+        // Arrange
+        TrainingGroup group = groupAccepting("Beginner");
+        Session session = Data.booked(Data.session(group, 5), member, Data.NOW.minusSeconds(20));
+        session = session.cancelBooking(Data.bookingOf(session, member).id(), Data.POLICY, Data.CLOCK, id -> false).session();
+        weekReturns(session);
+
+        // Act
+        List<BookableSession> week = useCase.execute(thisWeek());
+
+        // Assert
+        assertThat(week.get(0).myBookingId()).isEmpty();
+        assertThat(week.get(0).myWaitlistPosition()).isEmpty();
+    }
+
+    @Test
+    void showsTheMembersOneBasedWaitlistPositionFromTheSessionsFifoQueue() {
+        // Arrange
+        TrainingGroup group = groupAccepting("Beginner");
+        Session session = Data.session(group, 1);
+        session = Data.booked(session, Data.member(association), Data.NOW.minusSeconds(40));
+        session = Data.booked(session, Data.member(association), Data.NOW.minusSeconds(30));
+        session = Data.booked(session, member, Data.NOW.minusSeconds(20));
+        session = Data.booked(session, Data.member(association), Data.NOW.minusSeconds(10));
+        weekReturns(session);
+
+        // Act
+        BookableSession line = useCase.execute(thisWeek()).get(0);
+
+        // Assert
+        assertThat(line.myBookingStatus()).hasValue(BookingStatus.WAITLISTED);
+        assertThat(line.myWaitlistPosition()).hasValue(2);
+    }
+
+    @Test
+    void aConfirmedMemberHasNoWaitlistPosition() {
+        // Arrange
+        TrainingGroup group = groupAccepting("Beginner");
+        weekReturns(Data.booked(Data.session(group, 2), member, Data.NOW.minusSeconds(20)));
+
+        // Act
+        BookableSession line = useCase.execute(thisWeek()).get(0);
+
+        // Assert
+        assertThat(line.myWaitlistPosition()).isEmpty();
+    }
+
+    @Test
+    void freeCancellationEndsSixHoursBeforeTheStartByDefault() {
+        // Arrange
+        TrainingGroup group = groupAccepting("Beginner");
+        Session session = Data.session(group, 5);
+        weekReturns(session);
+
+        // Act
+        BookableSession line = useCase.execute(thisWeek()).get(0);
+
+        // Assert
+        assertThat(line.freeCancellationUntil()).isEqualTo(Data.SESSION_START.minus(Duration.ofHours(6)));
+        assertThat(line.freeCancellationUntil()).isEqualTo(session.freeCancellationDeadline(association.bookingPolicy()));
+    }
+
+    @Test
+    void freeCancellationIsSixRealHoursBeforeAStartOnTheClockChangeDay() {
+        // Arrange - Sunday 25 Oct 2026: the clocks go back at 01:00Z; a 05:00Z start is 05:00 Lisbon
+        Clock beforeTheChange = Clock.fixed(Instant.parse("2026-10-21T09:00:00Z"), ZoneOffset.UTC);
+        ListBookableSessionsUseCase useCaseThen = new ListBookableSessionsService(sessions, members, associations, groups,
+                venues, beforeTheChange);
+        TrainingGroup group = groupAccepting("Beginner");
+        weekReturns(Data.session(group, Instant.parse("2026-10-25T05:00:00Z"), 5));
+
+        // Act
+        BookableSession line = useCaseThen.execute(new ListBookableSessionsQuery(Data.actor(member), LocalDate.parse("2026-10-25")))
+                .get(0);
+
+        // Assert
+        assertThat(line.freeCancellationUntil()).isEqualTo(Instant.parse("2026-10-24T23:00:00Z"));
+    }
+
+    @Test
+    void namesTheVenueOfTheGroupAndTheGroup() {
+        // Arrange
+        Venue hall = Data.venue(association, "Pavilhao Central");
+        TrainingGroup group = Data.groupAt(association, coach, hall, "Beginner");
+        lenient().when(groups.findAllByAssociation(association.id())).thenReturn(List.of(group));
+        lenient().when(venues.findAllByAssociation(association.id())).thenReturn(List.of(hall, Data.venue(association, "Other")));
+        weekReturns(Data.session(group, 5));
+
+        // Act
+        BookableSession line = useCase.execute(thisWeek()).get(0);
+
+        // Assert
+        assertThat(line.venueName()).hasValue("Pavilhao Central");
+        assertThat(line.groupName()).isEqualTo(group.name());
+    }
+
+    @Test
+    void aGroupWhoseVenueCannotBeFoundStillListsWithoutAVenueName() {
+        // Arrange
+        TrainingGroup group = groupAccepting("Beginner");
+        lenient().when(venues.findAllByAssociation(association.id())).thenReturn(List.of());
+        weekReturns(Data.session(group, 5));
+
+        // Act
+        BookableSession line = useCase.execute(thisWeek()).get(0);
+
+        // Assert
+        assertThat(line.venueName()).isEmpty();
+    }
+
+    @Test
+    void readsVenuesOnlyOfTheMembersAssociation() {
+        // Arrange
+        weekReturns();
+
+        // Act
+        useCase.execute(thisWeek());
+
+        // Assert
+        verify(venues).findAllByAssociation(association.id());
     }
 
     @Test

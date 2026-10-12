@@ -150,7 +150,7 @@ test('a member who forgot the password resets it through the UI', async ({ page,
 test.describe('a member on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
-  test('books a session in two taps, sees it confirmed, cancels it for free, then checks the plan and the history', async ({
+  test('books a session in two taps, sees why a double booking is refused, cancels after a reload, then checks the plan and the history', async ({
     page,
     request,
   }) => {
@@ -168,19 +168,33 @@ test.describe('a member on a phone', () => {
     const firstCard = page.getByRole('article', { name: groupName }).first();
     await showWeekWith(page, firstCard);
     await expect(firstCard).toContainText('12 of 12 seats free');
+    await expect(firstCard).toContainText('E2E Pavilion');
 
-    // Act: tap 1 (Book) and tap 2 (Confirm booking)
+    // Act: tap 1 (Book) here, while the same member books the same session on another device
     await firstCard.getByRole('button', { name: /^Book/ }).tap();
     const dialog = page.getByRole('dialog', { name: 'Book this session?' });
     await expect(dialog).toContainText("You'll use 1 credit (10 left).");
-    await dialog.getByRole('button', { name: 'Confirm booking' }).tap();
+    const otherDevice = await page.context().newPage();
+    await otherDevice.goto('/');
+    const otherCard = otherDevice.getByRole('article', { name: groupName }).first();
+    await showWeekWith(otherDevice, otherCard);
+    await otherCard.getByRole('button', { name: /^Book/ }).click();
+    await otherDevice.getByRole('button', { name: 'Confirm booking' }).click();
+    await expect(otherDevice.getByText("You're booked and confirmed.")).toBeVisible();
+    await otherDevice.close();
 
-    // Assert: the server's answer, in the notice and on the card
-    await expect(page.getByText("You're booked and confirmed.")).toBeVisible();
+    // Assert: tap 2 is refused with the API's message and, from its reason, what to do about it; the list tells the truth
+    await dialog.getByRole('button', { name: 'Confirm booking' }).tap();
+    await expect(dialog.getByRole('alert')).toContainText('already has a booking');
+    await expect(dialog).toContainText('You already have a booking in this session.');
+    await dialog.getByRole('button', { name: 'Not now' }).tap();
     await expect(firstCard.getByText("You're confirmed")).toBeVisible();
     await expect(firstCard).toContainText('11 of 12 seats free');
 
-    // My plan: one credit used, paid
+    // A reload forgets everything the page knew, and the booking can still be cancelled: the list carries its id
+    await page.reload();
+    await showWeekWith(page, firstCard);
+    await expect(firstCard.getByText("You're confirmed")).toBeVisible();
     await page.getByRole('link', { name: 'My plan' }).tap();
     const plan = page.getByRole('article', { name: planName });
     await expect(plan.getByText('9 credits left')).toBeVisible();
@@ -191,13 +205,28 @@ test.describe('a member on a phone', () => {
     await showWeekWith(page, firstCard);
     await firstCard.getByRole('button', { name: /^Cancel/ }).tap();
     const cancelDialog = page.getByRole('alertdialog', { name: 'Cancel your booking?' });
-    await expect(cancelDialog).toContainText('counts as a used session');
+    await expect(cancelDialog).toContainText('Cancelling now is free.');
+    await expect(cancelDialog).toContainText('You can cancel for free until');
     await cancelDialog.getByRole('button', { name: 'Cancel booking' }).tap();
     await expect(
       page.getByText('Booking cancelled. It was free and your credit was given back.'),
     ).toBeVisible();
     await expect(firstCard.getByRole('button', { name: /^Book/ })).toBeVisible();
     await expect(firstCard).toContainText('12 of 12 seats free');
+
+    // Book again in two taps (nothing else in the way): the server's answer in the notice and on the card
+    await firstCard.getByRole('button', { name: /^Book/ }).tap();
+    await page
+      .getByRole('dialog', { name: 'Book this session?' })
+      .getByRole('button', { name: 'Confirm booking' })
+      .tap();
+    await expect(page.getByText("You're booked and confirmed.")).toBeVisible();
+    await expect(firstCard.getByText("You're confirmed")).toBeVisible();
+    await firstCard.getByRole('button', { name: /^Cancel/ }).tap();
+    await page.getByRole('button', { name: 'Cancel booking' }).tap();
+    await expect(
+      page.getByText('Booking cancelled. It was free and your credit was given back.'),
+    ).toBeVisible();
 
     // My plan again, and the history
     await page.getByRole('link', { name: 'My plan' }).tap();

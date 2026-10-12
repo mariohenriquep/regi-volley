@@ -8,6 +8,7 @@ import com.regivolley.testsupport.FailingTestController;
 import com.regivolley.testsupport.ValidatedTestController;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -149,6 +150,75 @@ class ApiExceptionHandlerTest extends AbstractSecuredWebTest {
 
         // Assert
         result.andExpect(jsonPath("$.message").value(expected));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "rejected-MEMBER_INACTIVE,MEMBER_INACTIVE",
+            "rejected-LEVEL_NOT_ALLOWED,LEVEL_NOT_ALLOWED",
+            "rejected-NO_VALID_SUBSCRIPTION,NO_VALID_SUBSCRIPTION",
+            "rejected-PLAN_LEVEL_NOT_ALLOWED,PLAN_LEVEL_NOT_ALLOWED",
+            "rejected-NO_BALANCE,NO_BALANCE",
+            "rejected-PAYMENT_OVERDUE,PAYMENT_OVERDUE",
+            "window-not-open,BOOKING_NOT_OPEN",
+            "window-closed,BOOKING_CLOSED",
+            "overlap,OVERLAP",
+            "business-rule,COACH_OF_SESSION",
+            "session-not-scheduled,SESSION_NOT_SCHEDULED",
+            "cancellation-closed,CANCELLATION_CLOSED"})
+    void aRefusedBookingIs422WithItsStableReasonBesideTheUnchangedCode(String kind, String reason) throws Exception {
+        // Arrange
+        String path = kind;
+
+        // Act
+        ResultActions result = failing(path);
+
+        // Assert
+        result.andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("BUSINESS_RULE_VIOLATION"))
+                .andExpect(jsonPath("$.reason").value(reason))
+                .andExpect(jsonPath("$.message").isNotEmpty())
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+    }
+
+    @Test
+    void aDuplicateBookingIs409ConflictWithTheReasonDuplicateBooking() throws Exception {
+        // Arrange
+        String kind = "duplicate-booking";
+
+        // Act
+        ResultActions result = failing(kind);
+
+        // Assert
+        result.andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.reason").value("DUPLICATE_BOOKING"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"anonymised", "last-admin", "short-name-taken", "email-used", "concurrent"})
+    void otherRuleViolationsAndConflictsCarryNoReason(String kind) throws Exception {
+        // Arrange
+        String path = kind;
+
+        // Act
+        ResultActions result = failing(path);
+
+        // Assert
+        result.andExpect(jsonPath("$.code").isNotEmpty()).andExpect(jsonPath("$.reason").doesNotExist());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"invalid-field", "not-allowed", "member-not-found", "invariant", "runtime"})
+    void errorsOutsideBookingNeverCarryAReason(String kind) throws Exception {
+        // Arrange
+        String path = kind;
+
+        // Act
+        ResultActions result = failing(path);
+
+        // Assert
+        result.andExpect(jsonPath("$.reason").doesNotExist());
     }
 
     @Test

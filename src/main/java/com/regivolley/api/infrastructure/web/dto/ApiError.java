@@ -7,10 +7,12 @@ import java.util.List;
 /**
  * The one error body of the API (threat model section 7): a stable {@code code} chosen by explicit mapping, a message that is
  * either generic or a business rule's own English text (architecture.md section 12), and the id of the request for the
- * logs. {@code fields} names the offending input fields on a 400, never their values. No stack trace, no personal data.
+ * logs. {@code fields} names the offending input fields on a 400, never their values. {@code reason} is present only on a refused
+ * booking or cancellation and says why in a form a client can branch on ({@link RefusalReason}); it is added to {@code code}, which
+ * stays {@code BUSINESS_RULE_VIOLATION} (422) or {@code CONFLICT} (409). No stack trace, no personal data.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record ApiError(String code, String message, String requestId, List<String> fields) {
+public record ApiError(String code, String message, String requestId, List<String> fields, RefusalReason reason) {
 
     public static final String UNAUTHENTICATED = "UNAUTHENTICATED";
     public static final String INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
@@ -32,7 +34,16 @@ public record ApiError(String code, String message, String requestId, List<Strin
     public static final String INTERNAL_ERROR = "INTERNAL_ERROR";
 
     public ApiError(String code, String message, String requestId) {
-        this(code, message, requestId, null);
+        this(code, message, requestId, null, null);
+    }
+
+    public ApiError(String code, String message, String requestId, List<String> fields) {
+        this(code, message, requestId, fields, null);
+    }
+
+    /** A business refusal with its machine-readable reason, if it has one. */
+    public static ApiError refusal(String code, String message, String requestId, RefusalReason reason) {
+        return new ApiError(code, message, requestId, null, reason);
     }
 
     public static ApiError unauthenticated(String requestId) {

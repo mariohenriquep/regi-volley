@@ -57,6 +57,31 @@ describe('My history', () => {
     expect(within(items[1] as HTMLElement).getByText('No-show')).toBeInTheDocument();
   });
 
+  it('shows the group and the venue of each session, and leaves out what the API leaves out', async () => {
+    // Arrange
+    server.use(
+      signedIn,
+      history([
+        historyEntry({
+          bookingId: 'b1',
+          trainingGroupName: 'Tuesday evening',
+          venueName: 'Pavilhão Central',
+        }),
+        historyEntry({ bookingId: 'b2' }),
+      ]),
+    );
+
+    // Act
+    renderApp('/me/history');
+
+    // Assert
+    const items = await screen.findAllByRole('listitem');
+    expect(within(items[0] as HTMLElement).getByText('Tuesday evening')).toBeInTheDocument();
+    expect(within(items[0] as HTMLElement).getByText('Pavilhão Central')).toBeInTheDocument();
+    expect(items[1]).not.toHaveTextContent('Pavilh');
+    expect(items[1]).toHaveTextContent('Tuesday 7 July');
+  });
+
   it.each([
     ['CONFIRMED', 'Confirmed'],
     ['WAITLISTED', 'Waitlisted'],

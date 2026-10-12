@@ -3,6 +3,9 @@ import type { components } from './schema.gen';
 /** The one error body of the API: `{code, message, requestId[, fields]}` (docs/architecture.md section 11, "Errors"). */
 export type ApiErrorBody = components['schemas']['ApiError'];
 
+/** Why a booking or its cancellation was refused (`reason` of the error body); stable, unlike the message. */
+export type RefusalReason = NonNullable<ApiErrorBody['reason']>;
+
 export const GENERIC_ERROR_MESSAGE = 'Something went wrong. Please try again.';
 export const NETWORK_ERROR_MESSAGE =
   'Cannot reach the server. Check your connection and try again.';
@@ -19,6 +22,11 @@ export class ApiError extends Error {
   readonly fields: readonly string[];
   readonly requestId: string | undefined;
   readonly retryAfterSeconds: number | undefined;
+  /**
+   * Typed as the contract's enum, but it is whatever string the server sent: a reason added by a newer backend is
+   * still a string here, so consumers must keep a fallback for values they do not know.
+   */
+  readonly reason: RefusalReason | undefined;
 
   constructor(
     status: number,
@@ -27,6 +35,7 @@ export class ApiError extends Error {
     fields: readonly string[] = [],
     requestId?: string,
     retryAfterSeconds?: number,
+    reason?: RefusalReason,
   ) {
     super(message);
     this.status = status;
@@ -34,6 +43,7 @@ export class ApiError extends Error {
     this.fields = fields;
     this.requestId = requestId;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.reason = reason;
   }
 }
 
@@ -43,7 +53,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asErrorBody(body: unknown): ApiErrorBody {
   if (!isRecord(body)) return {};
-  const { code, message, fields, requestId } = body;
+  const { code, message, fields, requestId, reason } = body;
   return {
     code: typeof code === 'string' ? code : undefined,
     message: typeof message === 'string' ? message : undefined,
@@ -52,6 +62,8 @@ function asErrorBody(body: unknown): ApiErrorBody {
         ? fields
         : undefined,
     requestId: typeof requestId === 'string' ? requestId : undefined,
+    // The contract's enum is not re-checked here (it would be a second copy of it); see ApiError.reason.
+    reason: typeof reason === 'string' ? (reason as RefusalReason) : undefined,
   };
 }
 
@@ -75,6 +87,7 @@ export function toApiError(response: Response, body: unknown): ApiError {
     parsed.fields ?? [],
     parsed.requestId,
     retryAfter(response),
+    parsed.reason,
   );
 }
 

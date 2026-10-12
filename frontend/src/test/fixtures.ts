@@ -21,6 +21,7 @@ export function bookable(overrides: Partial<Schemas['BookableSessionResponse']> 
     startsAt: '2026-07-14T19:30:00Z',
     endsAt: '2026-07-14T21:00:00Z',
     bookingOpensAt: '2026-07-07T19:30:00Z',
+    freeCancellationUntil: '2026-07-14T13:30:00Z',
     capacity: 12,
     freeSeats: 5,
     waitlistSize: 0,
@@ -48,8 +49,7 @@ export function myPlan(subscriptions: Schemas['SubscriptionView'][] = [subscript
 export const planHandler = (subscriptions?: Schemas['SubscriptionView'][]) =>
   http.get('/api/v1/me/plan', () => HttpResponse.json(myPlan(subscriptions)));
 
-/** A history entry as the API really sends it (see `features/history/entries.ts` for why this is not the generated type). */
-export function historyEntry(overrides: Record<string, unknown> = {}) {
+export function historyEntry(overrides: Partial<Schemas['HistoryEntryView']> = {}) {
   return {
     sessionId: SESSION_ID,
     trainingGroupId: '55555555-5555-5555-5555-555555555555',
@@ -58,5 +58,5 @@ export function historyEntry(overrides: Record<string, unknown> = {}) {
     bookingId: BOOKING_ID,
     status: 'ATTENDED',
     ...overrides,
-  };
+  } satisfies Schemas['HistoryEntryView'];
 }

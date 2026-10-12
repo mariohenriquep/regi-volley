@@ -109,7 +109,7 @@ describe('this week', () => {
   it("shows the member's own booking: confirmed, or on the waitlist", async () => {
     // Arrange
     serveSessions([
-      bookable({ myBookingStatus: 'CONFIRMED' }),
+      bookable({ myBookingStatus: 'CONFIRMED', myBookingId: BOOKING_ID }),
       bookable({
         sessionId: '77777777-7777-7777-7777-777777777777',
         groupName: 'Thursday open play',
@@ -128,6 +128,47 @@ describe('this week', () => {
     expect(confirmed.queryByRole('button', { name: /^Book/ })).not.toBeInTheDocument();
     const waitlisted = within(screen.getByRole('article', { name: 'Thursday open play' }));
     expect(waitlisted.getByText("You're on the waitlist")).toBeInTheDocument();
+  });
+
+  it('shows the venue when the API gives one, and nothing when it does not', async () => {
+    // Arrange
+    serveSessions([
+      bookable({ venueName: 'Pavilhão Central' }),
+      bookable({ sessionId: '77777777-7777-7777-7777-777777777777', groupName: 'No venue group' }),
+    ]);
+
+    // Act
+    renderApp('/');
+
+    // Assert
+    const card = within(await screen.findByRole('article', { name: 'Tuesday evening' }));
+    expect(card.getByText('Pavilhão Central')).toBeInTheDocument();
+    const other = within(screen.getByRole('article', { name: 'No venue group' }));
+    expect(other.queryByText(/Pavilh/)).not.toBeInTheDocument();
+  });
+
+  it("shows the member's place on the waitlist, and no place for a confirmed booking", async () => {
+    // Arrange
+    serveSessions([
+      bookable({ myBookingStatus: 'CONFIRMED', myBookingId: BOOKING_ID }),
+      bookable({
+        sessionId: '77777777-7777-7777-7777-777777777777',
+        groupName: 'Thursday open play',
+        myBookingStatus: 'WAITLISTED',
+        myBookingId: '88888888-8888-8888-8888-888888888888',
+        waitlistPosition: 3,
+        waitlistSize: 5,
+      }),
+    ]);
+
+    // Act
+    renderApp('/');
+
+    // Assert
+    const waitlisted = within(await screen.findByRole('article', { name: 'Thursday open play' }));
+    expect(waitlisted.getByText("You're number 3 on the waitlist")).toBeInTheDocument();
+    const confirmed = within(screen.getByRole('article', { name: 'Tuesday evening' }));
+    expect(confirmed.queryByText(/number \d+ on the waitlist/)).not.toBeInTheDocument();
   });
 
   it('shows when booking opens for a session that is not open yet, and still lets the API decide', async () => {
@@ -288,7 +329,9 @@ describe('booking in two taps', () => {
       planHandler([subscription({ type: 'MONTHLY_UNLIMITED', remaining: undefined })]),
       http.post(bookingUrl, async ({ request }) => {
         await record(request);
-        state.current = [bookable({ freeSeats: 4, myBookingStatus: 'CONFIRMED' })];
+        state.current = [
+          bookable({ freeSeats: 4, myBookingStatus: 'CONFIRMED', myBookingId: BOOKING_ID }),
+        ];
         return HttpResponse.json(
           { bookingId: BOOKING_ID, sessionId: SESSION_ID, status: 'CONFIRMED' },
           { status: 201 },
@@ -481,39 +524,61 @@ describe('booking in two taps', () => {
 describe('when the API refuses the booking', () => {
   it.each([
     [
+      'PAYMENT_OVERDUE',
       "The member's subscription payment is overdue",
       'Contact your association to settle the payment, then try again.',
     ],
     [
+      'NO_BALANCE',
       "The member's subscription has no balance left for this session",
       'You have no sessions left on your plan.',
     ],
     [
+      'NO_VALID_SUBSCRIPTION',
       'The member has no subscription valid on the session date',
       'You need a plan that is valid on the day of the session.',
     ],
-    ["The member's level is not accepted by this group", 'This group is for other levels.'],
     [
+      'LEVEL_NOT_ALLOWED',
+      "The member's level is not accepted by this group",
+      'This group is for other levels.',
+    ],
+    [
+      'PLAN_LEVEL_NOT_ALLOWED',
       "The member's plan does not give access to this group's levels",
       "Your plan doesn't cover this group's levels.",
     ],
-    ['The member is not active', 'Contact your association about your membership.'],
-    ['Booking for this session opens at 20 July 2026, 09:00', 'Come back when booking opens.'],
-    ['Booking for this session closed at 14 July 2026, 20:30', 'Booking for this session is over.'],
     [
+      'MEMBER_INACTIVE',
+      'The member is not active',
+      'Contact your association about your membership.',
+    ],
+    [
+      'BOOKING_NOT_OPEN',
+      'Booking for this session opens at 20 July 2026, 09:00',
+      'Come back when booking opens.',
+    ],
+    [
+      'BOOKING_CLOSED',
+      'Booking for this session closed at 14 July 2026, 20:30',
+      'Booking for this session is over.',
+    ],
+    [
+      'OVERLAP',
       'The member already has a booking in another session at the same time (starting 14 July 2026, 20:30)',
       'Cancel your other booking first if you would rather play this session.',
     ],
     [
+      'SESSION_NOT_SCHEDULED',
       'The session is no longer scheduled (status: cancelled)',
       "This session isn't available any more.",
     ],
-  ])('shows "%s" and what to do about it', async (message, hint) => {
+  ])('%s: shows the API message and what to do about it', async (reason, message, hint) => {
     // Arrange
     serveSessions([bookable()]);
     server.use(
       planHandler(),
-      http.post(bookingUrl, () => apiError(422, 'BUSINESS_RULE_VIOLATION', message)),
+      http.post(bookingUrl, () => apiError(422, 'BUSINESS_RULE_VIOLATION', message, { reason })),
     );
     const { user } = renderApp('/');
 
@@ -529,13 +594,60 @@ describe('when the API refuses the booking', () => {
     expect(within(dialog).getByRole('button', { name: 'Confirm booking' })).toBeEnabled();
   });
 
-  it('links to My plan when the reason is about the plan', async () => {
+  it('shows only the API message when the reason is one this version does not know', async () => {
+    // Arrange
+    serveSessions([bookable()]);
+    server.use(
+      planHandler(),
+      http.post(bookingUrl, () =>
+        apiError(422, 'BUSINESS_RULE_VIOLATION', 'A rule from the future', {
+          reason: 'SOMETHING_NEW',
+        }),
+      ),
+    );
+    const { user } = renderApp('/');
+    await user.click(await screen.findByRole('button', { name: /^Book/ }));
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: 'Confirm booking' }));
+
+    // Assert
+    const dialog = await screen.findByRole('dialog', { name: 'Book this session?' });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('A rule from the future');
+    expect(within(dialog).queryByRole('link', { name: 'See my plan' })).not.toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent(/Contact your|Come back|You have no|Ask your/);
+  });
+
+  it('does not guess the advice from the message when the API sends no reason', async () => {
     // Arrange
     serveSessions([bookable()]);
     server.use(
       planHandler(),
       http.post(bookingUrl, () =>
         apiError(422, 'BUSINESS_RULE_VIOLATION', "The member's subscription payment is overdue"),
+      ),
+    );
+    const { user } = renderApp('/');
+    await user.click(await screen.findByRole('button', { name: /^Book/ }));
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: 'Confirm booking' }));
+
+    // Assert
+    const dialog = await screen.findByRole('dialog', { name: 'Book this session?' });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('payment is overdue');
+    expect(dialog).not.toHaveTextContent('Contact your association');
+  });
+
+  it('links to My plan when the reason is about the plan', async () => {
+    // Arrange
+    serveSessions([bookable()]);
+    server.use(
+      planHandler(),
+      http.post(bookingUrl, () =>
+        apiError(422, 'BUSINESS_RULE_VIOLATION', "The member's subscription payment is overdue", {
+          reason: 'PAYMENT_OVERDUE',
+        }),
       ),
     );
     const { user, router } = renderApp('/');
@@ -556,8 +668,10 @@ describe('when the API refuses the booking', () => {
     server.use(
       planHandler(),
       http.post(bookingUrl, () => {
-        state.current = [bookable({ myBookingStatus: 'CONFIRMED' })];
-        return apiError(409, 'CONFLICT', 'The member already has a booking in this session');
+        state.current = [bookable({ myBookingStatus: 'CONFIRMED', myBookingId: BOOKING_ID })];
+        return apiError(409, 'CONFLICT', 'The member already has a booking in this session', {
+          reason: 'DUPLICATE_BOOKING',
+        });
       }),
     );
     const { user } = renderApp('/');
@@ -571,6 +685,7 @@ describe('when the API refuses the booking', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'The member already has a booking in this session',
     );
+    expect(dialog).toHaveTextContent('You already have a booking in this session.');
     await waitFor(() => {
       expect(asked).toHaveLength(2);
     });
@@ -598,24 +713,97 @@ describe('when the API refuses the booking', () => {
 });
 
 describe('cancelling', () => {
-  it('explains late cancellation generically, because the API does not say beforehand', async () => {
-    // Arrange / Act
-    const { dialog } = await openCancelDialog();
+  it('says cancelling is free before the deadline, and shows the deadline in Lisbon time', async () => {
+    // Arrange: now is Wed 15 July 11:00 Lisbon; free until Thu 16 July 14:30 Lisbon
+    const { dialog } = await openCancelDialog({ freeCancellationUntil: '2026-07-16T13:30:00Z' });
 
     // Assert
     expect(dialog).toHaveTextContent(
-      'Cancelling close to the start (6 hours by default) counts as a used session.',
+      'Cancelling now is free. You can cancel for free until Thu 16 Jul, 14:30.',
     );
-    expect(dialog).toHaveTextContent('Earlier cancellations are free');
+    expect(dialog).not.toHaveTextContent('used session');
   });
 
-  it('says cancelling a waitlist place is always free', async () => {
+  it('says cancelling counts as a used session once the deadline has passed', async () => {
+    // Arrange: free until Wed 15 July 10:59 Lisbon, a minute ago
+    const { dialog } = await openCancelDialog({ freeCancellationUntil: '2026-07-15T09:59:00Z' });
+
+    // Assert
+    expect(dialog).toHaveTextContent(
+      'Cancelling now counts as a used session (late). Free cancellation ended Wed 15 Jul, 10:59.',
+    );
+  });
+
+  it('treats exactly the deadline as still free', async () => {
+    // Arrange: the deadline is the very instant of now
+    const { dialog } = await openCancelDialog({ freeCancellationUntil: '2026-07-15T10:00:00Z' });
+
+    // Assert
+    expect(dialog).toHaveTextContent('Cancelling now is free.');
+  });
+
+  it('says cancelling a waitlist place is always free, even after the deadline', async () => {
     // Arrange / Act
-    const { dialog } = await openCancelDialog({ status: 'WAITLISTED' });
+    const { dialog } = await openCancelDialog({
+      status: 'WAITLISTED',
+      freeCancellationUntil: '2026-07-14T13:30:00Z',
+    });
 
     // Assert
     expect(dialog).toHaveTextContent('Cancelling a place on the waitlist is always free.');
     expect(dialog).not.toHaveTextContent('counts as a used session');
+  });
+
+  it('claims nothing about the cost when the deadline is missing', async () => {
+    // Arrange / Act
+    const { dialog } = await openCancelDialog({ freeCancellationUntil: 'soon' });
+
+    // Assert
+    expect(dialog).not.toHaveTextContent('Cancelling now');
+    expect(within(dialog).getByRole('button', { name: 'Cancel booking' })).toBeEnabled();
+  });
+
+  it('cancels with the booking id from the list, also after a reload (nothing was booked in this page)', async () => {
+    // Arrange: the page has just opened and the list already carries the booking id
+    const { user, seen, dialog } = await openCancelDialog();
+
+    // Act
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel booking' }));
+
+    // Assert
+    expect(await screen.findByText(/^Booking cancelled/)).toBeInTheDocument();
+    expect(seen).toEqual([expect.objectContaining({ method: 'POST', path: cancelUrl })]);
+  });
+
+  it('cancels a booking made in this page from the refreshed list', async () => {
+    // Arrange
+    const { seen, record } = recorder();
+    const { state } = serveSessions([bookable()]);
+    server.use(
+      planHandler(),
+      http.post(bookingUrl, () => {
+        state.current = [bookable({ myBookingStatus: 'CONFIRMED', myBookingId: BOOKING_ID })];
+        return HttpResponse.json(
+          { bookingId: BOOKING_ID, sessionId: SESSION_ID, status: 'CONFIRMED' },
+          { status: 201 },
+        );
+      }),
+      http.post(cancelUrl, async ({ request }) => {
+        await record(request);
+        return HttpResponse.json({ late: false, creditRefunded: true, promotedCount: 0 });
+      }),
+    );
+    const { user } = renderApp('/');
+    await user.click(await screen.findByRole('button', { name: /^Book/ }));
+    await user.click(await screen.findByRole('button', { name: 'Confirm booking' }));
+
+    // Act
+    await user.click(await screen.findByRole('button', { name: /^Cancel/ }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel booking' }));
+
+    // Assert
+    expect(await screen.findByText(/^Booking cancelled/)).toBeInTheDocument();
+    expect(seen).toHaveLength(1);
   });
 
   it('cancels and shows the free outcome the API reports, with the credit back', async () => {
@@ -690,6 +878,23 @@ describe('cancelling', () => {
     expect(await screen.findByText('Booking cancelled. It was free.')).toBeInTheDocument();
   });
 
+  it("shows the API's outcome even when it differs from what the dialog said", async () => {
+    // Arrange: the dialog says free (this device's clock), the API says it was late
+    const { user, dialog } = await openCancelDialog({
+      freeCancellationUntil: '2026-07-16T13:30:00Z',
+      outcome: { late: true, creditRefunded: false, promotedCount: 0 },
+    });
+    expect(dialog).toHaveTextContent('Cancelling now is free.');
+
+    // Act
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel booking' }));
+
+    // Assert
+    expect(
+      await screen.findByText('Booking cancelled late, so it counts as a used session.'),
+    ).toBeInTheDocument();
+  });
+
   it('keeps the booking when the member changes their mind', async () => {
     // Arrange
     const { user, seen, dialog } = await openCancelDialog();
@@ -708,29 +913,18 @@ describe('cancelling', () => {
     const { user, dialog } = await openCancelDialog();
     const message =
       'The booking can no longer be cancelled: the session started at 14 July 2026, 20:30';
-    server.use(http.post(cancelUrl, () => apiError(422, 'BUSINESS_RULE_VIOLATION', message)));
+    server.use(
+      http.post(cancelUrl, () =>
+        apiError(422, 'BUSINESS_RULE_VIOLATION', message, { reason: 'CANCELLATION_CLOSED' }),
+      ),
+    );
 
     // Act
     await user.click(within(dialog).getByRole('button', { name: 'Cancel booking' }));
 
     // Assert
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(message);
-  });
-
-  it('offers no Cancel when the page does not know the booking id (after a reload)', async () => {
-    // Arrange
-    serveSessions([bookable({ myBookingStatus: 'CONFIRMED' })]);
-
-    // Act
-    renderApp('/');
-
-    // Assert
-    const card = within(await screen.findByRole('article', { name: 'Tuesday evening' }));
-    expect(card.getByText("You're confirmed")).toBeInTheDocument();
-    expect(card.queryByRole('button', { name: /^Cancel/ })).not.toBeInTheDocument();
-    expect(
-      card.getByText("Cancelling isn't available for this booking in the app yet."),
-    ).toBeInTheDocument();
+    expect(dialog).toHaveTextContent("It's too late to cancel this booking.");
   });
 });
 
@@ -789,7 +983,7 @@ describe('focus and keyboard', () => {
     server.use(
       planHandler(),
       http.post(bookingUrl, () => {
-        state.current = [bookable({ myBookingStatus: 'CONFIRMED' })];
+        state.current = [bookable({ myBookingStatus: 'CONFIRMED', myBookingId: BOOKING_ID })];
         return HttpResponse.json(
           { bookingId: BOOKING_ID, sessionId: SESSION_ID, status: 'CONFIRMED' },
           { status: 201 },
@@ -810,68 +1004,6 @@ describe('focus and keyboard', () => {
   });
 });
 
-describe('signing out while a call is in flight', () => {
-  it('does not remember a booking id that arrives after sign-out', async () => {
-    // Arrange: the booking call is held until after the sign-out
-    let answer: (response: Response) => void = () => undefined;
-    serveSessions([bookable()]);
-    server.use(
-      planHandler(),
-      http.post('/api/v1/auth/logout', () => new HttpResponse(null, { status: 204 })),
-      http.post(
-        bookingUrl,
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      ),
-    );
-    const { user, session, queryClient } = renderApp('/');
-    await user.click(await screen.findByRole('button', { name: /^Book/ }));
-    await user.click(await screen.findByRole('button', { name: 'Confirm booking' }));
-
-    // Act
-    await session.logout();
-    await screen.findByRole('heading', { name: 'Sign in' });
-    answer(
-      HttpResponse.json(
-        { bookingId: BOOKING_ID, sessionId: SESSION_ID, status: 'CONFIRMED' },
-        { status: 201 },
-      ),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // Assert
-    expect(queryClient.getQueryData(['booking-ids'])).toBeUndefined();
-  });
-
-  it('does not forget (and so not recreate) the booking ids when a cancellation answers after sign-out', async () => {
-    // Arrange
-    let answer: (response: Response) => void = () => undefined;
-    const { dialog, user, session, queryClient } = await openCancelDialog();
-    server.use(
-      http.post('/api/v1/auth/logout', () => new HttpResponse(null, { status: 204 })),
-      http.post(
-        cancelUrl,
-        () =>
-          new Promise<Response>((resolve) => {
-            answer = resolve;
-          }),
-      ),
-    );
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel booking' }));
-
-    // Act
-    await session.logout();
-    await screen.findByRole('heading', { name: 'Sign in' });
-    answer(HttpResponse.json({ late: false, creditRefunded: true, promotedCount: 0 }));
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    // Assert
-    expect(queryClient.getQueryData(['booking-ids'])).toBeUndefined();
-  });
-});
-
 describe('what stays fresh', () => {
   it('shows the new balance on My plan after a booking (the plan is fetched again)', async () => {
     // Arrange
@@ -886,7 +1018,7 @@ describe('what stays fresh', () => {
         });
       }),
       http.post(bookingUrl, () => {
-        state.current = [bookable({ myBookingStatus: 'CONFIRMED' })];
+        state.current = [bookable({ myBookingStatus: 'CONFIRMED', myBookingId: BOOKING_ID })];
         return HttpResponse.json(
           { bookingId: BOOKING_ID, sessionId: SESSION_ID, status: 'CONFIRMED' },
           { status: 201 },
@@ -908,22 +1040,25 @@ describe('what stays fresh', () => {
 
 // ---- helpers -----------------------------------------------------------------------------------------------------
 
-/** A booked session whose cancellation call is recorded and answers `outcome`; leaves the cancel dialog open. */
+/** The member's confirmed (or waitlisted) booking as the list reports it; opens its cancel dialog. */
 async function openCancelDialog(
-  options: { status?: 'CONFIRMED' | 'WAITLISTED'; outcome?: Record<string, unknown> } = {},
+  options: {
+    status?: 'CONFIRMED' | 'WAITLISTED';
+    outcome?: Record<string, unknown>;
+    freeCancellationUntil?: string;
+  } = {},
 ) {
-  const { status = 'CONFIRMED', outcome = {} } = options;
+  const {
+    status = 'CONFIRMED',
+    outcome = {},
+    freeCancellationUntil = '2026-07-16T13:30:00Z',
+  } = options;
   const { seen, record } = recorder();
-  const served = serveSessions([bookable()]);
+  const served = serveSessions([
+    bookable({ myBookingStatus: status, myBookingId: BOOKING_ID, freeCancellationUntil }),
+  ]);
   server.use(
     planHandler([subscription({ type: 'MONTHLY_UNLIMITED', remaining: undefined })]),
-    http.post(bookingUrl, () => {
-      served.state.current = [bookable({ myBookingStatus: status })];
-      return HttpResponse.json(
-        { bookingId: BOOKING_ID, sessionId: SESSION_ID, status, waitlistPosition: 1 },
-        { status: 201 },
-      );
-    }),
     http.post(cancelUrl, async ({ request }) => {
       await record(request);
       served.state.current = [bookable()];
@@ -931,8 +1066,6 @@ async function openCancelDialog(
     }),
   );
   const app = renderApp('/');
-  await app.user.click(await screen.findByRole('button', { name: /^Book/ }));
-  await app.user.click(await screen.findByRole('button', { name: 'Confirm booking' }));
   await app.user.click(await screen.findByRole('button', { name: /^Cancel/ }));
   const dialog = await screen.findByRole('alertdialog', { name: 'Cancel your booking?' });
   return { ...app, seen, dialog };

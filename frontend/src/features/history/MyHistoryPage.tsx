@@ -67,6 +67,10 @@ function Entries({ history }: { history: History }) {
                   <p className="text-sm text-muted-foreground">
                     {formatTime(entry.startsAt)} – {formatTime(entry.endsAt)}
                   </p>
+                  {entry.trainingGroupName && <p className="text-sm">{entry.trainingGroupName}</p>}
+                  {entry.venueName && (
+                    <p className="text-sm text-muted-foreground">{entry.venueName}</p>
+                  )}
                 </div>
                 <Badge variant={status?.variant ?? 'secondary'}>
                   {status?.label ?? entry.status}

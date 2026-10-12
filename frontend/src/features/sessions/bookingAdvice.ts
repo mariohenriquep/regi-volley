@@ -1,4 +1,4 @@
-import { ApiError } from '@/api/errors';
+import { ApiError, type RefusalReason } from '@/api/errors';
 
 /** What the member can do about a refusal. */
 export interface Advice {
@@ -8,71 +8,47 @@ export interface Advice {
 }
 
 /**
- * The API gives every business refusal the same code (`BUSINESS_RULE_VIOLATION`) and tells them apart by their message,
- * which is the member's explanation and is always shown as it came. This adds what to do next for the refusals the
- * backend is known to send (BookingNotAllowedException, the booking window, overlap, duplicate). A message it does not
- * recognise simply gets no advice.
+ * Every refusal of a booking (or of its cancellation) carries a stable `reason`; the message is the API's explanation
+ * and is always shown as it came. This adds what to do next. `Record<RefusalReason, ...>` makes the compiler insist on
+ * an entry for every reason in the contract, so a reason added to the API breaks the build until it is handled.
  */
-const RULES: { pattern: RegExp; advice: Advice }[] = [
-  {
-    pattern: /payment is overdue/i,
-    advice: {
-      text: 'Contact your association to settle the payment, then try again.',
-      planLink: true,
-    },
+const ADVICE: Record<RefusalReason, Advice> = {
+  PAYMENT_OVERDUE: {
+    text: 'Contact your association to settle the payment, then try again.',
+    planLink: true,
   },
-  {
-    pattern: /no balance left/i,
-    advice: {
-      text: 'You have no sessions left on your plan. Ask your association about a new one.',
-      planLink: true,
-    },
+  NO_BALANCE: {
+    text: 'You have no sessions left on your plan. Ask your association about a new one.',
+    planLink: true,
   },
-  {
-    pattern: /no subscription valid/i,
-    advice: {
-      text: 'You need a plan that is valid on the day of the session. Ask your association to assign one.',
-      planLink: true,
-    },
+  NO_VALID_SUBSCRIPTION: {
+    text: 'You need a plan that is valid on the day of the session. Ask your association to assign one.',
+    planLink: true,
   },
-  {
-    pattern: /plan does not give access/i,
-    advice: { text: "Your plan doesn't cover this group's levels.", planLink: true },
+  PLAN_LEVEL_NOT_ALLOWED: {
+    text: "Your plan doesn't cover this group's levels.",
+    planLink: true,
   },
-  {
-    pattern: /level is not accepted/i,
-    advice: {
-      text: 'This group is for other levels. Ask your coach or association if your level should change.',
-    },
+  LEVEL_NOT_ALLOWED: {
+    text: 'This group is for other levels. Ask your coach or association if your level should change.',
   },
-  {
-    pattern: /member is not active|member is deactivated/i,
-    advice: { text: 'Contact your association about your membership.' },
+  MEMBER_INACTIVE: { text: 'Contact your association about your membership.' },
+  BOOKING_NOT_OPEN: { text: 'Come back when booking opens.' },
+  BOOKING_CLOSED: { text: 'Booking for this session is over.' },
+  OVERLAP: {
+    text: 'Cancel your other booking first if you would rather play this session.',
   },
-  { pattern: /opens at/i, advice: { text: 'Come back when booking opens.' } },
-  {
-    pattern: /closed at|already started/i,
-    advice: { text: 'Booking for this session is over.' },
-  },
-  {
-    pattern: /another session at the same time/i,
-    advice: {
-      text: 'Cancel your other booking first if you would rather play this session.',
-    },
-  },
-  {
-    pattern: /no longer scheduled/i,
-    advice: { text: "This session isn't available any more." },
-  },
-  {
-    pattern: /already has a booking in this session/i,
-    advice: { text: 'You already have a booking in this session.' },
-  },
-];
+  SESSION_NOT_SCHEDULED: { text: "This session isn't available any more." },
+  DUPLICATE_BOOKING: { text: 'You already have a booking in this session.' },
+  COACH_OF_SESSION: { text: "You coach this session, so you can't book it as a player." },
+  CANCELLATION_CLOSED: { text: "It's too late to cancel this booking." },
+};
 
+/** A Map for the lookup: the reason is the server's text, and `ADVICE['constructor']` must not find anything. */
+const BY_REASON: ReadonlyMap<string, Advice> = new Map(Object.entries(ADVICE));
+
+/** Advice for a refusal; none for another error, no reason, or a reason this version does not know (the message is enough). */
 export function adviceFor(error: unknown): Advice | undefined {
-  if (!(error instanceof ApiError) || (error.status !== 422 && error.status !== 409)) {
-    return undefined;
-  }
-  return RULES.find(({ pattern }) => pattern.test(error.message))?.advice;
+  if (!(error instanceof ApiError) || error.reason === undefined) return undefined;
+  return BY_REASON.get(error.reason);
 }

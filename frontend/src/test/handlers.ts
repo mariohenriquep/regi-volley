@@ -45,10 +45,16 @@ export const apiError = (
   status: number,
   code: string,
   message: string,
-  options: { fields?: string[]; headers?: Record<string, string> } = {},
+  options: { fields?: string[]; reason?: string; headers?: Record<string, string> } = {},
 ) =>
   HttpResponse.json(
-    { code, message, requestId: `req-${String(status)}`, fields: options.fields },
+    {
+      code,
+      message,
+      requestId: `req-${String(status)}`,
+      fields: options.fields,
+      reason: options.reason,
+    },
     { status, headers: options.headers },
   );
 

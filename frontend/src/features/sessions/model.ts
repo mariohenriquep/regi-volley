@@ -15,11 +15,18 @@ export interface Session {
   endsAt: string;
   /** When booking opens, as the API says; the client never works it out. */
   bookingOpensAt: string | undefined;
+  venueName: string | undefined;
+  /** The last instant at which cancelling a confirmed booking is free, as the API says. */
+  freeCancellationUntil: string | undefined;
   capacity: number;
   freeSeats: number;
   waitlistSize: number;
   /** The member's own live booking: `CONFIRMED` or `WAITLISTED` (absent when they have none). */
   myStatus: string | undefined;
+  /** The member's own live booking (what Cancel needs); present exactly when `myStatus` is. */
+  myBookingId: string | undefined;
+  /** 1-based, only while the member's booking is `WAITLISTED`. */
+  waitlistPosition: number | undefined;
 }
 
 export function toSession(raw: Schemas['BookableSessionResponse']): Session | null {
@@ -33,10 +40,16 @@ export function toSession(raw: Schemas['BookableSessionResponse']): Session | nu
     startsAt,
     endsAt,
     bookingOpensAt: isInstant(raw.bookingOpensAt) ? raw.bookingOpensAt : undefined,
+    venueName: raw.venueName,
+    freeCancellationUntil: isInstant(raw.freeCancellationUntil)
+      ? raw.freeCancellationUntil
+      : undefined,
     capacity: raw.capacity ?? 0,
     freeSeats: raw.freeSeats ?? 0,
     waitlistSize: raw.waitlistSize ?? 0,
     myStatus: raw.myBookingStatus,
+    myBookingId: raw.myBookingId,
+    waitlistPosition: raw.waitlistPosition,
   };
 }
 

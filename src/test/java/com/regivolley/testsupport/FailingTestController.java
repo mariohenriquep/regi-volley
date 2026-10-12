@@ -1,5 +1,9 @@
 package com.regivolley.testsupport;
 
+import com.regivolley.api.domain.exception.BookingNotAllowedException;
+import com.regivolley.api.domain.exception.BookingOverlapException;
+import com.regivolley.api.domain.exception.BookingWindowClosedException;
+import com.regivolley.api.domain.exception.CancellationClosedException;
 import com.regivolley.api.domain.exception.CoachCannotBookOwnSessionException;
 import com.regivolley.api.domain.exception.DuplicateBookingException;
 import com.regivolley.api.domain.exception.InvalidFieldException;
@@ -12,10 +16,13 @@ import com.regivolley.api.domain.exception.MemberNotFoundException;
 import com.regivolley.api.domain.exception.NotAllowedException;
 import com.regivolley.api.domain.exception.SessionModifiedConcurrentlyException;
 import com.regivolley.api.domain.exception.SessionNotFoundException;
+import com.regivolley.api.domain.exception.SessionNotScheduledException;
 import com.regivolley.api.domain.exception.ShortNameAlreadyTakenException;
 import com.regivolley.api.domain.exception.ShortNameNotFoundException;
+import com.regivolley.api.domain.model.valueobject.BookingRejectionReason;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.model.valueobject.SessionId;
+import com.regivolley.api.domain.model.valueobject.SessionStatus;
 import com.regivolley.api.domain.model.valueobject.ShortName;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -32,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -74,7 +82,17 @@ public class FailingTestController {
             case "data-integrity" -> throw new DataIntegrityViolationException(SECRET_MESSAGE);
             case "access-denied" -> throw new AccessDeniedException(SECRET_MESSAGE);
             case "authentication" -> throw new BadCredentialsException(SECRET_MESSAGE);
-            default -> throw new UnsupportedOperationException(kind);
+            case "window-not-open" -> throw BookingWindowClosedException.notYetOpen(Instant.parse("2026-10-20T19:00:00Z"));
+            case "window-closed" -> throw BookingWindowClosedException.alreadyClosed(Instant.parse("2026-10-20T19:00:00Z"));
+            case "overlap" -> throw new BookingOverlapException(SessionId.generate(), Instant.parse("2026-10-20T19:00:00Z"));
+            case "session-not-scheduled" -> throw new SessionNotScheduledException(SessionStatus.CANCELLED);
+            case "cancellation-closed" -> throw new CancellationClosedException(Instant.parse("2026-10-20T19:00:00Z"));
+            default -> {
+                if (kind.startsWith("rejected-")) {
+                    throw new BookingNotAllowedException(BookingRejectionReason.valueOf(kind.substring("rejected-".length())));
+                }
+                throw new UnsupportedOperationException(kind);
+            }
         }
     }
 

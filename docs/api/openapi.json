@@ -49,7 +49,7 @@
             }
           }
         },
-        "description" : "A business rule refuses it; `message` says which."
+        "description" : "A business rule refuses it; `message` says which. A refused booking or cancellation also has a stable `reason`."
       },
       "TooManyRequests" : {
         "content" : {
@@ -126,6 +126,11 @@
           "message" : {
             "type" : "string"
           },
+          "reason" : {
+            "description" : "Why a booking or the cancellation of one was refused, stable for clients to branch on; the message is for people and may change. Present only on a refusal (422 BUSINESS_RULE_VIOLATION, or 409 CONFLICT for DUPLICATE_BOOKING), absent from every other error. `code` is unchanged.",
+            "enum" : [ "MEMBER_INACTIVE", "LEVEL_NOT_ALLOWED", "NO_VALID_SUBSCRIPTION", "PLAN_LEVEL_NOT_ALLOWED", "NO_BALANCE", "PAYMENT_OVERDUE", "BOOKING_NOT_OPEN", "BOOKING_CLOSED", "OVERLAP", "DUPLICATE_BOOKING", "COACH_OF_SESSION", "SESSION_NOT_SCHEDULED", "CANCELLATION_CLOSED" ],
+            "type" : "string"
+          },
           "requestId" : {
             "type" : "string"
           }
@@ -185,11 +190,19 @@
             "format" : "date-time",
             "type" : "string"
           },
+          "freeCancellationUntil" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
           "freeSeats" : {
             "format" : "int32",
             "type" : "integer"
           },
           "groupName" : {
+            "type" : "string"
+          },
+          "myBookingId" : {
+            "format" : "uuid",
             "type" : "string"
           },
           "myBookingStatus" : {
@@ -206,6 +219,13 @@
           "trainingGroupId" : {
             "format" : "uuid",
             "type" : "string"
+          },
+          "venueName" : {
+            "type" : "string"
+          },
+          "waitlistPosition" : {
+            "format" : "int32",
+            "type" : "integer"
           },
           "waitlistSize" : {
             "format" : "int32",
@@ -389,25 +409,6 @@
         "required" : [ "acceptedLevelIds", "capacity", "coachId", "name", "schedule" ],
         "type" : "object"
       },
-      "EntryView" : {
-        "properties" : {
-          "bookingId" : {
-            "format" : "uuid",
-            "type" : "string"
-          },
-          "memberId" : {
-            "format" : "uuid",
-            "type" : "string"
-          },
-          "memberName" : {
-            "type" : "string"
-          },
-          "status" : {
-            "type" : "string"
-          }
-        },
-        "type" : "object"
-      },
       "ForgotPasswordRequest" : {
         "properties" : {
           "email" : {
@@ -417,6 +418,21 @@
           }
         },
         "required" : [ "email" ],
+        "type" : "object"
+      },
+      "GroupSlotView" : {
+        "properties" : {
+          "dayOfWeek" : {
+            "type" : "string"
+          },
+          "durationMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "startTime" : {
+            "type" : "string"
+          }
+        },
         "type" : "object"
       },
       "GroupView" : {
@@ -432,11 +448,45 @@
           },
           "schedule" : {
             "items" : {
-              "$ref" : "#/components/schemas/SlotView"
+              "$ref" : "#/components/schemas/PublicSlotView"
             },
             "type" : "array"
           },
           "venue" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "HistoryEntryView" : {
+        "properties" : {
+          "bookingId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "endsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "sessionId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "startsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "trainingGroupId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "trainingGroupName" : {
+            "type" : "string"
+          },
+          "venueName" : {
             "type" : "string"
           }
         },
@@ -636,7 +686,7 @@
         "properties" : {
           "entries" : {
             "items" : {
-              "$ref" : "#/components/schemas/EntryView"
+              "$ref" : "#/components/schemas/HistoryEntryView"
             },
             "type" : "array"
           },
@@ -892,6 +942,21 @@
         },
         "type" : "object"
       },
+      "PublicSlotView" : {
+        "properties" : {
+          "dayOfWeek" : {
+            "type" : "string"
+          },
+          "durationMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "startTime" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "RecordPaymentRequest" : {
         "properties" : {
           "amountCents" : {
@@ -1025,6 +1090,25 @@
         "required" : [ "password", "token" ],
         "type" : "object"
       },
+      "RosterEntryView" : {
+        "properties" : {
+          "bookingId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "memberId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "memberName" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "SessionCancelledResponse" : {
         "properties" : {
           "bookingsCancelled" : {
@@ -1110,7 +1194,7 @@
           },
           "seats" : {
             "items" : {
-              "$ref" : "#/components/schemas/EntryView"
+              "$ref" : "#/components/schemas/RosterEntryView"
             },
             "type" : "array"
           },
@@ -1131,24 +1215,9 @@
           },
           "waitlist" : {
             "items" : {
-              "$ref" : "#/components/schemas/EntryView"
+              "$ref" : "#/components/schemas/RosterEntryView"
             },
             "type" : "array"
-          }
-        },
-        "type" : "object"
-      },
-      "SlotView" : {
-        "properties" : {
-          "dayOfWeek" : {
-            "type" : "string"
-          },
-          "durationMinutes" : {
-            "format" : "int32",
-            "type" : "integer"
-          },
-          "startTime" : {
-            "type" : "string"
           }
         },
         "type" : "object"
@@ -1286,7 +1355,7 @@
           },
           "schedule" : {
             "items" : {
-              "$ref" : "#/components/schemas/SlotView"
+              "$ref" : "#/components/schemas/GroupSlotView"
             },
             "type" : "array"
           },
