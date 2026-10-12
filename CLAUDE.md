@@ -28,6 +28,18 @@ docker compose up -d                          # local Postgres for spring-boot:r
 
 Testcontainers (`AbstractPostgresIntegrationTest`, `postgres:16-alpine`) needs Docker running.
 
+Frontend (`frontend/`, Node 24 LTS; see README "Frontend" and docs/architecture.md section 15):
+
+```bash
+cd frontend && npm ci                         # exact lockfile install
+npm run dev                                   # Vite on :5173, proxies /api to the API on :8080 (same origin)
+npm test                                      # Vitest + Testing Library + MSW (no backend)
+npm run lint && npm run typecheck && npm run build
+npm run api:generate                          # regenerate src/api/schema.gen.ts after docs/api/openapi.json changes
+npm run api:check                             # fails when the generated client is stale (CI)
+npm run e2e                                   # Playwright smoke: needs docker compose + the API (dev profile, Mailpit SMTP)
+```
+
 ## Architecture in one paragraph
 
 Onion architecture, `infrastructure → application → domain`, enforced by plain JUnit 5 tests

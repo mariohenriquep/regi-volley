@@ -22,3 +22,20 @@ updates:
       - dependencies
     cooldown:
       default-days: 7
+
+  # The frontend (frontend/package.json: React, Vite, Tailwind, shadcn/ui, test tooling).
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    cooldown:
+      default-days: 7
+    # One PR a week for the minor and patch bumps; majors still come one by one, to be read.
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
