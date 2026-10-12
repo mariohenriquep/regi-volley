@@ -144,6 +144,38 @@ Registering an association through the API then puts the founder's activation em
 dev application only logs that a mail is due (by link reference, never the token). Tests use an in-process SMTP server (GreenMail),
 never a real provider.
 
+## Dev data
+
+Under the `dev` profile (never with `prod`) the first start creates a ready-to-use association, so you can sign in and book
+without registering, reading Mailpit and activating first. It is skipped when the association `volei-lisboa` already exists.
+
+| Account | Email | Roles |
+|---|---|---|
+| Administrator (founder) | `admin@volei-lisboa.test` | ADMIN, MEMBER |
+| Coach | `coach@volei-lisboa.test` | COACH, MEMBER |
+
+Both sign in with the password `dev-password-volley` (a throwaway dev database, not a secret).
+
+What is created, through the same use cases the API uses: the association **Volei Lisboa** (`volei-lisboa`) with the levels
+Beginner (entry), Intermediate and Advanced; one venue; one group, *Evening training*, Monday and Wednesday 20:00 (Lisbon), 90
+minutes, 12 seats, all levels, **coached by the coach**; a 10-credit pack (90 days, 30.00 EUR) assigned to the administrator and paid
+in full; and the group's sessions for the coming weeks. The administrator is deliberately not the group's coach, because a session's
+coach cannot book it (RN-02), so the administrator can book straight away:
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' \
+     -d '{"email":"admin@volei-lisboa.test","password":"dev-password-volley"}' | jq -r .accessToken)
+curl -s localhost:8080/api/v1/sessions -H "Authorization: Bearer $TOKEN"        # pick a sessionId
+curl -s -X POST localhost:8080/api/v1/sessions/$SESSION_ID/bookings -H "Authorization: Bearer $TOKEN"   # CONFIRMED
+```
+
+* **Reset:** `docker compose down -v` removes the database volume; the next start seeds again. If `volei-lisboa` already exists
+  (a manual test, or a seed that stopped half way) the seed does nothing, so reset the database or pick another short name.
+* **Disable:** `DEV_SEED_ENABLED=false` (or `regi-volley.dev-seed.enabled=false`). Tests never seed unless a test turns it on.
+* The seed logs ids only. The two accounts are activated directly (the dev password is set and the membership confirmed, and the
+  activation link that registration issued is closed), because a fresh database has no mailbox; the production activation flow is
+  untouched. With `SMTP_HOST` set, Mailpit still receives the (already closed) activation mails and the welcome notice.
+
 ## API overview
 
 All paths are under `/api/v1`; the full description is [`docs/api/openapi.json`](docs/api/openapi.json) (OpenAPI 3, generated from the

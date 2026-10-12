@@ -565,4 +565,64 @@ class JavaSourceFileTest {
             assertThat(members).containsExactly("field clock", "field created", "constructor", "method create", "method helper");
         }
     }
+
+    @Nested
+    class TypeAnnotations {
+
+        @Test
+        void detectsAnAnnotationOnTheTopLevelType() {
+            // Arrange
+            String content = "package a;\n@Component\n@Profile(\"dev & !prod\")\n@DevSeedOnly\nclass A {}\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("A.java", content);
+
+            // Assert
+            assertThat(source.hasTypeAnnotation("DevSeedOnly")).isTrue();
+            assertThat(source.hasTypeAnnotation("Profile")).isTrue();
+            assertThat(source.hasTypeAnnotation("Dev")).isFalse();
+        }
+
+        @Test
+        void detectsAnAnnotationWithArgumentsOnAPublicFinalClass() {
+            // Arrange
+            String content = "package a;\n@DevSeedOnly(value = 1)\npublic final class A {}\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("A.java", content);
+
+            // Assert
+            assertThat(source.hasTypeAnnotation("DevSeedOnly")).isTrue();
+        }
+
+        @Test
+        void aMissingAnnotationOrOneInACommentStringOrMemberIsNotDetected() {
+            // Arrange
+            String plain = "package a;\nclass A {}\n";
+            String commented = "package a;\n// @DevSeedOnly\n/** @DevSeedOnly */\nclass A { String s = \"@DevSeedOnly\"; }\n";
+            String onMember = "package a;\nclass A { @DevSeedOnly void run() {} }\n";
+
+            // Act
+            JavaSourceFile noAnnotation = JavaSourceFile.parse("A.java", plain);
+            JavaSourceFile inComments = JavaSourceFile.parse("A.java", commented);
+            JavaSourceFile member = JavaSourceFile.parse("A.java", onMember);
+
+            // Assert
+            assertThat(noAnnotation.hasTypeAnnotation("DevSeedOnly")).isFalse();
+            assertThat(inComments.hasTypeAnnotation("DevSeedOnly")).isFalse();
+            assertThat(member.hasTypeAnnotation("DevSeedOnly")).isFalse();
+        }
+
+        @Test
+        void aFileWithoutATypeHasNoAnnotation() {
+            // Arrange
+            String content = "package a;\n";
+
+            // Act
+            JavaSourceFile source = JavaSourceFile.parse("package-info.java", content);
+
+            // Assert
+            assertThat(source.hasTypeAnnotation("DevSeedOnly")).isFalse();
+        }
+    }
 }

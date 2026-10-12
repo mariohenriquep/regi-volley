@@ -42,6 +42,7 @@ class OnionArchitectureTest {
     private static final String WEB_CONTROLLERS = WEB + ".controller";
     private static final String WEB_EXCEPTIONS = WEB + ".exception";
     private static final String SECURITY = INFRASTRUCTURE + ".security";
+    private static final String DEV_SEED = INFRASTRUCTURE + ".devseed";
 
     private static final String MODEL = DOMAIN + ".model";
     private static final String ENTITIES = MODEL + ".entity";
@@ -1102,6 +1103,60 @@ class OnionArchitectureTest {
     }
 
     @Test
+    void everyDevSeedTypeIsMarkedDevSeedOnly() {
+        // Arrange - DevAccountActivator skips the emailed activation link, so nothing in this package may exist outside profile dev
+        List<String> found = sources.stream().filter(source -> source.residesIn(DEV_SEED)).map(JavaSourceFile::typeName).toList();
+
+        // Act
+        List<String> violations = devSeedTypesWithoutTheMarker(sources);
+
+        // Assert - the non-vacuity check: the package and the seed's beans are really seen
+        assertThat(found).contains("DevDataInitializer", "DevDataSeeder", "DevAccountActivator", "DevSeedOnly");
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void nothingOutsideTheDevSeedPackageReferencesIt() {
+        // Arrange - the seed is reached by Spring's component scan under profile dev and by nothing else
+        List<JavaSourceFile> outside = sources.stream().filter(source -> !source.residesIn(DEV_SEED)).toList();
+
+        // Act
+        List<String> violations = devSeedReferencesFrom(outside);
+
+        // Assert
+        assertThat(outside).isNotEmpty();
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void theDevSeedRulesCatchAnUnmarkedTypeAndAReferenceFromAnotherPackage() {
+        // Arrange
+        JavaSourceFile marked = JavaSourceFile.parse("infrastructure/devseed/Marked.java",
+                "package " + DEV_SEED + ";\n@DevSeedOnly\nclass Marked {}\n");
+        JavaSourceFile marker = JavaSourceFile.parse("infrastructure/devseed/DevSeedOnly.java",
+                "package " + DEV_SEED + ";\n@Component\n@interface DevSeedOnly {}\n");
+        JavaSourceFile unmarked = JavaSourceFile.parse("infrastructure/devseed/Unmarked.java",
+                "package " + DEV_SEED + ";\nclass Unmarked {}\n");
+        JavaSourceFile importer = JavaSourceFile.parse("infrastructure/config/Importer.java",
+                "package " + INFRASTRUCTURE + ".config;\nimport " + DEV_SEED + ".Marked;\nclass Importer {}\n");
+        JavaSourceFile inline = JavaSourceFile.parse("application/usecase/Inline.java",
+                "package " + USE_CASES + ";\nclass Inline { Object o = new " + DEV_SEED + ".Marked(); }\n");
+        JavaSourceFile innocent = JavaSourceFile.parse("infrastructure/config/Innocent.java",
+                "package " + INFRASTRUCTURE + ".config;\nimport " + SECURITY + ".AuthenticatedActor;\nclass Innocent {}\n");
+
+        // Act
+        List<String> clean = devSeedTypesWithoutTheMarker(List.of(marked, marker));
+        List<String> unmarkedViolations = devSeedTypesWithoutTheMarker(List.of(marked, marker, unmarked));
+        List<String> referenceViolations = devSeedReferencesFrom(List.of(importer, inline, innocent, marked));
+
+        // Assert
+        assertThat(clean).isEmpty();
+        assertThat(unmarkedViolations).hasSize(1).allMatch(v -> v.contains("Unmarked.java"));
+        assertThat(referenceViolations).hasSize(2)
+                .anyMatch(v -> v.contains("Importer.java")).anyMatch(v -> v.contains("Inline.java"));
+    }
+
+    @Test
     void controllersLiveOnlyInTheWebControllerPackage() {
         // Arrange
         String suffix = "Controller";
@@ -1233,6 +1288,24 @@ class OnionArchitectureTest {
         return source.kind() == JavaSourceFile.TypeKind.RECORD
                 || source.kind() == JavaSourceFile.TypeKind.ENUM
                 || (source.kind() == JavaSourceFile.TypeKind.CLASS && source.isFinal());
+    }
+
+    /** Every type under {@code infrastructure.devseed} but the marker annotation itself that lacks {@code @DevSeedOnly}. */
+    private static List<String> devSeedTypesWithoutTheMarker(List<JavaSourceFile> files) {
+        return files.stream()
+                .filter(source -> source.residesIn(DEV_SEED))
+                .filter(source -> source.kind() != JavaSourceFile.TypeKind.NONE)
+                .filter(source -> !source.typeName().equals("DevSeedOnly"))
+                .filter(source -> !source.hasTypeAnnotation("DevSeedOnly"))
+                .map(source -> source.name() + " is not annotated with @DevSeedOnly")
+                .toList();
+    }
+
+    private static List<String> devSeedReferencesFrom(List<JavaSourceFile> files) {
+        return files.stream()
+                .filter(source -> !source.residesIn(DEV_SEED))
+                .flatMap(source -> describe(source, Set.of(DEV_SEED)).stream())
+                .toList();
     }
 
     /** {@code file (kind)} for every file under {@code packagePrefix} matching {@code violates}. */
