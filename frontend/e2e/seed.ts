@@ -64,9 +64,47 @@ async function created<T>(response: Awaited<ReturnType<APIRequestContext['post']
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
+export type Headers = { Authorization: string };
+
+/** Someone asks to join through the public page and the founder approves: a member (their account still has to be activated). */
+async function addMember(
+  request: APIRequestContext,
+  headers: Headers,
+  shortName: string,
+  name: string,
+  email: string,
+): Promise<string> {
+  const join = await request.post(`/api/v1/public/associations/${shortName}/join-requests`, {
+    data: { name, email, phone: '961234567', consentAccepted: true, policyVersion: '2026-01' },
+  });
+  expect(join.status(), await join.text()).toBe(202);
+  const pending = (await (await request.get('/api/v1/join-requests', { headers })).json()) as {
+    id: string;
+    email: string;
+  }[];
+  const requestId = pending.find((candidate) => candidate.email === email)?.id;
+  expect(requestId, `the join request of ${email} is pending`).toBeTruthy();
+  const { memberId } = await created<{ memberId: string }>(
+    await request.post(`/api/v1/join-requests/${requestId ?? ''}/approval`, { headers }),
+  );
+  return memberId;
+}
+
+async function signInAsFounder(
+  request: APIRequestContext,
+  credentials: { email: string; password: string },
+): Promise<Headers> {
+  const login = await created<{ accessToken: string }>(
+    await request.post('/api/v1/auth/login', { data: credentials }),
+  );
+  return { Authorization: `Bearer ${login.accessToken}` };
+}
+
 export interface Seeded {
   groupName: string;
   planName: string;
+  /** The founder's bearer header from the login the seed made, for {@link seedCoaching}: sign-in is limited per address. */
+  headers: Headers;
 }
 
 /**
@@ -79,10 +117,7 @@ export async function seedMemberWithSessions(
   suffix: string,
   shortName: string,
 ): Promise<Seeded> {
-  const login = await created<{ accessToken: string }>(
-    await request.post('/api/v1/auth/login', { data: credentials }),
-  );
-  const headers = { Authorization: `Bearer ${login.accessToken}` };
+  const headers = await signInAsFounder(request, credentials);
   const post = async <T>(path: string, data?: unknown) =>
     created<T>(await request.post(`/api/v1/${path}`, { headers, data }));
 
@@ -92,25 +127,7 @@ export async function seedMemberWithSessions(
 
   // The coach: someone asks to join through the public page, the founder approves, then grants the coach role.
   const coachEmail = `coach-${suffix}@example.com`;
-  const join = await request.post(`/api/v1/public/associations/${shortName}/join-requests`, {
-    data: {
-      name: 'E2E Coach',
-      email: coachEmail,
-      phone: '961234567',
-      consentAccepted: true,
-      policyVersion: '2026-01',
-    },
-  });
-  expect(join.status(), await join.text()).toBe(202);
-  const pending = (await (await request.get('/api/v1/join-requests', { headers })).json()) as {
-    id: string;
-    email: string;
-  }[];
-  const requestId = pending.find(({ email }) => email === coachEmail)?.id;
-  expect(requestId, 'the coach join request is pending').toBeTruthy();
-  const { memberId: coachId } = await post<{ memberId: string }>(
-    `join-requests/${requestId ?? ''}/approval`,
-  );
+  const coachId = await addMember(request, headers, shortName, 'E2E Coach', coachEmail);
   const coachRole = await request.put(`/api/v1/members/${coachId}/roles/COACH`, { headers });
   expect(coachRole.status(), await coachRole.text()).toBe(200);
 
@@ -176,5 +193,119 @@ export async function seedMemberWithSessions(
       booking(missed.id, 'NO_SHOW', nextHour - 2 * DAY),
     ].join('\n'),
   );
-  return { groupName, planName };
+  return { groupName, planName, headers };
+}
+
+/** One `sessions` row for a group, with the SQL that inserts it. */
+function sessionRow(
+  where: { associationId: string; groupId: string; coachId: string },
+  startsAt: number,
+  capacity: number,
+) {
+  const id = uuid(randomUUID());
+  const insert = `INSERT INTO sessions (id, association_id, training_group_id, coach_id, starts_at, ends_at, capacity, status, version)
+    VALUES ('${id}', '${uuid(where.associationId)}', '${uuid(where.groupId)}', '${uuid(where.coachId)}',
+            '${new Date(startsAt).toISOString()}', '${new Date(startsAt + 1.5 * HOUR).toISOString()}', ${String(capacity)}, 'SCHEDULED', 0);`;
+  return { id, insert };
+}
+
+/** A `bookings` row that holds a seat (CONFIRMED), as if the member had booked it earlier. */
+function seatRow(associationId: string, sessionId: string, memberId: string, at: number) {
+  return `INSERT INTO bookings (id, association_id, session_id, member_id, status, requested_at, confirmed_at)
+    VALUES ('${uuid(randomUUID())}', '${uuid(associationId)}', '${uuid(sessionId)}', '${uuid(memberId)}', 'CONFIRMED',
+            '${new Date(at).toISOString()}', '${new Date(at).toISOString()}');`;
+}
+
+export interface SeededCoaching {
+  coachEmail: string;
+  playerEmail: string;
+  /** Group names. `marking`: one session that started an hour ago, the founder and a player holding seats, nothing marked. */
+  marking: string;
+  /** A session more than a day ahead that the founder booked (a credit is used). */
+  cancelling: string;
+  /** A session more than two days ahead with one seat, held by the player, and the founder on the waitlist. */
+  seats: string;
+  /** When each session starts (ms since the epoch), to open the week it is in. */
+  startsAt: { marking: number; cancelling: number; seats: number };
+}
+
+/**
+ * Data for the coach screens. A coach and a player join through the public page and are approved (the test activates
+ * their accounts from the emailed links). Three groups, each coached by the coach, have one session: one that started an
+ * hour ago with two seat holders (inserted with SQL, because booking a started session is refused), one ahead that the
+ * founder books through the API (so cancelling it refunds a credit), and one ahead with a single seat held by the player
+ * (SQL) and the founder (API) waiting for it. The founder already holds the paid pack of `seedMemberWithSessions`, whose
+ * login is reused (`headers`): sign-in is rate limited per address, and the journey is close to the limit.
+ */
+export async function seedCoaching(
+  request: APIRequestContext,
+  headers: Headers,
+  suffix: string,
+  shortName: string,
+): Promise<SeededCoaching> {
+  const post = async <T>(path: string, data?: unknown) =>
+    created<T>(await request.post(`/api/v1/${path}`, { headers, data }));
+  const { memberId, associationId } = await created<{ memberId: string; associationId: string }>(
+    await request.get('/api/v1/me', { headers }),
+  );
+
+  const coachEmail = `coach2-${suffix}@example.com`;
+  const playerEmail = `player-${suffix}@example.com`;
+  const coachId = await addMember(request, headers, shortName, 'Rui Coach', coachEmail);
+  const coachRole = await request.put(`/api/v1/members/${coachId}/roles/COACH`, { headers });
+  expect(coachRole.status(), await coachRole.text()).toBe(200);
+  const playerId = await addMember(request, headers, shortName, 'Paula Player', playerEmail);
+
+  const levels = await post<{ entryLevelId: string }>('levels', { name: `Coaching ${suffix}` });
+  const venue = await post<{ id: string }>('venues', {
+    name: 'E2E Coaching Hall',
+    address: 'Rua da Rede 2, Lisbon',
+    courts: 1,
+  });
+  const group = async (name: string) =>
+    post<{ id: string }>('training-groups', {
+      name,
+      venueId: venue.id,
+      coachId,
+      capacity: 12,
+      acceptedLevelIds: [levels.entryLevelId],
+      schedule: [{ dayOfWeek: 'MONDAY', startTime: '20:00', durationMinutes: 90 }],
+    });
+  const names = {
+    marking: `E2E Marking ${suffix}`,
+    cancelling: `E2E Cancelling ${suffix}`,
+    seats: `E2E Seats ${suffix}`,
+  };
+  const groups = {
+    marking: await group(names.marking),
+    cancelling: await group(names.cancelling),
+    seats: await group(names.seats),
+  };
+
+  const now = Date.now();
+  const hour = Math.floor(now / HOUR) * HOUR;
+  const where = (groupId: string) => ({ associationId, groupId, coachId });
+  const marking = sessionRow(where(groups.marking.id), hour - HOUR, 12);
+  const cancelling = sessionRow(where(groups.cancelling.id), hour + 40 * HOUR, 12);
+  const seats = sessionRow(where(groups.seats.id), hour + 64 * HOUR, 1);
+  sql(
+    [
+      marking.insert,
+      cancelling.insert,
+      seats.insert,
+      seatRow(associationId, marking.id, memberId, now - 2 * DAY),
+      seatRow(associationId, marking.id, playerId, now - DAY),
+      seatRow(associationId, seats.id, playerId, now - DAY),
+    ].join('\n'),
+  );
+
+  // The founder books the other two sessions the way a member does: the credit is used, and the second session is full
+  await post(`sessions/${cancelling.id}/bookings`);
+  await post(`sessions/${seats.id}/bookings`);
+  return {
+    coachEmail,
+    playerEmail,
+    ...names,
+    startsAt: { marking: hour - HOUR, cancelling: hour + 40 * HOUR, seats: hour + 64 * HOUR },
+  };
 }

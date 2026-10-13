@@ -32,6 +32,10 @@ export const unauthenticated = () =>
     { status: 401 },
   );
 
+/** The API's 403 for an action the caller's roles do not allow (a member asking for the coaching list). */
+export const notAllowed = () =>
+  apiError(403, 'NOT_ALLOWED', 'You are not allowed to see the coaching sessions');
+
 /** Refresh answers 401: no cookie, or an expired / revoked one. */
 export const refreshRejected = http.post('/api/v1/auth/refresh', () => unauthenticated());
 

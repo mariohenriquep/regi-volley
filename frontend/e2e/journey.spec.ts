@@ -1,6 +1,6 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { emailedToken } from './mailpit';
-import { seedMemberWithSessions } from './seed';
+import { seedCoaching, seedMemberWithSessions, type SeededCoaching } from './seed';
 
 const PASSWORD = 'correct horse battery staple 42';
 const NEW_PASSWORD = 'a different long passphrase 43';
@@ -37,10 +37,34 @@ async function showWeekWith(page: Page, card: Locator) {
   await expect(card).toBeVisible();
 }
 
+/** The Lisbon Monday (`YYYY-MM-DD`) of the week an instant is in, to open that week of the Coaching screen. */
+function lisbonMonday(instant: number): string {
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Lisbon' }).format(instant);
+  const midday = new Date(`${day}T12:00:00Z`);
+  midday.setUTCDate(midday.getUTCDate() - ((midday.getUTCDay() + 6) % 7));
+  return midday.toISOString().slice(0, 10);
+}
+
+async function activateAndSignIn(
+  page: Page,
+  request: APIRequestContext,
+  email: string,
+  password: string,
+) {
+  const token = await emailedToken(request, email, '/activate');
+  await openLink(page, '/activate', token);
+  await setPassword(page, password, 'Activate account');
+  await expect(page.getByRole('heading', { name: 'Account activated' })).toBeVisible();
+  await page.goto('/login');
+  await signIn(page, email, password);
+  await expect(page.getByRole('heading', { level: 1, name: 'Sessions' })).toBeVisible();
+}
+
 // Registration is limited to 3 an hour per address, so one registration serves the whole journey: the founder
 // created and activated in the first test is the member who forgets the password in the second.
 test.describe.configure({ mode: 'serial' });
 let founder = { email: '', password: PASSWORD, shortName: '' };
+let coaching: SeededCoaching;
 
 test('a founder registers through the UI, activates by the emailed link and signs in; a visitor finds the page and asks to join', async ({
   page,
@@ -157,7 +181,7 @@ test.describe('a member on a phone', () => {
     // Arrange: the activated founder of the first test holds a paid pack and there are sessions to book (see seed.ts)
     const { email, shortName } = founder;
     const suffix = unique();
-    const { groupName, planName } = await seedMemberWithSessions(
+    const { groupName, planName, headers } = await seedMemberWithSessions(
       request,
       { email, password: NEW_PASSWORD },
       suffix,
@@ -237,10 +261,119 @@ test.describe('a member on a phone', () => {
     await expect(page.getByText('No-show', { exact: true })).toBeVisible();
     await expect(page.getByText(/\d of 3 no-shows this month/)).toBeVisible();
 
+    // The coach journey's data, made with the founder's login of the seed (sign-in is limited per address). It books two
+    // sessions, so it comes after the credit checks above; the sign-out below ends that login.
+    coaching = await seedCoaching(request, headers, suffix, shortName);
+
     // Sign out everywhere is in the account menu
     await page.getByRole('button', { name: 'Account' }).tap();
     await page.getByRole('menuitem', { name: 'Sign out on all devices' }).tap();
     await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  });
+});
+
+test.describe('a coach on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('finds the week, marks attendance, changes the seats and cancels a session, while a player sees no Coaching', async ({
+    page,
+    request,
+  }) => {
+    // Arrange: a coach and a player activate their accounts; three sessions exist (see seed.ts)
+    const seeded = coaching;
+    await activateAndSignIn(page, request, seeded.coachEmail, PASSWORD);
+
+    // Act: the section is in the bar for a coach
+    await page
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('link', { name: 'Coaching' })
+      .tap();
+    await expect(page.getByRole('heading', { level: 1, name: 'Coaching' })).toBeVisible();
+
+    // The session that started an hour ago: nobody is marked yet, and the card offers the roster with the marking form
+    await page.goto(`/coaching?week=${lisbonMonday(seeded.startsAt.marking)}`);
+    const marking = page.getByRole('article', { name: seeded.marking });
+    await expect(marking).toContainText('2 of 12 confirmed');
+    await expect(marking).toContainText('0 attended · 0 no-show · 2 to mark');
+    await expect(marking).toContainText('E2E Coaching Hall');
+    await marking.getByRole('link', { name: /^Mark attendance/ }).tap();
+
+    // The roster lists the seat holders in booking order, names only; one tap each, then one Save
+    await expect(page.getByRole('heading', { level: 1, name: 'Roster' })).toBeVisible();
+    const seats = page.getByRole('list', { name: 'Seats' });
+    await expect(seats.getByRole('listitem')).toHaveText([/E2E Founder/, /Paula Player/]);
+    await page.getByRole('group', { name: 'E2E Founder' }).getByText('Attended').tap();
+    await page.getByRole('group', { name: 'Paula Player' }).getByText('No-show').tap();
+    await page.getByRole('button', { name: 'Save attendance (2)' }).tap();
+
+    // Assert: the API's counts are on screen, on the roster and on the week
+    await expect(page.getByText('Attendance saved: 1 attended, 1 no-show.')).toBeVisible();
+    await expect(page.getByRole('region', { name: seeded.marking })).toContainText(
+      '1 attended · 1 no-show · 0 to mark',
+    );
+    await expect(seats.getByRole('listitem').first()).toContainText('Attended');
+    await expect(page.getByText('Attendance is complete.')).toBeVisible();
+    await page.getByRole('link', { name: 'Back to Coaching' }).tap();
+    await expect(marking).toContainText('1 attended · 1 no-show · 0 to mark');
+    await expect(marking.getByRole('link', { name: /^Roster/ })).toBeVisible();
+    // A mark exists, so the API no longer offers to cancel it
+    await expect(marking.getByRole('button')).toHaveCount(0);
+
+    // Seats: the single seat is held by the player, the founder waits; below the confirmed is refused, raising promotes
+    await page.goto(`/coaching?week=${lisbonMonday(seeded.startsAt.seats)}`);
+    const seatsCard = page.getByRole('article', { name: seeded.seats });
+    await expect(seatsCard).toContainText('1 of 1 confirmed');
+    await expect(seatsCard).toContainText('1 on the waitlist');
+    await seatsCard.getByRole('button', { name: /^Change seats/ }).tap();
+    const seatsDialog = page.getByRole('dialog', { name: 'Change the seats' });
+    await expect(seatsDialog.getByLabel('Seats')).toHaveValue('1');
+    await seatsDialog.getByLabel('Seats').fill('2');
+    await seatsDialog.getByRole('button', { name: 'Save seats' }).tap();
+    await expect(
+      page.getByText('Seats changed to 2. 1 person moved up from the waitlist.'),
+    ).toBeVisible();
+    await expect(seatsCard).toContainText('2 of 2 confirmed');
+    await expect(seatsCard).not.toContainText('on the waitlist');
+    await seatsCard.getByRole('button', { name: /^Change seats/ }).tap();
+    await seatsDialog.getByLabel('Seats').fill('1');
+    await seatsDialog.getByRole('button', { name: 'Save seats' }).tap();
+    await expect(seatsDialog.getByLabel('Seats')).toHaveAccessibleDescription(/cannot be lower/);
+    await seatsDialog.getByRole('button', { name: 'Not now' }).tap();
+    await expect(seatsDialog).toBeHidden();
+
+    // Cancel a session ahead: a reason is required, the warning counts the members, the API reports what it did
+    await page.goto(`/coaching?week=${lisbonMonday(seeded.startsAt.cancelling)}`);
+    const cancelling = page.getByRole('article', { name: seeded.cancelling });
+    await expect(cancelling).toContainText('1 of 12 confirmed');
+    await cancelling.getByRole('button', { name: /^Cancel session/ }).tap();
+    const cancelDialog = page.getByRole('dialog', { name: 'Cancel this session?' });
+    await expect(cancelDialog).toContainText(
+      '1 member will be notified and their credit refunded.',
+    );
+    await cancelDialog.getByRole('button', { name: 'Cancel session' }).tap();
+    await expect(cancelDialog.getByLabel('Reason')).toHaveAccessibleDescription(
+      'Enter the reason the members will be told.',
+    );
+    await cancelDialog.getByLabel('Reason').fill('The hall is closed for repairs');
+    await cancelDialog.getByRole('button', { name: 'Cancel session' }).tap();
+    await expect(
+      page.getByText('Session cancelled. 1 booking was cancelled and 1 credit refunded.'),
+    ).toBeVisible();
+    await expect(cancelling).toContainText('Cancelled');
+    await expect(cancelling.getByRole('button')).toHaveCount(0);
+
+    // A player has no Coaching section, and the address says why
+    await page.getByRole('button', { name: 'Account' }).tap();
+    await page.getByRole('menuitem', { name: 'Sign out', exact: true }).tap();
+    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+    await activateAndSignIn(page, request, seeded.playerEmail, PASSWORD);
+    await expect(page.getByRole('navigation', { name: 'Sections' }).getByRole('link')).toHaveText([
+      'Sessions',
+      'My plan',
+      'History',
+    ]);
+    await page.goto('/coaching');
+    await expect(page.getByText('Coaching is for coaches and administrators.')).toBeVisible();
   });
 });
 

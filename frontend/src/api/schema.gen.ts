@@ -114,6 +114,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/coaching/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["coachingWeek"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/join-requests": {
         parameters: {
             query?: never;
@@ -816,6 +832,36 @@ export interface components {
             /** Format: int32 */
             capacity: number;
         };
+        CoachingSessionResponse: {
+            /** Format: int32 */
+            attendedCount?: number;
+            canCancel?: boolean;
+            canChangeCapacity?: boolean;
+            canMarkAttendance?: boolean;
+            /** Format: int32 */
+            capacity?: number;
+            /** Format: uuid */
+            coachId?: string;
+            /** Format: int32 */
+            confirmedCount?: number;
+            /** Format: date-time */
+            endsAt?: string;
+            groupName?: string;
+            /** Format: int32 */
+            noShowCount?: number;
+            /** Format: uuid */
+            sessionId?: string;
+            /** Format: date-time */
+            startsAt?: string;
+            status?: string;
+            /** Format: uuid */
+            trainingGroupId?: string;
+            /** Format: int32 */
+            unmarkedCount?: number;
+            venueName?: string;
+            /** Format: int32 */
+            waitlistCount?: number;
+        };
         CreateTrainingGroupRequest: {
             acceptedLevelIds: string[];
             /** Format: int32 */
@@ -1461,6 +1507,33 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["RuleViolation"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    coachingWeek: {
+        parameters: {
+            query?: {
+                weekOf?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoachingSessionResponse"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
     };
