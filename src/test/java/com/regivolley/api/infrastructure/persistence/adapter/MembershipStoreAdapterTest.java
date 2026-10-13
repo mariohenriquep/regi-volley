@@ -191,4 +191,48 @@ class MembershipStoreAdapterTest extends AbstractPostgresIntegrationTest {
         assertThat(users.findById(user.id())).isPresent();
         assertThat(memberships.findById(UUID.randomUUID())).isEmpty();
     }
+
+    @Test
+    void findConfirmedMemberIdsReturnsOnlyTheConfirmedAmongTheRequested() {
+        // Arrange
+        seed();
+        Member pendingMember = members.save(Fixtures.member(association, "Pending"));
+        Member withoutAccount = members.save(Fixtures.member(association, "Without"));
+        Member unrequested = members.save(Fixtures.member(association, "Unrequested"));
+        UserAccount pendingUser = users.insert(CredentialsFixtures.user());
+        UserAccount unrequestedUser = users.insert(CredentialsFixtures.user());
+        Membership confirmed = memberships.insert(CredentialsFixtures.pending(user, association.id(), member.id()));
+        memberships.insert(CredentialsFixtures.pending(pendingUser, association.id(), pendingMember.id()));
+        Membership other = memberships.insert(CredentialsFixtures.pending(unrequestedUser, association.id(), unrequested.id()));
+        flushAndClear();
+        memberships.confirm(confirmed.id(), LATER);
+        memberships.confirm(other.id(), LATER);
+        flushAndClear();
+
+        // Act
+        var found = memberships.findConfirmedMemberIds(association.id(),
+                java.util.List.of(member.id(), pendingMember.id(), withoutAccount.id()));
+
+        // Assert
+        assertThat(found).containsExactly(member.id());
+        assertThat(memberships.findConfirmedMemberIds(association.id(), java.util.List.of())).isEmpty();
+    }
+
+    @Test
+    void findConfirmedMemberIdsNeverSeesAnotherAssociationsMemberships() {
+        // Arrange - tenant isolation: the same member ids asked for under association B are absent
+        seed();
+        Membership confirmed = memberships.insert(CredentialsFixtures.pending(user, association.id(), member.id()));
+        flushAndClear();
+        memberships.confirm(confirmed.id(), LATER);
+        flushAndClear();
+        Association other = associations.save(Fixtures.association());
+
+        // Act
+        var asOther = memberships.findConfirmedMemberIds(other.id(), java.util.List.of(member.id()));
+
+        // Assert
+        assertThat(asOther).isEmpty();
+        assertThat(memberships.findConfirmedMemberIds(association.id(), java.util.List.of(member.id()))).containsExactly(member.id());
+    }
 }

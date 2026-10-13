@@ -57,6 +57,13 @@ class RouteInventoryTest extends AbstractSecuredWebTest {
             Map.entry("PUT /api/v1/sessions/{sessionId}/attendance", Access.AUTHENTICATED),
             Map.entry("GET /api/v1/sessions/{sessionId}/roster", Access.AUTHENTICATED),
             // the administrator
+            Map.entry("GET /api/v1/levels", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/venues", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/training-groups", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/plans", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/members", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/members/{memberId}", Access.AUTHENTICATED),
+            Map.entry("GET /api/v1/subscriptions/{subscriptionId}/payments", Access.AUTHENTICATED),
             Map.entry("POST /api/v1/levels", Access.AUTHENTICATED),
             Map.entry("PUT /api/v1/levels/{levelId}", Access.AUTHENTICATED),
             Map.entry("PUT /api/v1/levels/order", Access.AUTHENTICATED),

@@ -1,5 +1,6 @@
 package com.regivolley.api.infrastructure.web.controller;
 
+import com.regivolley.api.application.usecase.ListSubscriptionPaymentsUseCase;
 import com.regivolley.api.application.usecase.ListSubscriptionsByPaymentStatusUseCase;
 import com.regivolley.api.application.usecase.MarkSubscriptionOverdueUseCase;
 import com.regivolley.api.application.usecase.RecordPaymentUseCase;
@@ -10,6 +11,7 @@ import com.regivolley.api.infrastructure.web.dto.PlausibleDate;
 import com.regivolley.api.infrastructure.web.dto.PaymentStatusName;
 import com.regivolley.api.infrastructure.web.dto.RecordPaymentRequest;
 import com.regivolley.api.infrastructure.web.dto.SubscriptionPaymentEntryResponse;
+import com.regivolley.api.infrastructure.web.dto.SubscriptionPaymentsResponse;
 import com.regivolley.api.infrastructure.web.dto.SubscriptionResponse;
 import com.regivolley.api.infrastructure.web.mapper.SubscriptionCsvWebMapper;
 import com.regivolley.api.infrastructure.web.mapper.SubscriptionWebMapper;
@@ -49,12 +51,15 @@ public class SubscriptionController {
     private static final MediaType CSV = new MediaType("text", "csv", StandardCharsets.UTF_8);
 
     private final ListSubscriptionsByPaymentStatusUseCase listByPaymentStatus;
+    private final ListSubscriptionPaymentsUseCase listPayments;
     private final MarkSubscriptionOverdueUseCase markOverdue;
     private final RecordPaymentUseCase recordPayment;
 
-    public SubscriptionController(ListSubscriptionsByPaymentStatusUseCase listByPaymentStatus, MarkSubscriptionOverdueUseCase markOverdue,
+    public SubscriptionController(ListSubscriptionsByPaymentStatusUseCase listByPaymentStatus, ListSubscriptionPaymentsUseCase listPayments,
+                                  MarkSubscriptionOverdueUseCase markOverdue,
                                   RecordPaymentUseCase recordPayment) {
         this.listByPaymentStatus = listByPaymentStatus;
+        this.listPayments = listPayments;
         this.markOverdue = markOverdue;
         this.recordPayment = recordPayment;
     }
@@ -87,6 +92,12 @@ public class SubscriptionController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
                         .filename(SubscriptionCsvWebMapper.fileName(paymentStatus)).build().toString())
                 .body(SubscriptionCsvWebMapper.toCsv(entries));
+    }
+
+    /** The subscription's payments and reversals, oldest first, with the paid and outstanding totals the payment ledger derives. */
+    @GetMapping("/{subscriptionId}/payments")
+    public SubscriptionPaymentsResponse payments(@CurrentActor AuthenticatedActor caller, @PathVariable UUID subscriptionId) {
+        return SubscriptionWebMapper.toResponse(listPayments.execute(SubscriptionWebMapper.paymentsQuery(caller.actor(), subscriptionId)));
     }
 
     @PostMapping("/{subscriptionId}/overdue-marking")

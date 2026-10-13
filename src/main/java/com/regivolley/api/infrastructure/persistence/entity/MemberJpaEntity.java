@@ -10,6 +10,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.BatchSize;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -66,11 +67,14 @@ public class MemberJpaEntity {
     @Column(nullable = false)
     private Long version;
 
+    // Batch-fetched: a list of members loads their roles and level history in a few queries, not two per member.
     @ElementCollection
+    @BatchSize(size = 100)
     @CollectionTable(name = "member_roles", joinColumns = @JoinColumn(name = "member_id"))
     private Set<RoleRow> roles = new HashSet<>();
 
     @ElementCollection
+    @BatchSize(size = 100)
     @CollectionTable(name = "member_level_changes", joinColumns = @JoinColumn(name = "member_id"))
     @OrderColumn(name = "position")
     private List<LevelChangeRow> levelChanges = new ArrayList<>();

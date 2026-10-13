@@ -335,4 +335,171 @@ class MemberRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         assertThat(asOther).isEmpty();
         assertThat(members.findByIds(a.id(), java.util.List.of())).isEmpty();
     }
+
+    private Member saved(Association association, String name, String email) {
+        return members.save(MemberFactory.create(association,
+                ContactDetails.of(name, EmailAddress.of(email), PhoneNumber.of("912345678")), Fixtures.consent(),
+                Set.of(MemberRole.MEMBER), CLOCK));
+    }
+
+    @Test
+    void searchListsTheAssociationsMembersByNameIgnoringCaseWithRolesAndLevelHistory() {
+        // Arrange
+        Association association = newAssociation();
+        Member rui = saved(association, "rui Alves", "rui@example.com");
+        Member ana = members.save(MemberFactory.create(association, Fixtures.contact("Ana Silva"), Fixtures.consent(),
+                Set.of(MemberRole.MEMBER, MemberRole.COACH), CLOCK)
+                .changeLevel(association, association.levels().get(1).id(), rui.id(), CLOCK));
+        Member bruno = saved(association, "Bruno Dias", "bruno@example.com");
+        flushAndClear();
+
+        // Act
+        var found = members.search(association.id(), java.util.Optional.empty(), java.util.Optional.empty(), 10);
+
+        // Assert
+        assertThat(found).extracting(Member::id).containsExactly(ana.id(), bruno.id(), rui.id());
+        Member loadedAna = found.get(0);
+        assertThat(loadedAna.roles()).containsExactlyInAnyOrder(MemberRole.MEMBER, MemberRole.COACH);
+        assertThat(loadedAna.levelChanges()).hasSize(1);
+        assertThat(loadedAna.levelId()).isEqualTo(association.levels().get(1).id());
+    }
+
+    @Test
+    void searchFiltersByStatus() {
+        // Arrange
+        Association association = newAssociation();
+        Member active = saved(association, "Active One", "active@example.com");
+        Member inactive = members.save(MemberFactory.create(association, Fixtures.contact("Inactive One"), Fixtures.consent(),
+                Set.of(MemberRole.MEMBER), CLOCK).deactivate());
+        flushAndClear();
+
+        // Act
+        var onlyActive = members.search(association.id(), java.util.Optional.of(MemberStatus.ACTIVE), java.util.Optional.empty(), 10);
+        var onlyInactive = members.search(association.id(), java.util.Optional.of(MemberStatus.INACTIVE), java.util.Optional.empty(), 10);
+
+        // Assert
+        assertThat(onlyActive).extracting(Member::id).containsExactly(active.id());
+        assertThat(onlyInactive).extracting(Member::id).containsExactly(inactive.id());
+    }
+
+    @Test
+    void searchMatchesTheTextInTheNameOrTheEmailIgnoringCase() {
+        // Arrange
+        Association association = newAssociation();
+        Member byName = saved(association, "Rita Costa", "x1@example.com");
+        Member byEmail = saved(association, "Someone Else", "RITA.private@example.com");
+        saved(association, "Paulo Dias", "paulo@example.com");
+        flushAndClear();
+
+        // Act
+        var found = members.search(association.id(), java.util.Optional.empty(), java.util.Optional.of("rItA"), 10);
+
+        // Assert
+        assertThat(found).extracting(Member::id).containsExactlyInAnyOrder(byName.id(), byEmail.id());
+    }
+
+    @Test
+    void searchTreatsPercentUnderscoreAndBackslashAsOrdinaryCharacters() {
+        // Arrange
+        Association association = newAssociation();
+        Member percent = saved(association, "Discount 100% Club", "a1@example.com");
+        saved(association, "Discount 100 Club", "a2@example.com");
+        Member underscore = saved(association, "Snake_case", "a3@example.com");
+        saved(association, "SnakeXcase", "a4@example.com");
+        Member backslash = saved(association, "Back\\slash", "a5@example.com");
+        flushAndClear();
+
+        // Act
+        var percents = members.search(association.id(), java.util.Optional.empty(), java.util.Optional.of("100%"), 10);
+        var underscores = members.search(association.id(), java.util.Optional.empty(), java.util.Optional.of("e_c"), 10);
+        var backslashes = members.search(association.id(), java.util.Optional.empty(), java.util.Optional.of("\\"), 10);
+        var wildcard = members.search(association.id(), java.util.Optional.empty(), java.util.Optional.of("%"), 10);
+
+        // Assert
+        assertThat(percents).extracting(Member::id).containsExactly(percent.id());
+        assertThat(underscores).extracting(Member::id).containsExactly(underscore.id());
+        assertThat(backslashes).extracting(Member::id).containsExactly(backslash.id());
+        assertThat(wildcard).extracting(Member::id).containsExactly(percent.id());
+    }
+
+    @Test
+    void searchLeavesAnonymisedMembersOut() {
+        // Arrange
+        Association association = newAssociation();
+        Member kept = saved(association, "Kept Person", "kept@example.com");
+        members.save(Fixtures.member(association, "Erased Person").anonymise(Fixtures.at(Fixtures.NOW.plusSeconds(10))));
+        flushAndClear();
+
+        // Act
+        var all = members.search(association.id(), java.util.Optional.empty(), java.util.Optional.empty(), 10);
+        var byPlaceholder = members.search(association.id(), java.util.Optional.empty(),
+                java.util.Optional.of(ContactDetails.ANONYMISED_NAME), 10);
+
+        // Assert
+        assertThat(all).extracting(Member::id).containsExactly(kept.id());
+        assertThat(byPlaceholder).isEmpty();
+    }
+
+    @Test
+    void searchReturnsAtMostTheLimitInNameOrder() {
+        // Arrange
+        Association association = newAssociation();
+        Member a = saved(association, "A", "a@example.com");
+        Member b = saved(association, "B", "b@example.com");
+        saved(association, "C", "c@example.com");
+        flushAndClear();
+
+        // Act
+        var found = members.search(association.id(), java.util.Optional.empty(), java.util.Optional.empty(), 2);
+
+        // Assert
+        assertThat(found).extracting(Member::id).containsExactly(a.id(), b.id());
+    }
+
+    @Test
+    void searchNeverReturnsAnotherAssociationsMembers() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        Member ofA = saved(a, "Shared Name", "a@example.com");
+        Member ofB = saved(b, "Shared Name", "b@example.com");
+        flushAndClear();
+
+        // Act
+        var asA = members.search(a.id(), java.util.Optional.empty(), java.util.Optional.of("shared"), 10);
+        var asB = members.search(b.id(), java.util.Optional.empty(), java.util.Optional.of("shared"), 10);
+        var asNobody = members.search(com.regivolley.api.domain.model.valueobject.AssociationId.generate(), java.util.Optional.empty(),
+                java.util.Optional.empty(), 10);
+
+        // Assert
+        assertThat(asA).extracting(Member::id).containsExactly(ofA.id());
+        assertThat(asB).extracting(Member::id).containsExactly(ofB.id());
+        assertThat(asNobody).isEmpty();
+    }
+
+    @Test
+    void searchLoadsRolesAndLevelHistoryInBatchesNotOneQueryPerMember() {
+        // Arrange
+        Association association = newAssociation();
+        for (int i = 0; i < 40; i++) {
+            Member member = saved(association, "Member %02d".formatted(i), "m%02d@example.com".formatted(i));
+            members.save(member.grantRole(MemberRole.COACH).changeLevel(association, association.levels().get(1).id(),
+                    member.id(), Fixtures.at(Fixtures.NOW.plusSeconds(60))));
+        }
+        flushAndClear();
+        org.hibernate.stat.Statistics statistics = entityManager.getEntityManagerFactory()
+                .unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+
+        // Act
+        var found = members.search(association.id(), java.util.Optional.empty(), java.util.Optional.empty(), 100);
+        long statements = statistics.getPrepareStatementCount();
+        statistics.setStatisticsEnabled(false);
+
+        // Assert - one query for the members and a few batched ones for the two collections, not 1 + 2 * 40
+        assertThat(found).hasSize(40);
+        assertThat(found).allSatisfy(member -> assertThat(member.levelChanges()).hasSize(1));
+        assertThat(statements).isLessThanOrEqualTo(4L);
+    }
 }

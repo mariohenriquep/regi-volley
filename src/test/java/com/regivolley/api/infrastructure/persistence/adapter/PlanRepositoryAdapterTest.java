@@ -163,4 +163,26 @@ class PlanRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         assertThat(plans.findByIds(b.id(), java.util.List.of(one.id()))).isEmpty();
         assertThat(plans.findByIds(a.id(), java.util.List.of())).isEmpty();
     }
+
+    @Test
+    void findAllByAssociationListsOnlyThatAssociationsPlansByNameIgnoringCase() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        Plan zeta = plans.save(PlanFactory.create(a.id(), "zeta pack", PlanTerms.pack(5, Set.of()), Money.ofCents(2000), 30));
+        Plan alpha = plans.save(PlanFactory.create(a.id(), "Alpha", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(3000), null));
+        Plan middle = plans.save(PlanFactory.create(a.id(), "Middle", PlanTerms.singleSession(Set.of()), Money.ofCents(700), 1));
+        Plan foreign = plans.save(PlanFactory.create(b.id(), "Foreign", PlanTerms.monthlyUnlimited(Set.of()), Money.ofCents(100), null));
+        entityManager.flush();
+        entityManager.clear();
+
+        // Act
+        var asA = plans.findAllByAssociation(a.id());
+        var asB = plans.findAllByAssociation(b.id());
+
+        // Assert
+        assertThat(asA).extracting(Plan::id).containsExactly(alpha.id(), middle.id(), zeta.id());
+        assertThat(asB).extracting(Plan::id).containsExactly(foreign.id());
+        assertThat(plans.findAllByAssociation(com.regivolley.api.domain.model.valueobject.AssociationId.generate())).isEmpty();
+    }
 }

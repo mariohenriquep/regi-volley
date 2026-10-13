@@ -714,6 +714,50 @@ class SubscriptionTest {
     // ------------------------------------------------- RN-16 decisions (exhausted packs, weekly)
 
     @Nested
+    class CreditsLeft {
+        @Test
+        void aPackCountsDownFromItsCreditsAsPlacesAreUsed() {
+            // Arrange
+            Subscription fresh = subscribe(pack(3, 90), "2026-10-01");
+
+            // Act
+            Subscription oneUsed = fresh.consume(BookingId.generate(), lisbon("2026-10-05T20:00"));
+
+            // Assert
+            assertThat(fresh.creditsLeft()).hasValue(3);
+            assertThat(oneUsed.creditsLeft()).hasValue(2);
+        }
+
+        @Test
+        void aSingleSessionHasOneCreditUntilItIsUsed() {
+            // Arrange
+            Subscription fresh = subscribe(single(), "2026-10-01");
+
+            // Act
+            Subscription used = fresh.consume(BookingId.generate(), lisbon("2026-10-01T20:00"));
+
+            // Assert
+            assertThat(fresh.creditsLeft()).hasValue(1);
+            assertThat(used.creditsLeft()).hasValue(0);
+        }
+
+        @Test
+        void monthlyPlansHaveNoCredits() {
+            // Arrange
+            Subscription unlimited = subscribe(unlimited(), "2026-10-01");
+            Subscription weekly = subscribe(perWeek(2), "2026-10-01");
+
+            // Act
+            var unlimitedLeft = unlimited.creditsLeft();
+            var weeklyLeft = weekly.creditsLeft();
+
+            // Assert
+            assertThat(unlimitedLeft).isEmpty();
+            assertThat(weeklyLeft).isEmpty();
+        }
+    }
+
+    @Nested
     class ExhaustedCreditPlans {
         private Subscription exhaustedPack() {
             return subscribe(pack(1, 90), "2026-10-01").consume(BookingId.generate(), lisbon("2026-10-05T20:00"));

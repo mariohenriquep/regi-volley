@@ -12,9 +12,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * {@link MembershipStore} on Spring Data JPA. A membership belongs to an association; the database's composite foreign key
@@ -54,6 +57,16 @@ public class MembershipStoreAdapter implements MembershipStore {
     public Optional<Membership> findByMember(AssociationId associationId, MemberId memberId) {
         return memberships.findByAssociationIdAndMemberId(associationId.value(), memberId.value())
                 .map(MembershipPersistenceMapper::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Set<MemberId> findConfirmedMemberIds(AssociationId associationId, Collection<MemberId> memberIds) {
+        if (memberIds.isEmpty()) {
+            return Set.of();
+        }
+        return memberships.findConfirmedMemberIds(associationId.value(), memberIds.stream().map(MemberId::value).toList()).stream()
+                .map(MemberId::of).collect(Collectors.toSet());
     }
 
     @Override

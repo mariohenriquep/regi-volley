@@ -3,14 +3,17 @@ package com.regivolley.api.infrastructure.web.controller;
 import com.regivolley.api.application.usecase.CreateVenueUseCase;
 import com.regivolley.api.application.usecase.DeleteVenueUseCase;
 import com.regivolley.api.application.usecase.EditVenueUseCase;
+import com.regivolley.api.application.usecase.ListVenuesUseCase;
 import com.regivolley.api.infrastructure.security.AuthenticatedActor;
 import com.regivolley.api.infrastructure.security.CurrentActor;
+import com.regivolley.api.infrastructure.web.dto.VenueEntryResponse;
 import com.regivolley.api.infrastructure.web.dto.VenueRequest;
 import com.regivolley.api.infrastructure.web.dto.VenueResponse;
 import com.regivolley.api.infrastructure.web.mapper.VenueWebMapper;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /** The venues of the caller's association (US-02), for administrators (the use cases check). */
@@ -26,14 +30,22 @@ import java.util.UUID;
 @RequestMapping("/api/v1/venues")
 public class VenueController {
 
+    private final ListVenuesUseCase listVenues;
     private final CreateVenueUseCase createVenue;
     private final EditVenueUseCase editVenue;
     private final DeleteVenueUseCase deleteVenue;
 
-    public VenueController(CreateVenueUseCase createVenue, EditVenueUseCase editVenue, DeleteVenueUseCase deleteVenue) {
+    public VenueController(ListVenuesUseCase listVenues, CreateVenueUseCase createVenue, EditVenueUseCase editVenue, DeleteVenueUseCase deleteVenue) {
+        this.listVenues = listVenues;
         this.createVenue = createVenue;
         this.editVenue = editVenue;
         this.deleteVenue = deleteVenue;
+    }
+
+    /** The venues by name, each with whether an active group runs there (deleting it would be refused; decided again on submit). */
+    @GetMapping
+    public List<VenueEntryResponse> list(@CurrentActor AuthenticatedActor caller) {
+        return VenueWebMapper.toEntryResponses(listVenues.execute(VenueWebMapper.listQuery(caller.actor())));
     }
 
     @PostMapping

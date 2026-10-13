@@ -2,13 +2,16 @@ package com.regivolley.api.infrastructure.web.controller;
 
 import com.regivolley.api.application.usecase.CreatePlanUseCase;
 import com.regivolley.api.application.usecase.EditPlanUseCase;
+import com.regivolley.api.application.usecase.ListPlansUseCase;
 import com.regivolley.api.infrastructure.security.AuthenticatedActor;
 import com.regivolley.api.infrastructure.security.CurrentActor;
+import com.regivolley.api.infrastructure.web.dto.PlanEntryResponse;
 import com.regivolley.api.infrastructure.web.dto.PlanRequest;
 import com.regivolley.api.infrastructure.web.dto.PlanResponse;
 import com.regivolley.api.infrastructure.web.mapper.PlanWebMapper;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -17,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /** The plans of the caller's association (US-19), for administrators (the use cases check). Subscriptions keep the terms they were sold at. */
@@ -24,12 +28,20 @@ import java.util.UUID;
 @RequestMapping("/api/v1/plans")
 public class PlanController {
 
+    private final ListPlansUseCase listPlans;
     private final CreatePlanUseCase createPlan;
     private final EditPlanUseCase editPlan;
 
-    public PlanController(CreatePlanUseCase createPlan, EditPlanUseCase editPlan) {
+    public PlanController(ListPlansUseCase listPlans, CreatePlanUseCase createPlan, EditPlanUseCase editPlan) {
+        this.listPlans = listPlans;
         this.createPlan = createPlan;
         this.editPlan = editPlan;
+    }
+
+    /** The plans by name with their terms, price and allowed levels named. */
+    @GetMapping
+    public List<PlanEntryResponse> list(@CurrentActor AuthenticatedActor caller) {
+        return PlanWebMapper.toEntryResponses(listPlans.execute(PlanWebMapper.listQuery(caller.actor())));
     }
 
     @PostMapping

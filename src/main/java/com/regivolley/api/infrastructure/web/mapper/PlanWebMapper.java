@@ -3,16 +3,21 @@ package com.regivolley.api.infrastructure.web.mapper;
 import com.regivolley.api.application.command.Actor;
 import com.regivolley.api.application.command.CreatePlanCommand;
 import com.regivolley.api.application.command.EditPlanCommand;
+import com.regivolley.api.application.command.ListPlansQuery;
+import com.regivolley.api.application.result.PlanListEntry;
 import com.regivolley.api.domain.model.entity.Plan;
 import com.regivolley.api.domain.model.valueobject.LevelId;
 import com.regivolley.api.domain.model.valueobject.Money;
 import com.regivolley.api.domain.model.valueobject.PlanId;
 import com.regivolley.api.domain.model.valueobject.PlanTerms;
 import com.regivolley.api.domain.model.valueobject.PlanType;
+import com.regivolley.api.infrastructure.web.dto.NamedRefView;
+import com.regivolley.api.infrastructure.web.dto.PlanEntryResponse;
 import com.regivolley.api.infrastructure.web.dto.PlanRequest;
 import com.regivolley.api.infrastructure.web.dto.PlanResponse;
 import com.regivolley.api.infrastructure.web.dto.PlanTypeName;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -30,6 +35,19 @@ public final class PlanWebMapper {
     public static EditPlanCommand editCommand(Actor actor, UUID planId, PlanRequest body) {
         return new EditPlanCommand(actor, PlanId.of(planId), body.name(), terms(body), Money.ofCents(body.priceCents()),
                 body.validityDays());
+    }
+
+    public static ListPlansQuery listQuery(Actor actor) {
+        return new ListPlansQuery(actor);
+    }
+
+    public static List<PlanEntryResponse> toEntryResponses(List<PlanListEntry> entries) {
+        return entries.stream().map(entry -> {
+            Plan plan = entry.plan();
+            return new PlanEntryResponse(plan.id().value(), plan.name(), plan.type().name(), plan.terms().sessionsPerWeek(),
+                    plan.terms().credits(), plan.price().cents(), plan.validityDays().isPresent() ? plan.validityDays().getAsInt() : null,
+                    entry.allowedLevels().stream().map(level -> new NamedRefView(level.id().value(), level.name())).toList());
+        }).toList();
     }
 
     public static PlanResponse toResponse(Plan plan) {

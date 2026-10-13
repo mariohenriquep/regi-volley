@@ -370,6 +370,14 @@ public final class Subscription implements AggregateRoot {
         return terms.credits() != null && usages.size() >= terms.credits();
     }
 
+    /**
+     * The credits still unspent on a PACK or SINGLE_SESSION subscription; empty for a monthly plan, which has no credits
+     * (its allowance is per week, or none). It does not consider validity or payment.
+     */
+    public OptionalInt creditsLeft() {
+        return terms.credits() == null ? OptionalInt.empty() : OptionalInt.of(terms.credits() - usages.size());
+    }
+
     public boolean holdsPlaceFor(BookingId bookingId) {
         return usages.stream().anyMatch(usage -> usage.bookingId().equals(bookingId));
     }

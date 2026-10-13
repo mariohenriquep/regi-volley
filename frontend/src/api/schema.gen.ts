@@ -185,7 +185,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["levelList"];
         put?: never;
         post: operations["levelAdd"];
         delete?: never;
@@ -282,6 +282,38 @@ export interface paths {
             cookie?: never;
         };
         get: operations["memberSelfPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["memberAdminList"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members/{memberId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["memberAdminDetail"];
         put?: never;
         post?: never;
         delete?: never;
@@ -393,7 +425,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["planList"];
         put?: never;
         post: operations["planCreate"];
         delete?: never;
@@ -633,7 +665,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["subscriptionPayments"];
         put?: never;
         post: operations["subscriptionPay"];
         delete?: never;
@@ -649,7 +681,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["trainingGroupList"];
         put?: never;
         post: operations["trainingGroupCreate"];
         delete?: never;
@@ -697,7 +729,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: operations["venueList"];
         put?: never;
         post: operations["venueCreate"];
         delete?: never;
@@ -885,6 +917,12 @@ export interface components {
         ForgotPasswordRequest: {
             email: string;
         };
+        GroupEntrySlotView: {
+            dayOfWeek?: string;
+            /** Format: int32 */
+            durationMinutes?: number;
+            startTime?: string;
+        };
         GroupSlotView: {
             dayOfWeek?: string;
             /** Format: int32 */
@@ -938,6 +976,19 @@ export interface components {
             requestedAt?: string;
             status?: string;
         };
+        LevelChangeView: {
+            /** Format: date-time */
+            changedAt?: string;
+            /** Format: uuid */
+            changedBy?: string;
+            changedByName?: string;
+            /** Format: uuid */
+            fromLevelId?: string;
+            fromLevelName?: string;
+            /** Format: uuid */
+            toLevelId?: string;
+            toLevelName?: string;
+        };
         LevelIdRequest: {
             /** Format: uuid */
             levelId: string;
@@ -977,6 +1028,25 @@ export interface components {
             failedSessionIds?: string[];
             member?: components["schemas"]["MemberResponse"];
         };
+        MemberDetailResponse: {
+            accountActivated?: boolean;
+            anonymised?: boolean;
+            email?: string;
+            /** Format: date-time */
+            joinedAt?: string;
+            levelChanges?: components["schemas"]["LevelChangeView"][];
+            /** Format: uuid */
+            levelId?: string;
+            levelName?: string;
+            /** Format: uuid */
+            memberId?: string;
+            name?: string;
+            phone?: string;
+            roles?: ("MEMBER" | "COACH" | "ADMIN")[];
+            status?: string;
+            subscriptions?: components["schemas"]["MemberSubscriptionView"][];
+            subscriptionsTruncated?: boolean;
+        };
         MemberHistoryResponse: {
             entries?: components["schemas"]["HistoryEntryView"][];
             nearLimit?: boolean;
@@ -984,6 +1054,25 @@ export interface components {
             noShowLimit?: number;
             /** Format: int32 */
             noShowsThisMonth?: number;
+        };
+        MemberListEntryResponse: {
+            accountActivated?: boolean;
+            email?: string;
+            /** Format: date-time */
+            joinedAt?: string;
+            /** Format: uuid */
+            levelId?: string;
+            levelName?: string;
+            /** Format: uuid */
+            memberId?: string;
+            name?: string;
+            phone?: string;
+            roles?: ("MEMBER" | "COACH" | "ADMIN")[];
+            status?: string;
+        };
+        MemberListResponse: {
+            members?: components["schemas"]["MemberListEntryResponse"][];
+            truncated?: boolean;
         };
         MemberResponse: {
             email?: string;
@@ -998,10 +1087,54 @@ export interface components {
             roles?: string[];
             status?: string;
         };
+        MemberSubscriptionView: {
+            /** Format: int32 */
+            creditsLeft?: number;
+            /** Format: int32 */
+            creditsUsed?: number;
+            /** Format: date */
+            endDate?: string;
+            /** Format: int64 */
+            outstandingCents?: number;
+            /** Format: int64 */
+            paidCents?: number;
+            paymentStatus?: string;
+            /** Format: uuid */
+            planId?: string;
+            planName?: string;
+            /** Format: int64 */
+            priceCents?: number;
+            /** Format: date */
+            startDate?: string;
+            /** Format: uuid */
+            subscriptionId?: string;
+            type?: string;
+        };
         MyPlanResponse: {
             /** Format: date */
             asOf?: string;
             subscriptions?: components["schemas"]["SubscriptionView"][];
+        };
+        NamedRefView: {
+            /** Format: uuid */
+            id?: string;
+            name?: string;
+        };
+        PaymentLineView: {
+            /** Format: int64 */
+            amountCents?: number;
+            /** Format: uuid */
+            id?: string;
+            method?: string;
+            /** Format: date */
+            paidOn?: string;
+            /** Format: date-time */
+            recordedAt?: string;
+            /** Format: uuid */
+            recordedBy?: string;
+            recordedByName?: string;
+            /** Format: uuid */
+            reversalOf?: string;
         };
         PaymentRecordedResponse: {
             /** Format: int64 */
@@ -1031,6 +1164,21 @@ export interface components {
             outstandingCents?: number;
             paymentStatus?: string;
             reversal?: components["schemas"]["PaymentResponse"];
+        };
+        PlanEntryResponse: {
+            allowedLevels?: components["schemas"]["NamedRefView"][];
+            /** Format: int32 */
+            credits?: number;
+            /** Format: uuid */
+            id?: string;
+            name?: string;
+            /** Format: int64 */
+            priceCents?: number;
+            /** Format: int32 */
+            sessionsPerWeek?: number;
+            type?: string;
+            /** Format: int32 */
+            validityDays?: number;
         };
         PlanRequest: {
             allowedLevelIds?: string[];
@@ -1183,6 +1331,18 @@ export interface components {
             subscriptionId?: string;
             type?: string;
         };
+        SubscriptionPaymentsResponse: {
+            /** Format: int64 */
+            outstandingCents?: number;
+            /** Format: int64 */
+            paidCents?: number;
+            paymentStatus?: string;
+            payments?: components["schemas"]["PaymentLineView"][];
+            /** Format: int64 */
+            priceCents?: number;
+            /** Format: uuid */
+            subscriptionId?: string;
+        };
         SubscriptionResponse: {
             /** Format: int32 */
             creditsUsed?: number;
@@ -1214,6 +1374,18 @@ export interface components {
             subscriptionId?: string;
             type?: string;
         };
+        TrainingGroupEntryResponse: {
+            acceptedLevels?: components["schemas"]["NamedRefView"][];
+            /** Format: int32 */
+            capacity?: number;
+            coach?: components["schemas"]["NamedRefView"];
+            /** Format: uuid */
+            id?: string;
+            name?: string;
+            schedule?: components["schemas"]["GroupEntrySlotView"][];
+            status?: string;
+            venue?: components["schemas"]["NamedRefView"];
+        };
         TrainingGroupResponse: {
             acceptedLevelIds?: string[];
             /** Format: int32 */
@@ -1227,6 +1399,15 @@ export interface components {
             status?: string;
             /** Format: uuid */
             venueId?: string;
+        };
+        VenueEntryResponse: {
+            address?: string;
+            /** Format: int32 */
+            courts?: number;
+            /** Format: uuid */
+            id?: string;
+            inUseByActiveGroup?: boolean;
+            name?: string;
         };
         VenueRequest: {
             address: string;
@@ -1626,6 +1807,31 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    levelList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LevelsResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     levelAdd: {
         parameters: {
             query?: never;
@@ -1818,6 +2024,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MyPlanResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    memberAdminList: {
+        parameters: {
+            query?: {
+                status?: "ACTIVE" | "INACTIVE";
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberListResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    memberAdminDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                memberId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberDetailResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -2037,6 +2298,31 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["RuleViolation"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    planList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanEntryResponse"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -2487,6 +2773,33 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    subscriptionPayments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscriptionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionPaymentsResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     subscriptionPay: {
         parameters: {
             query?: never;
@@ -2517,6 +2830,33 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["RuleViolation"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    trainingGroupList: {
+        parameters: {
+            query?: {
+                includeArchived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrainingGroupEntryResponse"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
     };
@@ -2610,6 +2950,31 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["RuleViolation"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    venueList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VenueEntryResponse"][];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthenticated"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
         };
     };
