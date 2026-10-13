@@ -726,6 +726,13 @@
           "memberId" : {
             "format" : "uuid",
             "type" : "string"
+          },
+          "roles" : {
+            "items" : {
+              "enum" : [ "MEMBER", "COACH", "ADMIN" ],
+              "type" : "string"
+            },
+            "type" : "array"
           }
         },
         "type" : "object"
@@ -1254,6 +1261,9 @@
           "coachId" : {
             "format" : "uuid",
             "type" : "string"
+          },
+          "coaching" : {
+            "$ref" : "#/components/schemas/CoachingSessionResponse"
           },
           "endsAt" : {
             "format" : "date-time",

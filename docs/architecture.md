@@ -335,7 +335,7 @@ The design and its reasoning are in [`security/threat-model-rest-api.md`](securi
 - **Domain**: a person's role *within an association* (`MEMBER`, `COACH`, `ADMIN`) is tenant
   business data recorded on `Member` - a person can hold several, the founder becomes admin
   (US-01). The domain records roles but never authorises with them. Roles are **not** in the token and the web layer has
-  no role matrix: use cases check them with `Permissions` from the actor's `Member` (D-5).
+  no role matrix: use cases check them with `Permissions` from the actor's `Member` (D-5). `GET /me` reports them to the client (`GetMyRolesService`, read from the `Member` on every call) so a screen can decide what to offer; it is display only.
 - Rules about the actor's relationship to the data ("coach of this group", "owner of this
   booking") are decided by the domain or use case from the actor's `MemberId`.
 
@@ -646,7 +646,8 @@ errors are the one `ApiError` body (section 11). Lists return a JSON array.
 | `POST /public/associations` | public | `RegisterAssociation` (US-01): `201 {"shortName"}` only, whatever the founder's email already was |
 | `POST /public/associations/{shortName}/join-requests` | public | `SubmitJoinRequest` (US-05): `202 {"status":"RECEIVED"}` for new / already a member / pending (D-14); an input refusal (consent, contact data, policy version) is the same 400 / 422 for all three; 429 over 3 a day per (association, email) |
 | `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/activate`, `/auth/password-reset-requests`, `/auth/password-resets` | public | credentials (section 11) |
-| `POST /auth/logout-all`, `GET /me` | token | credentials, caller's ids |
+| `POST /auth/logout-all` | token | credentials (section 11) |
+| `GET /me` | token | `GetMyRoles` (issue #62): `memberId` and `associationId` from the token plus `roles`, the roles the caller's `Member` holds *now* (`MEMBER`, `COACH`, `ADMIN`, once each, always in that order; a deactivated member would be listed as `MEMBER` only, as `Permissions` gives them no power - in practice the principal check answers 401 first). Read from the member on every call, never from the token (section 11), so a revoked role is gone on the next request. Information for the screens (which sections to offer): every operation is authorised again by its own use case. The controller calls the use case; it reads no repository |
 | `GET /me/plan`, `GET /me/history` | token | `MyPlan` (US-23), `MemberHistory` (US-18): each entry `sessionId`, `trainingGroupId`, `trainingGroupName`, `venueName` (both left out if not found), `startsAt`, `endsAt`, `bookingId`, `status` |
 | `GET /sessions?weekOf=YYYY-MM-DD` | token | `ListBookableSessions` (US-13): per line `sessionId`, `trainingGroupId`, `groupName`, `venueName` (left out if the venue cannot be found), `startsAt`, `endsAt`, `bookingOpensAt`, `freeCancellationUntil` (the last instant cancelling a CONFIRMED booking is free, from the association's `BookingPolicy` via `Session.freeCancellationDeadline`; information only, the API decides on submit; a waitlisted booking is always free), `capacity`, `freeSeats`, `waitlistSize` and, only when the *caller* has a live booking there, `myBookingStatus`, `myBookingId` (to cancel with) and, while waitlisted, `waitlistPosition` (1-based, from `Session.waitlistPosition`, the FIFO queue). Nothing about anyone else's booking |
 | `GET /coaching/sessions?weekOf=YYYY-MM-DD` | coach (own sessions), admin (all) | `ListCoachingSessions` (US-11, US-12, US-17; issue #48): the staff's week, any Lisbon day of the week as for `GET /sessions` (same `@PlausibleDate` bounds, this week when absent). An active member holding COACH sees the sessions whose coach is them, an active ADMIN every session of the association (`Permissions.isStaffOf`), anyone else - a plain member, a coach whose COACH role was revoked - gets 403 (a deactivated member never gets this far: the principal check answers 401, and the use case refuses an inactive one too). Every status is listed (SCHEDULED, COMPLETED, CANCELLED), in start order. Per line `sessionId`, `trainingGroupId`, `groupName` and `venueName` (each left out if not found), `coachId`, `startsAt`, `endsAt`, `status`, `capacity`, the counts `confirmedCount` (seat holders: CONFIRMED, ATTENDED, NO_SHOW), `waitlistCount`, `attendedCount`, `noShowCount`, `unmarkedCount` (seat holders not marked yet), all read from the `Session` aggregate, and the action flags `canMarkAttendance` (`Session.acceptsAttendance`: not cancelled, started, someone unmarked), `canCancel` (`Session.canBeCancelled`: SCHEDULED and no mark made yet - the domain does not stop a cancellation at the start) and `canChangeCapacity` (`Session.acceptsCapacityChange`: SCHEDULED and not started). The flags are the "action flags" the screens use in place of hypermedia links: information only, the operations decide again on submit. No person is named |
@@ -655,7 +656,7 @@ errors are the one `ApiError` body (section 11). Lists return a JSON array.
 | `POST /sessions/{sessionId}/cancellation` | coach of the session, admin | `CancelSession` (US-12) |
 | `PUT /sessions/{sessionId}/capacity` | coach of the session, admin | `ChangeSessionCapacity` (US-11) |
 | `PUT /sessions/{sessionId}/attendance` | coach of the session, admin | `MarkAttendance` (US-17) |
-| `GET /sessions/{sessionId}/roster` | coach of the session, admin | `GetSessionRoster` (US-17): the session summary and its live bookings - `seats` (CONFIRMED, ATTENDED, NO_SHOW, in booking order) and `waitlist` (promotion order) - each with `bookingId`, `memberId`, `memberName` and `status`; cancelled bookings left out; no email, no phone (`SessionRoster` / `RosterEntry`); the read model attendance is marked from |
+| `GET /sessions/{sessionId}/roster` | coach of the session, admin | `GetSessionRoster` (US-17): the session summary and its live bookings - `seats` (CONFIRMED, ATTENDED, NO_SHOW, in booking order) and `waitlist` (promotion order) - each with `bookingId`, `memberId`, `memberName` and `status`; cancelled bookings left out; no email, no phone (`SessionRoster` / `RosterEntry`); the read model attendance is marked from. It also carries `coaching`, the session's own line of `GET /coaching/sessions` (same `CoachingSessionResponse`: group and venue name, `confirmedCount`, `waitlistCount`, `attendedCount`, `noShowCount`, `unmarkedCount` and the flags `canMarkAttendance` / `canCancel` / `canChangeCapacity`), built by the same `CoachingLines` helper from the `Session` and the clock, so the roster and the week list can never disagree and a screen needs no second request (issue #62); `SessionRoster` holds that line and answers its `sessionId()`, `startsAt()`, ... from it, and the top-level fields stay as they were |
 | `POST /levels`, `PUT /levels/{levelId}`, `PUT /levels/order`, `PUT /levels/entry-level` | admin | `AddLevel`, `RenameLevel`, `ReorderLevels`, `ChangeEntryLevel` (US-03): each answers with the levels |
 | `POST /venues`, `PUT /venues/{venueId}`, `DELETE /venues/{venueId}` | admin | `CreateVenue`, `EditVenue`, `DeleteVenue` (US-02) |
 | `POST /training-groups`, `PUT /training-groups/{groupId}`, `POST /training-groups/{groupId}/archival` | admin | `CreateTrainingGroup`, `EditTrainingGroup`, `ArchiveTrainingGroup` (US-09) |
@@ -906,20 +907,24 @@ and an *Account* menu (*Sign out*, *Sign out on all devices*) to signed-in membe
 | `/coaching` | the staff's week grouped by Lisbon day (a coach sees the sessions they coach, an administrator all of them): group, time, venue, status, "N of M confirmed", waitlist, and "N attended · N no-show · N to mark"; previous / next week in `?week=` (12 weeks back, 8 ahead) | `GET /coaching/sessions?weekOf=` |
 | `/coaching/sessions/:sessionId` | the roster (seats in booking order, then the waitlist in promotion order, names only), the attendance form, *Change seats* and *Cancel session* | `GET /sessions/{id}/roster`, `PUT .../attendance`, `POST .../cancellation`, `PUT .../capacity` |
 
-- **Who sees the section.** `GET /me` carries no roles (only `associationId` and `memberId`), so the shell asks the coaching list for
-  this week (`useIsStaff`): an answer means staff, a 403 (`NOT_ALLOWED`) means a member, and anything else (pending, network, 5xx)
-  keeps the entry hidden. The request is the same query the page opens with (`['coaching', thisMonday]`), so the page finds it cached.
-  It costs one extra request per sign-in for a member (always a 403). This is a display decision, not a boundary: every operation
-  is decided again by the API, and a member who types `/coaching` gets "Coaching is for coaches and administrators." Replace it with
-  the roles in `/me` when the API has them.
+- **Who sees the section.** `GET /me` carries the member's `roles` (issue #62), so the shell offers *Coaching* when they include COACH
+  or ADMIN (`useMe`, `useIsStaff`) and makes no request to the coaching list for it. `useMe` (`auth/useMe.ts`) reads the answer once
+  into the known role words (an unknown word is dropped), does not retry (the shell must not wait on it), reads again when the page
+  comes back in front (`refetchOnWindowFocus`), so a revoked role stops being offered, and goes with the rest of the cache whenever
+  the user changes. **No flicker:** the bottom bar is rendered only once `/me` has settled (answered or failed), so it appears once, in
+  its final shape (three or four entries), instead of a fourth entry arriving later; a failure means "no roles known" and the bar shows
+  the member's three. This is a display decision, not a boundary: every operation is decided again by the API, and a member who types
+  `/coaching` gets "Coaching is for coaches and administrators." (the list's 403).
 - **The flags decide the buttons.** `canMarkAttendance`, `canCancel` and `canChangeCapacity` come with each line, so the client holds
   no rule about starts, deadlines or marks: *Mark attendance* (otherwise *Roster*), *Change seats* and *Cancel session* show when
   the flag is true; a `CANCELLED` line has neither counts nor actions. The attendance line shows when the API allows marking or
   something is marked, never from a client clock. The flags are information only: each operation answers 403, 409 or 422 on submit and
   its message is shown as the API wrote it (`ErrorAlert`, with the request id). Refusal `reason`s exist only for bookings, so there
   is no advice table here.
-- **The detail page needs the flags too.** The roster response has none, so the page reads the Lisbon week of `roster.startsAt` and
-  finds the line in that week's list (a cached query). Until it arrives, or if the line is missing, the roster is read-only.
+- **The detail page gets the flags with the roster.** `GET /sessions/{id}/roster` carries `coaching`, the session's own line (counts and
+  the three flags), so the page makes one request and the roster page asks for no week list. The link back goes to the Lisbon week of
+  `roster.startsAt`. A response without a readable line leaves the roster read-only (no marking, no actions). The roster is read again
+  after every staff action, so the flags follow what the action changed.
 - **Attendance.** Each seat holder still `CONFIRMED` gets two big radio buttons (*Attended*, *No-show*) in a fieldset named after the
   person, so the arrow keys and screen readers work; *Mark everyone as attended* sets all of them in one tap. *Save attendance (N)*
   sends one `PUT` with exactly the chosen entries (the API applies the batch all or nothing); nothing chosen is "not marked yet" and
@@ -937,8 +942,10 @@ and an *Account* menu (*Sign out*, *Sign out on all devices*) to signed-in membe
   be stale): a cancellation refunds credits and a raise promotes members.
 - **Focus.** The dialogs have no Radix trigger: the control that opened one gets focus back on *Keep session* / *Not now*, and the
   notice (`role=status`, focusable) after an outcome, because the button may be gone. `useStaffActions` holds this for both screens.
-- **Testing.** The shared MSW server answers the coaching list with 403 by default (a member), so every test of a signed-in screen
-  keeps working; a staff test overrides it. `e2e-csp` also drives the coaching dialogs and the roster under the CSP.
+- **Testing.** The shared MSW server answers `GET /me` with a plain member by default (`meAs()` in `test/fixtures.ts`), so every test of a
+  signed-in screen keeps working; a coach or administrator test overrides it with `meAs('COACH')`. The navigation tests pin: the roles decide
+  the entry, the coaching list is not requested for it, the bar appears only after `/me` settles, a failure and an unknown role leave three
+  entries, and a revoked role disappears when the page is back in front. The roster tests serve the roster alone and fail if the week list is asked for. `e2e-csp` also drives the coaching dialogs and the roster under the CSP.
 
 **Same origin.**
 - In development the Vite proxy forwards `/api` to `http://localhost:8080` with `changeOrigin: false`. The API then sees

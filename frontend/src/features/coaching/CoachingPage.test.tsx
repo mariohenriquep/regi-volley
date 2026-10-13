@@ -1,8 +1,8 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COACHING_URL, coaching, SESSION_ID, signedIn } from '@/test/fixtures';
-import { apiError, recorder } from '@/test/handlers';
+import { COACHING_URL, coaching, meAs, SESSION_ID, signedIn } from '@/test/fixtures';
+import { apiError, me, recorder } from '@/test/handlers';
 import { renderApp } from '@/test/render';
 import { server } from '@/test/server';
 
@@ -55,29 +55,51 @@ const started = (overrides: Partial<Line> = {}) =>
   });
 
 describe('the Coaching section in the navigation', () => {
-  it('is offered to staff, and the request it makes is this week in Lisbon', async () => {
-    // Arrange: 23:30 UTC on Sunday 19 July is already Monday 20 July in Lisbon
-    vi.setSystemTime(new Date('2026-07-19T23:30:00Z'));
-    vi.stubEnv('TZ', 'America/Los_Angeles');
-    const { asked } = serveCoaching([]);
+  const sections = () =>
+    within(screen.getByRole('navigation', { name: 'Sections' }))
+      .getAllByRole('link')
+      .map((link) => link.textContent);
 
-    // Act
-    renderApp('/');
+  it.each([['COACH' as const], ['ADMIN' as const]])(
+    'is offered to a member holding %s, from the roles in /me, without asking the coaching list',
+    async (role) => {
+      // Arrange
+      const { seen, record } = recorder();
+      server.use(
+        signedIn,
+        meAs('MEMBER', role),
+        http.get('/api/v1/sessions', () => HttpResponse.json([])),
+        http.get(COACHING_URL, async ({ request }) => {
+          await record(request);
+          return HttpResponse.json([]);
+        }),
+      );
 
-    // Assert
-    const bar = await screen.findByRole('navigation', { name: 'Sections' });
-    expect(await within(bar).findByRole('link', { name: 'Coaching' })).toHaveAttribute(
-      'href',
-      '/coaching',
-    );
-    expect(asked[0]).toBe('2026-07-20');
-  });
+      // Act
+      renderApp('/');
+      await screen.findByText('No sessions this week');
 
-  it('is not offered to a member, whom the API answers 403', async () => {
-    // Arrange: the default handler is the member's 403
+      // Assert
+      const bar = await screen.findByRole('navigation', { name: 'Sections' });
+      expect(within(bar).getByRole('link', { name: 'Coaching' })).toHaveAttribute(
+        'href',
+        '/coaching',
+      );
+      expect(sections()).toEqual(['Sessions', 'My plan', 'History', 'Coaching']);
+      expect(seen).toHaveLength(0);
+    },
+  );
+
+  it('is not offered to a plain member, and the coaching list is never asked for', async () => {
+    // Arrange: the default /me is a plain member
+    const { seen, record } = recorder();
     server.use(
       signedIn,
       http.get('/api/v1/sessions', () => HttpResponse.json([])),
+      http.get(COACHING_URL, async ({ request }) => {
+        await record(request);
+        return HttpResponse.json([]);
+      }),
     );
 
     // Act
@@ -85,25 +107,86 @@ describe('the Coaching section in the navigation', () => {
     await screen.findByText('No sessions this week');
 
     // Assert
-    const bar = screen.getByRole('navigation', { name: 'Sections' });
-    expect(
-      within(bar)
-        .getAllByRole('link')
-        .map((link) => link.textContent),
-    ).toEqual(['Sessions', 'My plan', 'History']);
+    await screen.findByRole('navigation', { name: 'Sections' });
+    expect(sections()).toEqual(['Sessions', 'My plan', 'History']);
+    expect(seen).toHaveLength(0);
   });
 
-  it('stays hidden when the check fails for another reason, and shows nothing about it', async () => {
+  it('shows the bar once, in its final shape: nothing appears or shifts after /me answers', async () => {
+    // Arrange
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    server.use(
+      signedIn,
+      http.get('/api/v1/sessions', () => HttpResponse.json([])),
+      http.get('/api/v1/me', async () => {
+        await answered;
+        return HttpResponse.json({ ...me, roles: ['MEMBER', 'COACH'] });
+      }),
+    );
+
+    // Act
+    renderApp('/');
+    await screen.findByText('No sessions this week');
+    const beforeAnswer = screen.queryByRole('navigation', { name: 'Sections' });
+    answer();
+    await screen.findByRole('navigation', { name: 'Sections' });
+
+    // Assert
+    expect(beforeAnswer).not.toBeInTheDocument();
+    expect(sections()).toEqual(['Sessions', 'My plan', 'History', 'Coaching']);
+  });
+
+  it('stays without the section when /me fails, and the bar still appears', async () => {
     // Arrange
     server.use(
       signedIn,
       http.get('/api/v1/sessions', () => HttpResponse.json([])),
-      http.get(COACHING_URL, () => apiError(500, 'INTERNAL_ERROR', 'boom')),
+      http.get('/api/v1/me', () => apiError(500, 'INTERNAL_ERROR', 'boom')),
     );
 
     // Act
     renderApp('/');
     await screen.findByText('No sessions this week');
+
+    // Assert
+    await screen.findByRole('navigation', { name: 'Sections' });
+    expect(sections()).toEqual(['Sessions', 'My plan', 'History']);
+  });
+
+  it('ignores a role word it does not know', async () => {
+    // Arrange: a newer API
+    server.use(
+      signedIn,
+      http.get('/api/v1/sessions', () => HttpResponse.json([])),
+      http.get('/api/v1/me', () => HttpResponse.json({ ...me, roles: ['MEMBER', 'REFEREE'] })),
+    );
+
+    // Act
+    renderApp('/');
+    await screen.findByText('No sessions this week');
+
+    // Assert
+    await screen.findByRole('navigation', { name: 'Sections' });
+    expect(sections()).toEqual(['Sessions', 'My plan', 'History']);
+  });
+
+  it('drops the section when the role is revoked, as soon as the page is in front again', async () => {
+    // Arrange
+    let roles = ['MEMBER', 'COACH'];
+    server.use(
+      signedIn,
+      http.get('/api/v1/sessions', () => HttpResponse.json([])),
+      http.get('/api/v1/me', () => HttpResponse.json({ ...me, roles })),
+    );
+    renderApp('/');
+    await screen.findByRole('link', { name: 'Coaching' });
+
+    // Act
+    roles = ['MEMBER'];
+    window.dispatchEvent(new Event('visibilitychange'));
 
     // Assert
     await waitFor(() => {
@@ -255,7 +338,7 @@ describe('the week', () => {
   });
 
   it('shows the API error with its reference and tries again on request', async () => {
-    // Arrange: the shell's check and the page share one request; a first failure then a success
+    // Arrange: a first failure (after the retries), then a success
     let calls = 0;
     server.use(
       signedIn,
@@ -280,8 +363,13 @@ describe('the week', () => {
   });
 
   it('tells a member who opens the address that the section is for coaches and administrators', async () => {
-    // Arrange: the default answer is 403
-    server.use(signedIn);
+    // Arrange: the API refuses the list
+    server.use(
+      signedIn,
+      http.get(COACHING_URL, () =>
+        apiError(403, 'NOT_ALLOWED', 'You are not allowed to see the coaching sessions'),
+      ),
+    );
 
     // Act
     renderApp('/coaching');

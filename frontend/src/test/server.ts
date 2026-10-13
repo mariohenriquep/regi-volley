@@ -1,10 +1,9 @@
-import { http } from 'msw';
 import { setupServer } from 'msw/node';
-import { notAllowed } from './handlers';
+import { meAs } from './fixtures';
 
 /**
- * The network layer of every unit test: handlers are added per test with `server.use(...)`. The one default is the
- * coaching list answering 403, as it does for a member: the shell asks for it to decide whether to show the Coaching
- * section, so a test of a staff member overrides it.
+ * The network layer of every unit test: handlers are added per test with `server.use(...)`. The one default is
+ * `GET /me` answering a plain member: the shell reads the roles from it to decide whether to show the Coaching section,
+ * so a test of a coach or an administrator overrides it with `meAs('COACH')`.
  */
-export const server = setupServer(http.get('/api/v1/coaching/sessions', () => notAllowed()));
+export const server = setupServer(meAs('MEMBER'));

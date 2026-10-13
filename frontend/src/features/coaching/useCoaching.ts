@@ -8,10 +8,9 @@ export const rosterKey = ['roster'] as const;
 
 /**
  * The staff's sessions of the Lisbon week that starts on `weekOf` (a Monday, `YYYY-MM-DD`). The API answers 403 to a
- * member who is neither coach nor administrator; that answer is also how the app decides whether to show the Coaching
- * section at all (`useIsStaff`).
+ * member who is neither coach nor administrator.
  */
-export function useCoachingWeek(weekOf: string, options: { enabled?: boolean } = {}) {
+export function useCoachingWeek(weekOf: string) {
   const { api } = useAuth();
   return useQuery({
     queryKey: [...coachingKey, weekOf],
@@ -19,7 +18,6 @@ export function useCoachingWeek(weekOf: string, options: { enabled?: boolean } =
       toCoachingSessions(
         await unwrap(api.GET('/api/v1/coaching/sessions', { params: { query: { weekOf } } })),
       ),
-    enabled: options.enabled ?? true,
   });
 }
 

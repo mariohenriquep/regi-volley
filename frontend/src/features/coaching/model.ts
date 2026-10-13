@@ -93,6 +93,11 @@ export interface RosterEntry {
 }
 
 export interface Roster {
+  /**
+   * The session's own line of the staff's week - counts and the three action flags - which the roster carries, so the
+   * page needs no second request. `null` when the answer has none: the roster is then read-only.
+   */
+  line: CoachingSession | null;
   startsAt: string;
   endsAt: string;
   status: string;
@@ -116,6 +121,7 @@ export function toRoster(raw: Schemas['SessionRosterResponse']): Roster | null {
   const { startsAt, endsAt } = raw;
   if (!isInstant(startsAt) || !isInstant(endsAt)) return null;
   return {
+    line: raw.coaching ? toCoachingSession(raw.coaching) : null,
     startsAt,
     endsAt,
     status: raw.status ?? '',
