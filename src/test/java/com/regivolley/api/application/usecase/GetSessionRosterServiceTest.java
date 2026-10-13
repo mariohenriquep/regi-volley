@@ -1,6 +1,7 @@
 package com.regivolley.api.application.usecase;
 
 import com.regivolley.api.application.command.GetSessionRosterQuery;
+import com.regivolley.api.application.result.CoachingSession;
 import com.regivolley.api.application.result.RosterEntry;
 import com.regivolley.api.application.result.SessionRoster;
 import com.regivolley.api.domain.exception.NotAllowedException;
@@ -9,12 +10,15 @@ import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
+import com.regivolley.api.domain.model.entity.Venue;
 import com.regivolley.api.domain.model.valueobject.BookingStatus;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 import com.regivolley.api.domain.model.valueobject.MemberRole;
 import com.regivolley.api.domain.model.valueobject.SessionStatus;
 import com.regivolley.api.domain.repository.MemberRepository;
 import com.regivolley.api.domain.repository.SessionRepository;
+import com.regivolley.api.domain.repository.TrainingGroupRepository;
+import com.regivolley.api.domain.repository.VenueRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -47,9 +51,14 @@ class GetSessionRosterServiceTest {
     private SessionRepository sessions;
     @Mock
     private MemberRepository members;
+    @Mock
+    private TrainingGroupRepository groups;
+    @Mock
+    private VenueRepository venues;
 
     private Association association;
     private Member coach;
+    private Venue hall;
     private TrainingGroup group;
     private GetSessionRosterUseCase useCase;
 
@@ -57,9 +66,12 @@ class GetSessionRosterServiceTest {
     void setUp() {
         association = Data.association();
         coach = Data.coach(association);
-        group = Data.group(association, coach, "Beginner");
-        useCase = new GetSessionRosterService(sessions, members);
+        hall = Data.venue(association, "Pavilhao Central");
+        group = Data.groupAt(association, coach, hall, "Beginner");
+        useCase = new GetSessionRosterService(sessions, members, groups, venues, Data.CLOCK);
         knows(coach);
+        lenient().when(groups.findById(association.id(), group.id())).thenReturn(Optional.of(group));
+        lenient().when(venues.findById(association.id(), hall.id())).thenReturn(Optional.of(hall));
     }
 
     private void knows(Member person) {
@@ -296,6 +308,108 @@ class GetSessionRosterServiceTest {
         assertThat(roster.seats()).isEmpty();
         assertThat(roster.waitlist()).isEmpty();
         verify(members, never()).findByIds(any(), any());
+    }
+
+    @Test
+    void theRosterCarriesTheSessionsCoachingLineWithItsNamesCountsAndFlags() {
+        // Arrange
+        Member ana = Data.member(association);
+        Member bruno = Data.member(association);
+        Member carla = Data.member(association);
+        Session session = Data.session(group, STARTED, 2);
+        session = Data.booked(session, ana, STARTED.minus(Duration.ofDays(1)));
+        session = Data.booked(session, bruno, STARTED.minus(Duration.ofDays(1)).plusSeconds(1));
+        session = Data.booked(session, carla, STARTED.minus(Duration.ofDays(1)).plusSeconds(2));
+        session = session.markAttended(Data.bookingOf(session, ana).id(), Data.CLOCK);
+        stored(session);
+        loadsMembers(ana, bruno, carla);
+
+        // Act
+        CoachingSession line = useCase.execute(query(coach, session)).coaching();
+
+        // Assert
+        assertThat(line.sessionId()).isEqualTo(session.id());
+        assertThat(line.trainingGroupId()).isEqualTo(group.id());
+        assertThat(line.groupName()).hasValue(group.name());
+        assertThat(line.venueName()).hasValue("Pavilhao Central");
+        assertThat(line.coachId()).isEqualTo(coach.id());
+        assertThat(line.capacity()).isEqualTo(2);
+        assertThat(line.confirmedCount()).isEqualTo(2);
+        assertThat(line.waitlistCount()).isEqualTo(1);
+        assertThat(line.attendedCount()).isEqualTo(1);
+        assertThat(line.noShowCount()).isZero();
+        assertThat(line.unmarkedCount()).isEqualTo(1);
+        assertThat(line.canMarkAttendance()).isTrue();
+        assertThat(line.canCancel()).isFalse();
+        assertThat(line.canChangeCapacity()).isFalse();
+    }
+
+    @Test
+    void aSessionAheadMayBeCancelledAndResizedButNotMarked() {
+        // Arrange
+        Member ana = Data.member(association);
+        Session session = stored(Data.booked(Data.session(group, 12), ana));
+        loadsMembers(ana);
+
+        // Act
+        CoachingSession line = useCase.execute(query(coach, session)).coaching();
+
+        // Assert
+        assertThat(line.canMarkAttendance()).isFalse();
+        assertThat(line.canCancel()).isTrue();
+        assertThat(line.canChangeCapacity()).isTrue();
+    }
+
+    @Test
+    void aCancelledSessionOffersNoAction() {
+        // Arrange
+        Session session = stored(Data.session(group, 12).cancel("Venue closed"));
+
+        // Act
+        CoachingSession line = useCase.execute(query(coach, session)).coaching();
+
+        // Assert
+        assertThat(line.status()).isEqualTo(SessionStatus.CANCELLED);
+        assertThat(line.canMarkAttendance()).isFalse();
+        assertThat(line.canCancel()).isFalse();
+        assertThat(line.canChangeCapacity()).isFalse();
+    }
+
+    @Test
+    void theNamesAreLeftOutWhenTheGroupOrTheVenueCannotBeFound() {
+        // Arrange
+        Session session = stored(Data.session(group, 12));
+        when(groups.findById(association.id(), group.id())).thenReturn(Optional.empty());
+
+        // Act
+        CoachingSession withoutGroup = useCase.execute(query(coach, session)).coaching();
+        when(groups.findById(association.id(), group.id())).thenReturn(Optional.of(group));
+        when(venues.findById(association.id(), hall.id())).thenReturn(Optional.empty());
+        CoachingSession withoutVenue = useCase.execute(query(coach, session)).coaching();
+
+        // Assert
+        assertThat(withoutGroup.groupName()).isEmpty();
+        assertThat(withoutGroup.venueName()).isEmpty();
+        assertThat(withoutVenue.groupName()).hasValue(group.name());
+        assertThat(withoutVenue.venueName()).isEmpty();
+    }
+
+    @Test
+    void theGroupAndTheVenueAreReadInTheActorsAssociationAndNotForARefusedCaller() {
+        // Arrange
+        Member plain = Data.member(association);
+        knows(plain);
+        Session session = stored(Data.session(group, 12));
+        Executable act = () -> useCase.execute(query(plain, session));
+
+        // Act
+        assertThrows(NotAllowedException.class, act);
+        useCase.execute(query(coach, session));
+
+        // Assert
+        verify(groups).findById(association.id(), group.id());
+        verify(venues).findById(association.id(), hall.id());
+        verifyNoMoreInteractions(groups, venues);
     }
 
     @Test

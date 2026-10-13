@@ -66,6 +66,15 @@ mocked, keep methods small and side-effect-light, push decisions into pure, easi
 domain methods. Cover the core path yourself; leave the boundary-value sweep and the JaCoCo push
 to `unit-tester`.
 
+## Shared local environment
+
+The user runs their own backend (often from IntelliJ on :8080) and the `docker compose` containers
+(Postgres, Mailpit). **Never stop, restart or remove anything you did not start yourself** — no
+`docker compose down/stop`, no killing processes you didn't open. Run your own API on a free port
+(`SERVER_PORT`) and stop only that. Note that `./mvnw clean` deletes `target/`, which a running
+IntelliJ app uses — mention it in your report when you ran it. If the containers are down, you may
+start them (`docker compose up -d`) and must leave them running.
+
 ## Build & verify
 
 ```bash

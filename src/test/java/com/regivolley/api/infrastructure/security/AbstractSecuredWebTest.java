@@ -20,6 +20,7 @@ import com.regivolley.api.application.usecase.DeleteVenueUseCase;
 import com.regivolley.api.application.usecase.EditPlanUseCase;
 import com.regivolley.api.application.usecase.EditTrainingGroupUseCase;
 import com.regivolley.api.application.usecase.EditVenueUseCase;
+import com.regivolley.api.application.usecase.GetMyRolesUseCase;
 import com.regivolley.api.application.usecase.GetSessionRosterUseCase;
 import com.regivolley.api.application.usecase.GrantRoleUseCase;
 import com.regivolley.api.application.usecase.ListBookableSessionsUseCase;
@@ -46,8 +47,10 @@ import com.regivolley.api.application.usecase.LogoutUseCase;
 import com.regivolley.api.application.usecase.RefreshSessionUseCase;
 import com.regivolley.api.application.usecase.RequestPasswordResetUseCase;
 import com.regivolley.api.application.usecase.ResetPasswordUseCase;
+import com.regivolley.api.application.result.MyRoles;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
+import com.regivolley.api.domain.model.valueobject.MemberRole;
 import com.regivolley.api.domain.repository.MemberRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,9 +60,11 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
@@ -137,6 +142,8 @@ public abstract class AbstractSecuredWebTest {
     @MockitoBean
     protected EditVenueUseCase editVenueUseCase;
     @MockitoBean
+    protected GetMyRolesUseCase getMyRolesUseCase;
+    @MockitoBean
     protected GetSessionRosterUseCase getSessionRosterUseCase;
     @MockitoBean
     protected GrantRoleUseCase grantRoleUseCase;
@@ -189,6 +196,7 @@ public abstract class AbstractSecuredWebTest {
         userId = UUID.randomUUID();
         accounts.registerActive(userId, association.id(), member.id(), STAMP);
         when(members.findById(association.id(), member.id())).thenReturn(Optional.of(member));
+        when(getMyRolesUseCase.execute(any())).thenReturn(new MyRoles(List.of(MemberRole.MEMBER)));
     }
 
     /** A valid token for the seeded member. */

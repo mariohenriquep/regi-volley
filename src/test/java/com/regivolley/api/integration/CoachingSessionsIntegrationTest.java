@@ -191,4 +191,78 @@ class CoachingSessionsIntegrationTest extends AbstractApiIntegrationTest {
         assertThat(tooEarly.getResponse().getStatus()).isEqualTo(400);
         assertThat(malformed.getResponse().getStatus()).isEqualTo(400);
     }
+
+    @Test
+    void theRostersCoachingLineIsTheSameLineTheWeekListsFromBeforeTheStartToAttendanceBeingMarked() throws Exception {
+        // Arrange
+        TenantWorld w = seedWorld();
+        String roster = "/api/v1/sessions/" + w.sessionId() + "/roster";
+
+        // Act
+        MvcResult before = expect(200, HttpMethod.GET, roster, w.adminToken(), null);
+        MvcResult beforeWeek = expect(200, HttpMethod.GET, WEEK, w.adminToken(), null);
+        clock.set(FIVE_MINUTES_IN);
+        String coach = login(w.tenant().admin());
+        MvcResult started = expect(200, HttpMethod.GET, roster, coach, null);
+        MvcResult startedWeek = expect(200, HttpMethod.GET, WEEK, coach, null);
+        expect(200, HttpMethod.PUT, "/api/v1/sessions/" + w.sessionId() + "/attendance", coach,
+                "{\"entries\":[{\"bookingId\":\"" + w.bookingId() + "\",\"mark\":\"ATTENDED\"}]}");
+        MvcResult marked = expect(200, HttpMethod.GET, roster, coach, null);
+        MvcResult markedWeek = expect(200, HttpMethod.GET, WEEK, coach, null);
+
+        // Assert
+        assertThat((Object) read(before, "$.coaching")).isEqualTo(read(beforeWeek, "$[0]"));
+        assertThat((Object) read(started, "$.coaching")).isEqualTo(read(startedWeek, "$[0]"));
+        assertThat((Object) read(marked, "$.coaching")).isEqualTo(read(markedWeek, "$[0]"));
+        assertThat((String) read(before, "$.coaching.groupName")).isEqualTo("Wednesday");
+        assertThat((String) read(before, "$.coaching.venueName")).isEqualTo("Pavilion");
+        assertThat((Boolean) read(before, "$.coaching.canMarkAttendance")).isFalse();
+        assertThat((Boolean) read(before, "$.coaching.canChangeCapacity")).isTrue();
+        assertThat((Boolean) read(started, "$.coaching.canMarkAttendance")).isTrue();
+        assertThat((Integer) read(started, "$.coaching.unmarkedCount")).isEqualTo(1);
+        assertThat((Boolean) read(marked, "$.coaching.canMarkAttendance")).isFalse();
+        assertThat((Boolean) read(marked, "$.coaching.canCancel")).isFalse();
+        assertThat((Integer) read(marked, "$.coaching.attendedCount")).isEqualTo(1);
+    }
+
+    @Test
+    void aCancelledSessionsRosterOffersNoAction() throws Exception {
+        // Arrange
+        TenantWorld w = seedWorld();
+        expect(200, HttpMethod.POST, "/api/v1/sessions/" + w.sessionId() + "/cancellation", w.adminToken(), "{\"reason\":\"Pavilion closed\"}");
+
+        // Act
+        MvcResult roster = expect(200, HttpMethod.GET, "/api/v1/sessions/" + w.sessionId() + "/roster", w.adminToken(), null);
+
+        // Assert
+        assertThat((String) read(roster, "$.coaching.status")).isEqualTo("CANCELLED");
+        assertThat((Boolean) read(roster, "$.coaching.canMarkAttendance")).isFalse();
+        assertThat((Boolean) read(roster, "$.coaching.canCancel")).isFalse();
+        assertThat((Boolean) read(roster, "$.coaching.canChangeCapacity")).isFalse();
+    }
+
+    @Test
+    void meListsTheRolesAndFollowsAGrantAndARevocationOnTheSameToken() throws Exception {
+        // Arrange
+        TenantWorld w = seedWorld();
+        String path = "/api/v1/me";
+
+        // Act
+        MvcResult member = expect(200, HttpMethod.GET, path, w.member().token(), null);
+        MvcResult coach = expect(200, HttpMethod.GET, path, w.spare().token(), null);
+        MvcResult founder = expect(200, HttpMethod.GET, path, w.adminToken(), null);
+        expect(200, HttpMethod.DELETE, "/api/v1/members/" + w.spare().memberId() + "/roles/COACH", w.adminToken(), null);
+        MvcResult revoked = expect(200, HttpMethod.GET, path, w.spare().token(), null);
+        expect(200, HttpMethod.PUT, "/api/v1/members/" + w.member().memberId() + "/roles/ADMIN", w.adminToken(), null);
+        MvcResult promoted = expect(200, HttpMethod.GET, path, w.member().token(), null);
+
+        // Assert
+        assertThat((List<String>) read(member, "$.roles")).containsExactly("MEMBER");
+        assertThat((List<String>) read(coach, "$.roles")).containsExactly("MEMBER", "COACH");
+        assertThat((List<String>) read(founder, "$.roles")).containsExactly("MEMBER", "COACH", "ADMIN");
+        assertThat((List<String>) read(revoked, "$.roles")).containsExactly("MEMBER");
+        assertThat((List<String>) read(promoted, "$.roles")).containsExactly("MEMBER", "ADMIN");
+        assertThat((String) read(member, "$.memberId")).isEqualTo(w.member().memberId());
+        assertThat((String) read(member, "$.associationId")).isEqualTo(w.tenant().associationId());
+    }
 }

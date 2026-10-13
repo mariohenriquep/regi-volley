@@ -14,6 +14,7 @@ import com.regivolley.api.application.result.CancelledBooking;
 import com.regivolley.api.application.result.CancelledSession;
 import com.regivolley.api.application.result.CapacityChanged;
 import com.regivolley.api.application.result.PlacedBooking;
+import com.regivolley.api.application.result.CoachingSession;
 import com.regivolley.api.application.result.RosterEntry;
 import com.regivolley.api.application.result.SessionRoster;
 import com.regivolley.api.domain.model.entity.Association;
@@ -340,8 +341,10 @@ class SessionControllerTest extends AbstractControllerWebTest {
         Instant start = Instant.parse("2026-10-14T19:00:00Z");
         BookingId waiting = BookingId.generate();
         MemberId waitingMember = MemberId.generate();
-        when(getSessionRosterUseCase.execute(any())).thenReturn(new SessionRoster(session.id(), session.trainingGroupId(), coach.id(),
-                start, start.plusSeconds(5400), 12, SessionStatus.SCHEDULED,
+        CoachingSession line = new CoachingSession(session.id(), session.trainingGroupId(), Optional.of("Wednesday Beginners"),
+                Optional.of("Pavilhao Central"), coach.id(), start, start.plusSeconds(5400), SessionStatus.SCHEDULED, 12, 9, 2, 1, 3, 5,
+                true, false, true);
+        when(getSessionRosterUseCase.execute(any())).thenReturn(new SessionRoster(line,
                 List.of(new RosterEntry(booking.id(), member.id(), "Ana Silva", BookingStatus.CONFIRMED)),
                 List.of(new RosterEntry(waiting, waitingMember, "Bruno Reis", BookingStatus.WAITLISTED))));
 
@@ -361,6 +364,17 @@ class SessionControllerTest extends AbstractControllerWebTest {
                 .andExpect(jsonPath("$.seats[0].status").value("CONFIRMED"))
                 .andExpect(jsonPath("$.waitlist[0].bookingId").value(waiting.value().toString()))
                 .andExpect(jsonPath("$.waitlist[0].status").value("WAITLISTED"))
+                .andExpect(jsonPath("$.coaching.sessionId").value(session.id().value().toString()))
+                .andExpect(jsonPath("$.coaching.groupName").value("Wednesday Beginners"))
+                .andExpect(jsonPath("$.coaching.venueName").value("Pavilhao Central"))
+                .andExpect(jsonPath("$.coaching.confirmedCount").value(9))
+                .andExpect(jsonPath("$.coaching.waitlistCount").value(2))
+                .andExpect(jsonPath("$.coaching.attendedCount").value(1))
+                .andExpect(jsonPath("$.coaching.noShowCount").value(3))
+                .andExpect(jsonPath("$.coaching.unmarkedCount").value(5))
+                .andExpect(jsonPath("$.coaching.canMarkAttendance").value(true))
+                .andExpect(jsonPath("$.coaching.canCancel").value(false))
+                .andExpect(jsonPath("$.coaching.canChangeCapacity").value(true))
                 .andExpect(jsonPath("$.seats[0].email").doesNotExist())
                 .andExpect(jsonPath("$.seats[0].phone").doesNotExist());
         ArgumentCaptor<GetSessionRosterQuery> query = ArgumentCaptor.forClass(GetSessionRosterQuery.class);

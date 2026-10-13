@@ -1,17 +1,15 @@
-import { useAuth } from '@/auth/context';
-import { mondayOf } from '@/lib/lisbon';
-import { useLisbonToday } from '@/lib/useLisbonToday';
-import { useCoachingWeek } from './useCoaching';
+import { useMe } from '@/auth/useMe';
 
 /**
- * Whether to show the Coaching section. `GET /me` carries no roles, so the answer comes from the coaching endpoint
- * itself: it lists the week for a coach or an administrator and answers 403 to anyone else. The request is this week's
- * list, the same query the Coaching page opens with, so the page finds it already cached. While it is pending, and when it
- * fails for any other reason, the section stays hidden. Not a security boundary: the API decides on every call.
+ * Whether to show the Coaching section: the member holds COACH or ADMIN, as `GET /me` says. `settled` is false until that
+ * answer (or its failure) is in, so the shell can show its navigation once, in its final shape. Not a security boundary:
+ * the API decides on every call.
  */
-export function useIsStaff(): boolean {
-  const { status } = useAuth();
-  const today = useLisbonToday();
-  const week = useCoachingWeek(mondayOf(today), { enabled: status === 'authenticated' });
-  return week.isSuccess;
+export function useIsStaff(): { settled: boolean; staff: boolean } {
+  const me = useMe();
+  const roles = me.data?.roles ?? [];
+  return {
+    settled: !me.isPending,
+    staff: roles.includes('COACH') || roles.includes('ADMIN'),
+  };
 }

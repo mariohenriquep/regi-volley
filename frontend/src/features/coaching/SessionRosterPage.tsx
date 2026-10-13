@@ -13,7 +13,7 @@ import { type CoachingSession, type Roster, type RosterEntry, sessionLabel } fro
 import { SessionActions } from './SessionActions';
 import { SessionSummary } from './SessionSummary';
 import { StatusBadge } from './StatusBadge';
-import { useCoachingWeek, useRoster } from './useCoaching';
+import { useRoster } from './useCoaching';
 import { type Mark, useSaveAttendance } from './useCoachingMutations';
 import { useStaffActions } from './useStaffActions';
 
@@ -38,10 +38,9 @@ export function SessionRosterPage() {
 function RosterBody({ sessionId, roster }: { sessionId: string; roster: Roster }) {
   const titleId = useId();
   const actions = useStaffActions();
-  // The flags and counts live on the staff's week; the roster tells which week that is.
+  // The flags and counts come with the roster; the way back is to the week the session is in.
   const week = mondayOf(lisbonDay(roster.startsAt));
-  const weekQuery = useCoachingWeek(week);
-  const line = weekQuery.data?.find((candidate) => candidate.id === sessionId);
+  const line = roster.line ?? undefined;
 
   return (
     <>
