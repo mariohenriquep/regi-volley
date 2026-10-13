@@ -7,15 +7,17 @@ import com.regivolley.api.domain.model.entity.Booking;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
-import com.regivolley.api.domain.model.valueobject.BookingStatus;
+import com.regivolley.api.domain.model.valueobject.BookingPolicy;
 import com.regivolley.api.domain.model.valueobject.LevelRank;
 import com.regivolley.api.domain.model.valueobject.ScheduleZone;
 import com.regivolley.api.domain.model.valueobject.SessionStatus;
 import com.regivolley.api.domain.model.valueobject.TrainingGroupId;
+import com.regivolley.api.domain.model.valueobject.VenueId;
 import com.regivolley.api.domain.repository.AssociationRepository;
 import com.regivolley.api.domain.repository.MemberRepository;
 import com.regivolley.api.domain.repository.SessionRepository;
 import com.regivolley.api.domain.repository.TrainingGroupRepository;
+import com.regivolley.api.domain.repository.VenueRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -34,7 +36,8 @@ import java.util.stream.Collectors;
  * to the next Monday 00:00 - a week with a clock change is an hour longer or shorter) and one for the
  * association's groups: the scheduled sessions that have not started yet, of the groups whose levels the
  * member may book, in the order the repository gives them. A group that accepts a level the association
- * does not have is skipped, not a failure (as in the generation). Sessions whose booking window is not open
+ * does not have is skipped, not a failure (as in the generation). Each line carries the venue, the free-cancellation
+ * deadline of the association's policy and, for the actor only, their live booking id and waitlist place. Sessions whose booking window is not open
  * yet are listed, with their {@code bookingOpensAt}. Read only, so no transaction of its own.
  */
 @Service
@@ -44,14 +47,17 @@ public class ListBookableSessionsService implements ListBookableSessionsUseCase 
     private final MemberRepository members;
     private final AssociationRepository associations;
     private final TrainingGroupRepository groups;
+    private final VenueRepository venues;
     private final Clock clock;
 
     public ListBookableSessionsService(SessionRepository sessions, MemberRepository members,
-                                       AssociationRepository associations, TrainingGroupRepository groups, Clock clock) {
+                                       AssociationRepository associations, TrainingGroupRepository groups,
+                                       VenueRepository venues, Clock clock) {
         this.sessions = sessions;
         this.members = members;
         this.associations = associations;
         this.groups = groups;
+        this.venues = venues;
         this.clock = clock;
     }
 
@@ -71,10 +77,11 @@ public class ListBookableSessionsService implements ListBookableSessionsUseCase 
         Instant now = clock.instant();
         Map<TrainingGroupId, TrainingGroup> groupsById = groups.findAllByAssociation(associationId).stream()
                 .collect(Collectors.toMap(TrainingGroup::id, Function.identity()));
+        Map<VenueId, String> venueNames = Names.ofVenues(venues, associationId);
         return sessions.findStartingBetween(associationId, from, to).stream()
                 .filter(session -> session.status() == SessionStatus.SCHEDULED && session.startsAt().isAfter(now))
                 .filter(session -> canBook(level, association, groupsById.get(session.trainingGroupId())))
-                .map(session -> line(session, groupsById.get(session.trainingGroupId()), association, member))
+                .map(session -> line(session, groupsById.get(session.trainingGroupId()), venueNames, association, member))
                 .toList();
     }
 
@@ -83,13 +90,14 @@ public class ListBookableSessionsService implements ListBookableSessionsUseCase 
                 && level.canBookGroupAccepting(association.ranksOf(group.acceptedLevels()));
     }
 
-    private static BookableSession line(Session session, TrainingGroup group, Association association, Member member) {
-        Optional<BookingStatus> mine = session.bookings().stream()
-                .filter(booking -> booking.memberId().equals(member.id()) && booking.status() != BookingStatus.CANCELLED)
-                .map(Booking::status)
-                .findFirst();
-        return new BookableSession(session.id(), session.trainingGroupId(), group.name(), session.startsAt(),
-                session.endsAt(), session.bookingOpensAt(association.bookingPolicy()), session.capacity(),
-                session.freeSeats(), session.waitlist().size(), mine);
+    private static BookableSession line(Session session, TrainingGroup group, Map<VenueId, String> venueNames,
+                                        Association association, Member member) {
+        Optional<Booking> mine = session.liveBookingOf(member.id());
+        BookingPolicy policy = association.bookingPolicy();
+        return new BookableSession(session.id(), session.trainingGroupId(), group.name(),
+                Optional.ofNullable(venueNames.get(group.venueId())), session.startsAt(), session.endsAt(),
+                session.bookingOpensAt(policy), session.freeCancellationDeadline(policy), session.capacity(),
+                session.freeSeats(), session.waitlist().size(), mine.map(Booking::status), mine.map(Booking::id),
+                session.waitlistPosition(member.id()));
     }
 }

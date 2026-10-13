@@ -190,7 +190,22 @@ class EndpointErrorMappingWebTest extends AbstractSecuredWebTest {
         var result = mockMvc.perform(build(endpoint, true));
 
         // Assert
-        result.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFLICT"));
+        result.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.reason").doesNotExist());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("endpoints")
+    void aDuplicateBookingIs409ConflictWithItsReason(Endpoint endpoint) throws Exception {
+        // Arrange
+        failWith(endpoint, new DuplicateBookingException());
+
+        // Act
+        var result = mockMvc.perform(build(endpoint, true));
+
+        // Assert
+        result.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.reason").value("DUPLICATE_BOOKING"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -217,7 +232,8 @@ class EndpointErrorMappingWebTest extends AbstractSecuredWebTest {
 
         // Assert
         result.andExpect(status().isUnprocessableContent()).andExpect(jsonPath("$.code").value("BUSINESS_RULE_VIOLATION"))
-                .andExpect(jsonPath("$.message").value(new CoachCannotBookOwnSessionException().getMessage()));
+                .andExpect(jsonPath("$.message").value(new CoachCannotBookOwnSessionException().getMessage()))
+                .andExpect(jsonPath("$.reason").value("COACH_OF_SESSION"));
     }
 
     @ParameterizedTest(name = "{0}")

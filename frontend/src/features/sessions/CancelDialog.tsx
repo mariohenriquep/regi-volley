@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ErrorAlert } from '@/components/ErrorAlert';
 import {
   AlertDialog,
@@ -10,6 +11,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { dayHeading, formatTime, lisbonDay } from '@/lib/lisbon';
+import { adviceFor } from './bookingAdvice';
+import { cancellationAdvice } from './cancellation';
 import type { Session } from './model';
 import { type Cancelled, useCancelBooking } from './useSessionMutations';
 
@@ -59,6 +62,10 @@ function CancelSheet({
 }) {
   const { session, bookingId } = target;
   const cancel = useCancelBooking();
+  // Taken once, when the dialog opens: the text must not change under the member's thumb.
+  const [now] = useState(() => Date.now());
+  const outlook = cancellationAdvice(session.myStatus, session.freeCancellationUntil, now);
+  const advice = adviceFor(cancel.error);
   return (
     <AlertDialogContent onCloseAutoFocus={onCloseAutoFocus}>
       <AlertDialogHeader>
@@ -73,15 +80,13 @@ function CancelSheet({
       </AlertDialogHeader>
 
       <div className="grid gap-2 text-sm">
-        {session.myStatus === 'WAITLISTED' ? (
-          <p>Cancelling a place on the waitlist is always free.</p>
-        ) : (
-          <p>
-            Cancelling close to the start (6 hours by default) counts as a used session. Earlier
-            cancellations are free and your credit is given back.
-          </p>
+        {outlook && <p>{outlook.text}</p>}
+        {cancel.error && (
+          <>
+            <ErrorAlert error={cancel.error} />
+            {advice && <p>{advice.text}</p>}
+          </>
         )}
-        {cancel.error && <ErrorAlert error={cancel.error} />}
       </div>
 
       <AlertDialogFooter>

@@ -28,7 +28,9 @@ async function mockApi(page: Page) {
     capacity: 12,
     freeSeats: booked ? 11 : 12,
     waitlistSize: 0,
-    ...(booked ? { myBookingStatus: 'CONFIRMED' } : {}),
+    venueName: 'CSP Pavilion',
+    freeCancellationUntil: new Date(startsAt.getTime() - 6 * HOUR).toISOString(),
+    ...(booked ? { myBookingStatus: 'CONFIRMED', myBookingId: BOOKING_ID } : {}),
   });
   await page.route('**/api/v1/**', async (route) => {
     const { pathname } = new URL(route.request().url());

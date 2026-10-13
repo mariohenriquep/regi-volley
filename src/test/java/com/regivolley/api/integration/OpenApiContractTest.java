@@ -1,7 +1,9 @@
 package com.regivolley.api.integration;
 
 import com.regivolley.api.infrastructure.security.PublicRoutes;
+import com.regivolley.api.infrastructure.web.WebDtoNamesTest;
 import com.regivolley.api.infrastructure.web.dto.ApiError;
+import com.regivolley.api.infrastructure.web.dto.RefusalReason;
 import io.swagger.v3.core.converter.ModelConverters;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -72,9 +74,18 @@ class OpenApiContractTest extends AbstractApiIntegrationTest {
                 components.addSecuritySchemes(BEARER, new SecurityScheme().type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")
                         .description("The short-lived access token of POST /auth/login or /auth/refresh."));
                 ModelConverters.getInstance().readAll(ApiError.class).forEach(components::addSchemas);
+                describeApiError(components);
                 addSharedResponses(components);
                 openApi.getPaths().forEach((path, item) -> item.readOperationsMap().forEach((method, operation) -> describe(path, method, operation)));
             };
+        }
+
+        /** What the record cannot say: {@code reason} is additive to {@code code}, present on booking refusals only. */
+        private static void describeApiError(Components components) {
+            Schema<?> reason = (Schema<?>) components.getSchemas().get("ApiError").getProperties().get("reason");
+            reason.setDescription("Why a booking or the cancellation of one was refused, stable for clients to branch on; the message is for people "
+                    + "and may change. Present only on a refusal (422 BUSINESS_RULE_VIOLATION, or 409 CONFLICT for DUPLICATE_BOOKING), "
+                    + "absent from every other error. `code` is unchanged.");
         }
 
         private static final Map<String, String[]> ERRORS = new TreeMap<>(Map.of(
@@ -83,7 +94,7 @@ class OpenApiContractTest extends AbstractApiIntegrationTest {
                 "403", new String[]{"Forbidden", "The caller's role does not allow this (decided by the use case)."},
                 "404", new String[]{"NotFound", "Not found - also what an id of another association gets."},
                 "409", new String[]{"Conflict", "A conflict: duplicate, last administrator, or a concurrent change that survived the retries."},
-                "422", new String[]{"RuleViolation", "A business rule refuses it; `message` says which."},
+                "422", new String[]{"RuleViolation", "A business rule refuses it; `message` says which. A refused booking or cancellation also has a stable `reason`."},
                 "429", new String[]{"TooManyRequests", "Too many requests; see `Retry-After`."}));
 
         private static void describe(String path, PathItem.HttpMethod method, Operation operation) {
@@ -157,6 +168,76 @@ class OpenApiContractTest extends AbstractApiIntegrationTest {
         // Assert
         assertThat(committed).as("docs/api/openapi.json is out of date: run ./mvnw test -Dtest=OpenApiContractTest -Dopenapi.update=true and commit it")
                 .isEqualTo(generated);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Map<String, Object>> schemas() throws Exception {
+        JsonMapper mapper = JsonMapper.builder().build();
+        Map<String, Object> document = (Map<String, Object>) mapper.readValue(generated(), Object.class);
+        return (Map<String, Map<String, Object>>) ((Map<String, Object>) document.get("components")).get("schemas");
+    }
+
+    @Test
+    void everyWebRecordHasItsOwnSchemaSoNoTwoOfThemCollapseIntoOne() throws Exception {
+        // Arrange
+        Set<String> schemas = schemas().keySet();
+
+        // Act - a schema is named by the record's simple name, so a name clash leaves fewer schemas than records
+        List<String> missing = WebDtoNamesTest.dtoRecords().stream().map(Class::getSimpleName).distinct()
+                .filter(name -> !schemas.contains(name)).sorted().toList();
+
+        // Assert
+        assertThat(missing).as("web records without a schema of their own").isEmpty();
+        assertThat(schemas).hasSizeGreaterThanOrEqualTo(WebDtoNamesTest.dtoRecords().size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theHistoryAndTheRosterPublishTheirOwnEntryShapes() throws Exception {
+        // Arrange
+        Map<String, Map<String, Object>> schemas = schemas();
+
+        // Act
+        Map<String, Object> history = (Map<String, Object>) ((Map<String, Object>) schemas.get("MemberHistoryResponse").get("properties")).get("entries");
+        Set<String> historyFields = ((Map<String, Object>) schemas.get("HistoryEntryView").get("properties")).keySet();
+        Set<String> rosterFields = ((Map<String, Object>) schemas.get("RosterEntryView").get("properties")).keySet();
+
+        // Assert
+        assertThat(((Map<String, Object>) history.get("items")).get("$ref")).isEqualTo("#/components/schemas/HistoryEntryView");
+        assertThat(historyFields).contains("sessionId", "trainingGroupId", "trainingGroupName", "venueName", "startsAt", "endsAt", "bookingId", "status")
+                .doesNotContain("memberName", "memberId");
+        assertThat(rosterFields).containsExactlyInAnyOrder("bookingId", "memberId", "memberName", "status");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theSessionListPublishesTheCallersBookingVenueWaitlistPlaceAndFreeCancellationDeadline() throws Exception {
+        // Arrange
+        Map<String, Map<String, Object>> schemas = schemas();
+
+        // Act
+        Map<String, Object> line = (Map<String, Object>) schemas.get("BookableSessionResponse").get("properties");
+
+        // Assert
+        assertThat(line.keySet()).contains("myBookingId", "myBookingStatus", "venueName", "waitlistPosition", "freeCancellationUntil");
+        assertThat(((Map<String, Object>) line.get("myBookingId")).get("format")).isEqualTo("uuid");
+        assertThat(((Map<String, Object>) line.get("waitlistPosition")).get("type")).isEqualTo("integer");
+        assertThat(((Map<String, Object>) line.get("freeCancellationUntil")).get("format")).isEqualTo("date-time");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theErrorBodyDocumentsTheRefusalReasonsAndKeepsTheCode() throws Exception {
+        // Arrange
+        Map<String, Object> properties = (Map<String, Object>) schemas().get("ApiError").get("properties");
+
+        // Act
+        Map<String, Object> reason = (Map<String, Object>) properties.get("reason");
+
+        // Assert
+        assertThat(properties.keySet()).contains("code", "message", "requestId", "fields", "reason");
+        assertThat((List<String>) reason.get("enum")).containsExactlyElementsOf(java.util.Arrays.stream(RefusalReason.values()).map(Enum::name).toList());
+        assertThat(reason.get("description")).asString().contains("refused");
     }
 
     @Test

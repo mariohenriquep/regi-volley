@@ -4,7 +4,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
@@ -20,8 +19,6 @@ export function AuthProvider({ session, children }: { session: AuthSession; chil
   const queryClient = useQueryClient();
   const status = useSyncExternalStore(session.subscribe, session.getStatus);
   const [logoutFailed, setLogoutFailed] = useState(false);
-  const epochRef = useRef(0);
-  const epoch = useCallback(() => epochRef.current, []);
 
   useEffect(() => {
     // Under StrictMode this runs twice; the session shares the one refresh in flight.
@@ -37,7 +34,6 @@ export function AuthProvider({ session, children }: { session: AuthSession; chil
       const userChanged = previous !== 'unknown';
       previous = current;
       if (!userChanged) return;
-      epochRef.current += 1;
       void queryClient.cancelQueries();
       queryClient.clear();
     });
@@ -69,9 +65,8 @@ export function AuthProvider({ session, children }: { session: AuthSession; chil
       logout,
       logoutFailed,
       logoutAll: session.logoutAll,
-      epoch,
     }),
-    [status, session, login, logout, logoutFailed, epoch],
+    [status, session, login, logout, logoutFailed],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

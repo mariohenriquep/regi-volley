@@ -7,6 +7,7 @@ import com.regivolley.api.domain.factory.PlanFactory;
 import com.regivolley.api.domain.factory.SessionFactory;
 import com.regivolley.api.domain.factory.SubscriptionFactory;
 import com.regivolley.api.domain.factory.TrainingGroupFactory;
+import com.regivolley.api.domain.factory.VenueFactory;
 import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Booking;
 import com.regivolley.api.domain.model.entity.Member;
@@ -14,6 +15,7 @@ import com.regivolley.api.domain.model.entity.Plan;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.entity.Subscription;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
+import com.regivolley.api.domain.model.entity.Venue;
 import com.regivolley.api.domain.model.valueobject.BookingPolicy;
 import com.regivolley.api.domain.model.valueobject.ContactDetails;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
@@ -92,6 +94,18 @@ final class Data {
         return TrainingGroupFactory.create(association.id(), "Group", accepted, VenueId.generate(),
                 WeeklySchedule.of(new WeeklySlot(DayOfWeek.WEDNESDAY, LocalTime.of(20, 0), Duration.ofMinutes(90))),
                 12, coach.id());
+    }
+
+    /** As {@link #group}, held at the given venue. */
+    static TrainingGroup groupAt(Association association, Member coach, Venue venue, String... levelNames) {
+        Set<LevelId> accepted = Stream.of(levelNames).map(name -> level(association, name)).collect(Collectors.toSet());
+        return TrainingGroupFactory.create(association.id(), "Group", accepted, venue.id(),
+                WeeklySchedule.of(new WeeklySlot(DayOfWeek.WEDNESDAY, LocalTime.of(20, 0), Duration.ofMinutes(90))),
+                12, coach.id());
+    }
+
+    static Venue venue(Association association, String name) {
+        return VenueFactory.create(association.id(), name, "Rua do Pavilhao 1", 2);
     }
 
     static Session session(TrainingGroup group, Instant start, int capacity) {

@@ -18,19 +18,27 @@ function sessionLabel({ groupName, startsAt }: Session): string {
  */
 export function SessionCard({
   session,
-  bookingId,
   onBook,
   onCancel,
 }: {
   session: Session;
-  /** The member's booking id, when this app learned it (see `bookingMemory.ts`). */
-  bookingId: string | undefined;
   onBook: (session: Session, opener: HTMLElement) => void;
   onCancel: (session: Session, bookingId: string, opener: HTMLElement) => void;
 }) {
   const titleId = useId();
   const [now] = useState(() => Date.now());
-  const { groupName, startsAt, endsAt, capacity, freeSeats, waitlistSize, myStatus } = session;
+  const {
+    groupName,
+    venueName,
+    startsAt,
+    endsAt,
+    capacity,
+    freeSeats,
+    waitlistSize,
+    myStatus,
+    myBookingId,
+    waitlistPosition,
+  } = session;
   const opensLater =
     session.bookingOpensAt !== undefined && new Date(session.bookingOpensAt).getTime() > now;
   const label = sessionLabel(session);
@@ -53,6 +61,7 @@ export function SessionCard({
               {durationText(durationMinutes(startsAt, endsAt))}
             </span>
           </p>
+          {venueName && <p className="text-sm text-muted-foreground">{venueName}</p>}
         </div>
         {myStatus === 'CONFIRMED' && <Badge variant="success">You&apos;re confirmed</Badge>}
         {myStatus === 'WAITLISTED' && <Badge variant="warning">You&apos;re on the waitlist</Badge>}
@@ -65,6 +74,9 @@ export function SessionCard({
         </p>
         {waitlistSize > 0 && <p>{waitlistSize} on the waitlist</p>}
       </div>
+      {myStatus === 'WAITLISTED' && waitlistPosition !== undefined && (
+        <p className="text-sm font-medium">You&apos;re number {waitlistPosition} on the waitlist</p>
+      )}
       {opensLater && session.bookingOpensAt !== undefined && (
         <p className="text-sm">Booking opens {formatDateTime(session.bookingOpensAt)}</p>
       )}
@@ -79,21 +91,16 @@ export function SessionCard({
           Book<span className="sr-only"> {label}</span>
         </Button>
       )}
-      {myStatus !== undefined && bookingId !== undefined && (
+      {myStatus !== undefined && myBookingId !== undefined && (
         <Button
           variant="outline"
           className={action}
           onClick={(event) => {
-            onCancel(session, bookingId, event.currentTarget);
+            onCancel(session, myBookingId, event.currentTarget);
           }}
         >
           Cancel<span className="sr-only"> {label}</span>
         </Button>
-      )}
-      {myStatus !== undefined && bookingId === undefined && (
-        <p className="text-sm text-muted-foreground">
-          Cancelling isn&apos;t available for this booking in the app yet.
-        </p>
       )}
     </article>
   );

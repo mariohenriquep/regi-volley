@@ -1837,4 +1837,102 @@ class SessionTest {
             assertThat(ex.getMessage()).contains("eligibleForPromotion");
         }
     }
+
+    @Nested
+    class OwnBookingAndFreeCancellation {
+        @Test
+        void freeCancellationEndsTheConfiguredHoursBeforeTheStart() {
+            // Arrange
+            Session session = newSession(12);
+
+            // Act
+            Instant until = session.freeCancellationDeadline(POLICY);
+
+            // Assert
+            assertThat(until).isEqualTo(FREE_CANCELLATION_DEADLINE);
+        }
+
+        @Test
+        void freeCancellationFollowsThePolicyOfTheAssociation() {
+            // Arrange
+            Session session = newSession(12);
+            BookingPolicy twelveHours = new BookingPolicy(7, 12);
+
+            // Act
+            Instant until = session.freeCancellationDeadline(twelveHours);
+
+            // Assert
+            assertThat(until).isEqualTo(START.minus(Duration.ofHours(12)));
+        }
+
+        @Test
+        void freeCancellationAcrossTheClockChangeIsStillSixRealHoursBeforeTheStart() {
+            // Arrange - 05:00Z on 25 Oct is 05:00 Lisbon (WET); the clocks went back at 01:00Z, so 6 h before is 23:00Z on the 24th
+            Instant start = Instant.parse("2026-10-25T05:00:00Z");
+            Session session = SessionFactory.create(ASSOCIATION, GROUP, COACH, start, start.plus(Duration.ofMinutes(90)), 12);
+
+            // Act
+            Instant until = session.freeCancellationDeadline(POLICY);
+
+            // Assert
+            assertThat(until).isEqualTo(Instant.parse("2026-10-24T23:00:00Z"));
+        }
+
+        @Test
+        void aMembersLiveBookingIsTheConfirmedOrWaitlistedOne() {
+            // Arrange
+            List<MemberId> people = members(2);
+            Session session = bookedBy(1, people);
+
+            // Act
+            var seated = session.liveBookingOf(people.get(0));
+            var waiting = session.liveBookingOf(people.get(1));
+
+            // Assert
+            assertThat(seated).contains(bookingOf(session, people.get(0)));
+            assertThat(waiting).map(Booking::status).contains(BookingStatus.WAITLISTED);
+        }
+
+        @Test
+        void aCancelledBookingIsNotLive() {
+            // Arrange
+            MemberId member = MemberId.generate();
+            Session booked = bookAt(newSession(2), member, 0);
+            Session cancelled = booked.cancelBooking(bookingOf(booked, member).id(), POLICY, PROMOTION_CLOCK, EVERYONE).session();
+
+            // Act
+            var live = cancelled.liveBookingOf(member);
+
+            // Assert
+            assertThat(live).isEmpty();
+        }
+
+        @Test
+        void someoneWithNoBookingHasNoLiveBooking() {
+            // Arrange
+            Session session = bookedBy(2, members(1));
+
+            // Act
+            var live = session.liveBookingOf(MemberId.generate());
+
+            // Assert
+            assertThat(live).isEmpty();
+        }
+
+        @Test
+        void aWindowRefusalSaysWhetherItIsNotYetOpenOrAlreadyClosed() {
+            // Arrange
+            Session session = newSession(2);
+            Executable early = () -> session.book(MemberId.generate(), POLICY, at(OPENS_AT.minusSeconds(1)));
+            Executable late = () -> session.book(MemberId.generate(), POLICY, at(START));
+
+            // Act
+            BookingWindowClosedException notYetOpen = assertThrows(BookingWindowClosedException.class, early);
+            BookingWindowClosedException closed = assertThrows(BookingWindowClosedException.class, late);
+
+            // Assert
+            assertThat(notYetOpen.kind()).isEqualTo(BookingWindowClosedException.Kind.NOT_YET_OPEN);
+            assertThat(closed.kind()).isEqualTo(BookingWindowClosedException.Kind.ALREADY_CLOSED);
+        }
+    }
 }

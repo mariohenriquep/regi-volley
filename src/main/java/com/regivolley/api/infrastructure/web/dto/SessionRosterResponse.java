@@ -10,8 +10,8 @@ import java.util.UUID;
  * nothing else - no email, no phone.
  */
 public record SessionRosterResponse(UUID sessionId, UUID trainingGroupId, UUID coachId, Instant startsAt, Instant endsAt, int capacity,
-                                    String status, List<EntryView> seats, List<EntryView> waitlist) {
+                                    String status, List<RosterEntryView> seats, List<RosterEntryView> waitlist) {
 
-    public record EntryView(UUID bookingId, UUID memberId, String memberName, String status) {
+    public record RosterEntryView(UUID bookingId, UUID memberId, String memberName, String status) {
     }
 }

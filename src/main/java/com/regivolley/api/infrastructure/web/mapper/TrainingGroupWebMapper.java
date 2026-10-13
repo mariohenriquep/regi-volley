@@ -45,7 +45,7 @@ public final class TrainingGroupWebMapper {
     public static TrainingGroupResponse toResponse(TrainingGroup group) {
         return new TrainingGroupResponse(group.id().value(), group.name(),
                 group.acceptedLevels().stream().map(LevelId::value).sorted().toList(), group.venueId().value(),
-                group.schedule().slots().stream().map(slot -> new TrainingGroupResponse.SlotView(slot.dayOfWeek().name(),
+                group.schedule().slots().stream().map(slot -> new TrainingGroupResponse.GroupSlotView(slot.dayOfWeek().name(),
                         slot.startTime().toString(), (int) slot.duration().toMinutes())).toList(),
                 group.defaultCapacity(), group.coachId().value(), group.status().name());
     }

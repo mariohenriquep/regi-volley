@@ -8,7 +8,6 @@ import { addDays, dayHeading, mondayOf, weekRange } from '@/lib/lisbon';
 import { useLisbonToday } from '@/lib/useLisbonToday';
 import { usePageTitle } from '@/lib/usePageTitle';
 import { BookDialog } from './BookDialog';
-import { useRememberedBookingIds } from './bookingMemory';
 import { CancelDialog, type CancelTarget } from './CancelDialog';
 import { bookedNotice, cancelledNotice } from './messages';
 import { groupByDay, resolveWeek, type Session } from './model';
@@ -33,7 +32,6 @@ export function SessionsPage() {
   const lastWeek = addDays(thisWeek, 7 * MAX_WEEKS_AHEAD);
   const week = resolveWeek(params.get('week'), thisWeek, lastWeek);
   const sessions = useWeek(week);
-  const bookingIds = useRememberedBookingIds();
 
   const [booking, setBooking] = useState<Session | null>(null);
   const [cancelling, setCancelling] = useState<CancelTarget | null>(null);
@@ -141,7 +139,6 @@ export function SessionsPage() {
                 <SessionCard
                   key={session.id}
                   session={session}
-                  bookingId={bookingIds[session.id]}
                   onBook={(session, button) => {
                     opener.current = button;
                     setBooking(session);

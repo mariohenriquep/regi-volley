@@ -20,6 +20,7 @@ import org.springframework.http.HttpMethod;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalInt;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,7 +64,10 @@ class MemberSelfControllerTest extends AbstractControllerWebTest {
         Instant start = Instant.parse("2026-10-07T19:00:00Z");
         BookingId bookingId = BookingId.generate();
         when(memberHistoryUseCase.execute(any())).thenReturn(new MemberHistory(List.of(
-                new HistoryEntry(SessionId.generate(), TrainingGroupId.generate(), start, start.plusSeconds(5400), bookingId, BookingStatus.ATTENDED)),
+                new HistoryEntry(SessionId.generate(), TrainingGroupId.generate(), Optional.of("Wednesday Beginners"),
+                        Optional.of("Pavilhao Central"), start, start.plusSeconds(5400), bookingId, BookingStatus.ATTENDED),
+                new HistoryEntry(SessionId.generate(), TrainingGroupId.generate(), Optional.empty(), Optional.empty(), start,
+                        start.plusSeconds(5400), BookingId.generate(), BookingStatus.NO_SHOW)),
                 2, 3, true));
 
         // Act
@@ -73,6 +77,10 @@ class MemberSelfControllerTest extends AbstractControllerWebTest {
         result.andExpect(status().isOk())
                 .andExpect(jsonPath("$.entries[0].bookingId").value(bookingId.value().toString()))
                 .andExpect(jsonPath("$.entries[0].status").value("ATTENDED"))
+                .andExpect(jsonPath("$.entries[0].trainingGroupName").value("Wednesday Beginners"))
+                .andExpect(jsonPath("$.entries[0].venueName").value("Pavilhao Central"))
+                .andExpect(jsonPath("$.entries[1].trainingGroupName").doesNotExist())
+                .andExpect(jsonPath("$.entries[1].venueName").doesNotExist())
                 .andExpect(jsonPath("$.noShowsThisMonth").value(2))
                 .andExpect(jsonPath("$.noShowLimit").value(3))
                 .andExpect(jsonPath("$.nearLimit").value(true));

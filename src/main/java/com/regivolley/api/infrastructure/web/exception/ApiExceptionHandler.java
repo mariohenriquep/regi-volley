@@ -29,6 +29,7 @@ import com.regivolley.api.application.exception.ServiceBusyException;
 import com.regivolley.api.infrastructure.security.RequestIds;
 import com.regivolley.api.infrastructure.web.dto.AcknowledgementResponse;
 import com.regivolley.api.infrastructure.web.dto.ApiError;
+import com.regivolley.api.infrastructure.web.mapper.RefusalReasonWebMapper;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,7 +59,8 @@ import java.util.List;
  *   <li>403 {@link NotAllowedException}; 404 every {@code *NotFoundException}, which is also what another tenant's id
  *       gets (D-12); 202 {@link JoinRequestNotPossibleException} (D-14); 409 the conflicts and
  *       {@link AggregateModifiedConcurrentlyException}; 422 every other {@link BusinessRuleException} with its own
- *       English message;</li>
+ *       English message; a refused booking or cancellation (409 or 422) also carries a stable {@code reason}
+ *       ({@link RefusalReasonWebMapper});</li>
  *   <li>401 a failed login or refresh, 400 an invalid emailed link, 429 a rate limit with {@code Retry-After}: one answer per
  *       failure, whatever the reason (D-10);</li>
  *   <li>400 malformed, invalid or unknown-property input (names of fields, never rejected values) and the other
@@ -116,7 +118,8 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             LastAdministratorException.class,
             DuplicateBookingException.class})
     public ResponseEntity<ApiError> handleConflict(BusinessRuleException ex) {
-        return json(HttpStatus.CONFLICT, new ApiError(ApiError.CONFLICT, ex.getMessage(), requestId()));
+        return json(HttpStatus.CONFLICT, ApiError.refusal(ApiError.CONFLICT, ex.getMessage(), requestId(),
+                RefusalReasonWebMapper.of(ex).orElse(null)));
     }
 
     @ExceptionHandler(AggregateModifiedConcurrentlyException.class)
@@ -133,7 +136,8 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(BusinessRuleException.class)
     public ResponseEntity<ApiError> handleBusinessRule(BusinessRuleException ex) {
-        return json(HttpStatus.UNPROCESSABLE_CONTENT, new ApiError(ApiError.BUSINESS_RULE_VIOLATION, ex.getMessage(), requestId()));
+        return json(HttpStatus.UNPROCESSABLE_CONTENT, ApiError.refusal(ApiError.BUSINESS_RULE_VIOLATION, ex.getMessage(), requestId(),
+                RefusalReasonWebMapper.of(ex).orElse(null)));
     }
 
     // ---- security exceptions thrown from inside a handler -------------------------------------------------------

@@ -199,7 +199,7 @@ public final class Session implements AggregateRoot {
         Instant now = clock.instant();
         Booking booking = findExistingBooking(bookingId);
         boolean late = booking.status() == BookingStatus.CONFIRMED
-                && now.isAfter(policy.freeCancellationDeadline(startsAt));
+                && now.isAfter(freeCancellationDeadline(policy));
         return cancelAndPromote(booking, late ? CancellationKind.LATE : CancellationKind.FREE, now, eligibleForPromotion);
     }
 
@@ -426,12 +426,23 @@ public final class Session implements AggregateRoot {
         return policy.bookingOpensAt(startsAt);
     }
 
+    /** The last instant (inclusive) at which cancelling a CONFIRMED booking here is still free (RN-10). */
+    public Instant freeCancellationDeadline(BookingPolicy policy) {
+        return policy.freeCancellationDeadline(startsAt);
+    }
+
+    /** The member's non-cancelled booking in this session (WAITLISTED, CONFIRMED, ATTENDED or NO_SHOW), if they have one (RN-07). */
+    public Optional<Booking> liveBookingOf(MemberId memberId) {
+        return bookings.stream()
+                .filter(b -> b.status() != BookingStatus.CANCELLED && b.memberId().equals(memberId))
+                .findFirst();
+    }
+
     // ---------------------------------------------------------------- helpers
 
     /** RN-07: any non-cancelled booking (WAITLISTED, CONFIRMED, ATTENDED, NO_SHOW) blocks a new one. */
     private boolean hasLiveBooking(MemberId memberId) {
-        return bookings.stream()
-                .anyMatch(b -> b.status() != BookingStatus.CANCELLED && b.memberId().equals(memberId));
+        return liveBookingOf(memberId).isPresent();
     }
 
     private Booking findExistingBooking(BookingId bookingId) {

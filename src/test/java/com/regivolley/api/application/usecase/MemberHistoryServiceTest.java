@@ -8,11 +8,14 @@ import com.regivolley.api.domain.model.entity.Association;
 import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
+import com.regivolley.api.domain.model.entity.Venue;
 import com.regivolley.api.domain.model.valueobject.BookingStatus;
 import com.regivolley.api.domain.model.valueobject.NoShowPolicy;
 import com.regivolley.api.domain.repository.AssociationRepository;
 import com.regivolley.api.domain.repository.MemberRepository;
 import com.regivolley.api.domain.repository.SessionRepository;
+import com.regivolley.api.domain.repository.TrainingGroupRepository;
+import com.regivolley.api.domain.repository.VenueRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,6 +47,10 @@ class MemberHistoryServiceTest {
     private MemberRepository members;
     @Mock
     private AssociationRepository associations;
+    @Mock
+    private TrainingGroupRepository groups;
+    @Mock
+    private VenueRepository venues;
 
     private Association association;
     private Member coach;
@@ -57,7 +64,8 @@ class MemberHistoryServiceTest {
         coach = Data.coach(association);
         member = Data.member(association);
         group = Data.group(association, coach, "Beginner");
-        useCase = new MemberHistoryService(sessions, members, associations, Data.CLOCK);
+        useCase = new MemberHistoryService(sessions, members, associations, groups, venues, Data.CLOCK);
+        lenient().when(groups.findAllByAssociation(association.id())).thenReturn(List.of(group));
         lenient().when(members.findById(association.id(), member.id())).thenReturn(Optional.of(member));
         lenient().when(associations.findById(association.id())).thenReturn(Optional.of(association));
     }
@@ -109,6 +117,54 @@ class MemberHistoryServiceTest {
                 .containsExactly(BookingStatus.NO_SHOW, BookingStatus.ATTENDED);
         assertThat(history.entries().get(0).bookingId()).isEqualTo(Data.bookingOf(newer, member).id());
         assertThat(history.entries().get(0).startsAt()).isEqualTo(newer.startsAt());
+    }
+
+    @Test
+    void eachEntryNamesItsGroupAndItsVenue() {
+        // Arrange
+        Venue hall = Data.venue(association, "Pavilhao Central");
+        TrainingGroup groupAtHall = Data.groupAt(association, coach, hall, "Beginner");
+        lenient().when(groups.findAllByAssociation(association.id())).thenReturn(List.of(groupAtHall));
+        lenient().when(venues.findAllByAssociation(association.id())).thenReturn(List.of(hall));
+        Instant start = Data.NOW.minus(Duration.ofDays(2));
+        Session session = Data.booked(Data.session(groupAtHall, start, 12), member, start.minus(Duration.ofDays(2)));
+        returns(session);
+
+        // Act
+        MemberHistory history = useCase.execute(new MemberHistoryQuery(Data.actor(member)));
+
+        // Assert
+        HistoryEntry entry = history.entries().get(0);
+        assertThat(entry.trainingGroupName()).hasValue(groupAtHall.name());
+        assertThat(entry.venueName()).hasValue("Pavilhao Central");
+    }
+
+    @Test
+    void anEntryWhoseGroupOrVenueCannotBeFoundStillListsWithoutTheNames() {
+        // Arrange
+        lenient().when(groups.findAllByAssociation(association.id())).thenReturn(List.of());
+        returns(past(2, BookingStatus.ATTENDED));
+
+        // Act
+        MemberHistory history = useCase.execute(new MemberHistoryQuery(Data.actor(member)));
+
+        // Assert
+        assertThat(history.entries()).hasSize(1);
+        assertThat(history.entries().get(0).trainingGroupName()).isEmpty();
+        assertThat(history.entries().get(0).venueName()).isEmpty();
+    }
+
+    @Test
+    void readsGroupsAndVenuesOfTheMembersAssociationOnly() {
+        // Arrange
+        returns();
+
+        // Act
+        useCase.execute(new MemberHistoryQuery(Data.actor(member)));
+
+        // Assert
+        verify(groups).findAllByAssociation(association.id());
+        verify(venues).findAllByAssociation(association.id());
     }
 
     @Test

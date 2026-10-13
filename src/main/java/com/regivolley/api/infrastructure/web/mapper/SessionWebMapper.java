@@ -58,8 +58,8 @@ public final class SessionWebMapper {
                 roster.waitlist().stream().map(SessionWebMapper::toResponse).toList());
     }
 
-    private static SessionRosterResponse.EntryView toResponse(RosterEntry entry) {
-        return new SessionRosterResponse.EntryView(entry.bookingId().value(), entry.memberId().value(), entry.memberName(),
+    private static SessionRosterResponse.RosterEntryView toResponse(RosterEntry entry) {
+        return new SessionRosterResponse.RosterEntryView(entry.bookingId().value(), entry.memberId().value(), entry.memberName(),
                 entry.status().name());
     }
 

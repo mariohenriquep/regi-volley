@@ -33,6 +33,33 @@ describe('toApiError', () => {
     expect(error.requestId).toBe('req-1');
   });
 
+  it('keeps the stable reason of a refused booking', () => {
+    // Arrange
+    const body = {
+      code: 'BUSINESS_RULE_VIOLATION',
+      message: 'The balance is used up',
+      reason: 'NO_BALANCE',
+      requestId: 'req-2',
+    };
+
+    // Act
+    const error = toApiError(response(422), body);
+
+    // Assert
+    expect(error.reason).toBe('NO_BALANCE');
+  });
+
+  it.each([[{}], [{ reason: 7 }], [{ reason: null }]])(
+    'has no reason when the body gives none it can read (%j)',
+    (extra) => {
+      // Arrange / Act
+      const error = toApiError(response(422), { code: 'X', message: 'm', ...extra });
+
+      // Assert
+      expect(error.reason).toBeUndefined();
+    },
+  );
+
   it('shows the API message of other client errors', () => {
     // Arrange
     const body = {

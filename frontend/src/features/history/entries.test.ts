@@ -7,11 +7,21 @@ const base = { noShowsThisMonth: 0, noShowLimit: 3, nearLimit: false };
 describe('toHistory', () => {
   it('reads the entries as the API sends them', () => {
     // Arrange / Act
-    const history = toHistory({ ...base, entries: [historyEntry()] as never });
+    const history = toHistory({
+      ...base,
+      entries: [
+        historyEntry({ trainingGroupName: 'Tuesday evening', venueName: 'Pavilhão Central' }),
+      ],
+    });
 
     // Assert
     expect(history.entries).toEqual([
-      expect.objectContaining({ status: 'ATTENDED', startsAt: '2026-07-07T19:30:00Z' }),
+      expect.objectContaining({
+        status: 'ATTENDED',
+        startsAt: '2026-07-07T19:30:00Z',
+        trainingGroupName: 'Tuesday evening',
+        venueName: 'Pavilhão Central',
+      }),
     ]);
   });
 
@@ -22,8 +32,8 @@ describe('toHistory', () => {
       entries: [
         historyEntry(),
         historyEntry({ startsAt: 'last week' }),
-        historyEntry({ endsAt: 5 }),
-      ] as never,
+        historyEntry({ endsAt: '' }),
+      ],
     });
 
     // Assert

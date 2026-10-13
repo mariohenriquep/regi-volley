@@ -52,8 +52,8 @@ public final class PublicWebMapper {
                 group.schedule().stream().map(PublicWebMapper::toSlot).toList());
     }
 
-    private static PublicAssociationResponse.SlotView toSlot(PublicSlot slot) {
-        return new PublicAssociationResponse.SlotView(slot.dayOfWeek().name(), slot.startTime().toString(), slot.durationMinutes());
+    private static PublicAssociationResponse.PublicSlotView toSlot(PublicSlot slot) {
+        return new PublicAssociationResponse.PublicSlotView(slot.dayOfWeek().name(), slot.startTime().toString(), slot.durationMinutes());
     }
 
     private static PublicAssociationResponse.VenueView toVenue(PublicVenue venue) {

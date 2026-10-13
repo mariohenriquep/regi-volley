@@ -70,8 +70,9 @@ class SessionControllerTest extends AbstractControllerWebTest {
         // Arrange
         Instant start = Instant.parse("2026-10-14T19:00:00Z");
         when(listBookableSessionsUseCase.execute(any())).thenReturn(List.of(new BookableSession(SessionId.of(session.id().value()),
-                session.trainingGroupId(), "Wednesday Beginners", start, start.plusSeconds(5400), start.minusSeconds(86400 * 7), 12, 11, 0,
-                Optional.of(BookingStatus.CONFIRMED))));
+                session.trainingGroupId(), "Wednesday Beginners", Optional.of("Pavilhao Central"), start, start.plusSeconds(5400),
+                start.minusSeconds(86400 * 7), start.minusSeconds(6 * 3600), 12, 11, 0, Optional.of(BookingStatus.CONFIRMED),
+                Optional.of(booking.id()), OptionalInt.empty())));
 
         // Act
         var result = authenticated(HttpMethod.GET, "/api/v1/sessions?weekOf=2026-10-14");
@@ -82,7 +83,11 @@ class SessionControllerTest extends AbstractControllerWebTest {
                 .andExpect(jsonPath("$[0].groupName").value("Wednesday Beginners"))
                 .andExpect(jsonPath("$[0].startsAt").value("2026-10-14T19:00:00Z"))
                 .andExpect(jsonPath("$[0].freeSeats").value(11))
-                .andExpect(jsonPath("$[0].myBookingStatus").value("CONFIRMED"));
+                .andExpect(jsonPath("$[0].myBookingStatus").value("CONFIRMED"))
+                .andExpect(jsonPath("$[0].myBookingId").value(booking.id().value().toString()))
+                .andExpect(jsonPath("$[0].venueName").value("Pavilhao Central"))
+                .andExpect(jsonPath("$[0].freeCancellationUntil").value("2026-10-14T13:00:00Z"))
+                .andExpect(jsonPath("$[0].waitlistPosition").doesNotExist());
         ArgumentCaptor<ListBookableSessionsQuery> query = ArgumentCaptor.forClass(ListBookableSessionsQuery.class);
         verify(listBookableSessionsUseCase).execute(query.capture());
         assertThat(query.getValue().actor()).isEqualTo(expectedActor());
@@ -94,16 +99,37 @@ class SessionControllerTest extends AbstractControllerWebTest {
         // Arrange
         Instant start = Instant.parse("2026-10-14T19:00:00Z");
         when(listBookableSessionsUseCase.execute(any())).thenReturn(List.of(new BookableSession(session.id(), session.trainingGroupId(),
-                "Group", start, start.plusSeconds(5400), start, 12, 12, 0, Optional.empty())));
+                "Group", Optional.empty(), start, start.plusSeconds(5400), start, start.minusSeconds(6 * 3600), 12, 12, 0,
+                Optional.empty(), Optional.empty(), OptionalInt.empty())));
 
         // Act
         var result = authenticated(HttpMethod.GET, "/api/v1/sessions");
 
         // Assert
-        result.andExpect(status().isOk()).andExpect(jsonPath("$[0].myBookingStatus").doesNotExist());
+        result.andExpect(status().isOk()).andExpect(jsonPath("$[0].myBookingStatus").doesNotExist())
+                .andExpect(jsonPath("$[0].myBookingId").doesNotExist())
+                .andExpect(jsonPath("$[0].venueName").doesNotExist())
+                .andExpect(jsonPath("$[0].waitlistPosition").doesNotExist());
         ArgumentCaptor<ListBookableSessionsQuery> query = ArgumentCaptor.forClass(ListBookableSessionsQuery.class);
         verify(listBookableSessionsUseCase).execute(query.capture());
         assertThat(query.getValue().dayInWeek()).isNull();
+    }
+
+    @Test
+    void aWaitlistedMemberSeesTheirPlaceInTheQueue() throws Exception {
+        // Arrange
+        Instant start = Instant.parse("2026-10-14T19:00:00Z");
+        when(listBookableSessionsUseCase.execute(any())).thenReturn(List.of(new BookableSession(session.id(), session.trainingGroupId(),
+                "Group", Optional.empty(), start, start.plusSeconds(5400), start, start.minusSeconds(6 * 3600), 12, 0, 3,
+                Optional.of(BookingStatus.WAITLISTED), Optional.of(booking.id()), OptionalInt.of(2))));
+
+        // Act
+        var result = authenticated(HttpMethod.GET, "/api/v1/sessions");
+
+        // Assert
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].myBookingStatus").value("WAITLISTED"))
+                .andExpect(jsonPath("$[0].waitlistPosition").value(2));
     }
 
     @Test

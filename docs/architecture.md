@@ -539,12 +539,12 @@ private range). **Order of checks on a join request:** every refusal that depend
 
 **Per user (U7):** `UserRateLimitFilter` sits right after the bearer token was verified and resolved and allows 300 calls a minute per user id (`RateLimitRule.USER`) over every authenticated route; a request without a valid token never reaches it and spends no one's budget.
 
-**Errors** (`ApiExceptionHandler`, `infrastructure.web.exception`). One body `{code, message, requestId[, fields]}`.
+**Errors** (`ApiExceptionHandler`, `infrastructure.web.exception`). One body `{code, message, requestId[, fields][, reason]}`.
 403 `NotAllowedException`; 404 every `*NotFoundException` (also another tenant's id: same body, no id echoed); 202
 `{"status":"RECEIVED"}` for `JoinRequestNotPossibleException` (D-14); 409 `ShortNameAlreadyTaken`, `MemberEmailAlreadyUsed`,
 `LastAdministrator`, `DuplicateBooking` and any `AggregateModifiedConcurrentlyException`; 401 `INVALID_CREDENTIALS` (login) and
 `UNAUTHENTICATED` (refresh); 400 `INVALID_LINK`; 429 `TOO_MANY_REQUESTS` and 503 `SERVICE_BUSY`, both with `Retry-After`; 422 every other
-`BusinessRuleException` with its own English message (`InvalidFieldException` also names its field); whatever a client can type is checked by the aggregates with `InvalidFieldException` (a plan whose terms do not fit its type, a level order that is not a permutation), so an `Invalid*Exception` invariant reaching the advice is a stored-data or programming error and stays a generic 500; 400 malformed,
+`BusinessRuleException` with its own English message (`InvalidFieldException` also names its field; a refused booking or cancellation also carries a `reason`, section 12); whatever a client can type is checked by the aggregates with `InvalidFieldException` (a plan whose terms do not fit its type, a level order that is not a permutation), so an `Invalid*Exception` invariant reaching the advice is a stored-data or programming error and stays a generic 500; 400 malformed,
 invalid or unknown-property input with field names only, never values; 404/405/406/415 for the other Spring MVC errors;
 500 for everything else, logging the exception class and the place it was thrown, never its message. Spring Security's
 `AccessDeniedException`/`AuthenticationException` thrown inside a handler keep their 403/401. Errors raised in the filter
@@ -565,6 +565,25 @@ are domain exceptions extending a common `BusinessRuleException`, carrying struc
 are formatted in `Europe/Lisbon` as `dd/MM/yyyy HH:mm`, never raw UTC. Invariant and programming errors (invalid
 reconstitution data, null arguments) use English messages and are never shown to users - they map
 to a generic error.
+
+**Machine-readable reasons (issue #57).** `code` stays `BUSINESS_RULE_VIOLATION` (422) or `CONFLICT` (409) and is what existing clients
+read; a refused booking or cancellation adds a stable `reason` to the same body, so a client branches on it instead of on the message
+text (which may be reworded). It is derived from the domain exception, never from its message, by `RefusalReasonWebMapper`
+(`infrastructure.web.mapper`) into the wire enum `RefusalReason` (`infrastructure.web.dto`, documented in the `ApiError` schema of the
+OpenAPI description). Only the user-reachable booking refusals have one; every other `BusinessRuleException` answers as before, and an
+invariant stays the generic 500.
+
+| `reason` | Raised by | Status | Rule |
+|---|---|---|---|
+| `MEMBER_INACTIVE`, `LEVEL_NOT_ALLOWED`, `NO_VALID_SUBSCRIPTION`, `PLAN_LEVEL_NOT_ALLOWED`, `NO_BALANCE`, `PAYMENT_OVERDUE` | `BookingNotAllowedException` (its `BookingRejectionReason`, under its own name) | 422 | RN-06, RN-14, RN-18, RN-21 |
+| `BOOKING_NOT_OPEN`, `BOOKING_CLOSED` | `BookingWindowClosedException` (`kind()`: not yet open / already closed) | 422 | RN-03 |
+| `OVERLAP` | `BookingOverlapException` | 422 | RN-07 |
+| `DUPLICATE_BOOKING` | `DuplicateBookingException` | 409 | RN-07 |
+| `COACH_OF_SESSION` | `CoachCannotBookOwnSessionException` | 422 | RN-02 |
+| `SESSION_NOT_SCHEDULED` | `SessionNotScheduledException` | 422 | RN-05 |
+| `CANCELLATION_CLOSED` | `CancellationClosedException` (at or after the start) | 422 | RN-10 |
+
+A new reason is a new `RefusalReason` value plus a branch in the mapper; `RefusalReasonWebMapperTest` fails for a value no refusal produces.
 
 ## 13. Administration rules that span aggregates
 
@@ -628,8 +647,8 @@ errors are the one `ApiError` body (section 11). Lists return a JSON array.
 | `POST /public/associations/{shortName}/join-requests` | public | `SubmitJoinRequest` (US-05): `202 {"status":"RECEIVED"}` for new / already a member / pending (D-14); an input refusal (consent, contact data, policy version) is the same 400 / 422 for all three; 429 over 3 a day per (association, email) |
 | `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/activate`, `/auth/password-reset-requests`, `/auth/password-resets` | public | credentials (section 11) |
 | `POST /auth/logout-all`, `GET /me` | token | credentials, caller's ids |
-| `GET /me/plan`, `GET /me/history` | token | `MyPlan` (US-23), `MemberHistory` (US-18) |
-| `GET /sessions?weekOf=YYYY-MM-DD` | token | `ListBookableSessions` (US-13) |
+| `GET /me/plan`, `GET /me/history` | token | `MyPlan` (US-23), `MemberHistory` (US-18): each entry `sessionId`, `trainingGroupId`, `trainingGroupName`, `venueName` (both left out if not found), `startsAt`, `endsAt`, `bookingId`, `status` |
+| `GET /sessions?weekOf=YYYY-MM-DD` | token | `ListBookableSessions` (US-13): per line `sessionId`, `trainingGroupId`, `groupName`, `venueName` (left out if the venue cannot be found), `startsAt`, `endsAt`, `bookingOpensAt`, `freeCancellationUntil` (the last instant cancelling a CONFIRMED booking is free, from the association's `BookingPolicy` via `Session.freeCancellationDeadline`; information only, the API decides on submit; a waitlisted booking is always free), `capacity`, `freeSeats`, `waitlistSize` and, only when the *caller* has a live booking there, `myBookingStatus`, `myBookingId` (to cancel with) and, while waitlisted, `waitlistPosition` (1-based, from `Session.waitlistPosition`, the FIFO queue). Nothing about anyone else's booking |
 | `POST /sessions/{sessionId}/bookings` | token | `BookSession` (US-14): `201`, `CONFIRMED` or `WAITLISTED` with the place |
 | `POST /sessions/{sessionId}/bookings/{bookingId}/cancellation` | token | `CancelBooking` (US-15, US-16): late / credit refunded / how many moved up; the booking stays in the history as `CANCELLED`, so it is not a `DELETE` |
 | `POST /sessions/{sessionId}/cancellation` | coach of the session, admin | `CancelSession` (US-12) |
@@ -681,6 +700,12 @@ dates kept), one request per transaction, tenant by tenant.
 
 **Audit lines (M5).** Recording and reversing a payment, granting and revoking a role, deactivating a member and exporting the payment list each log one line with
 association, target and actor ids and nothing else (`LogHygieneJourneyIntegrationTest` proves both the lines and the absence of personal data).
+
+**Schema names are unique.** springdoc names a schema after the record's simple name, so two nested records with one name (two `EntryView`s,
+two `SlotView`s) collapsed into one schema and `/me/history` published the roster's fields (issue #57). The nested records of the responses
+are now `HistoryEntryView`, `RosterEntryView`, `GroupSlotView` and `PublicSlotView`, and `WebDtoNamesTest` fails when two records of
+`infrastructure.web.dto` (nested ones included) share a simple name; `OpenApiContractTest` also fails when a DTO record has no schema of
+its own. Name a new nested record after its parent (`HistoryEntryView`, not `EntryView`).
 
 **OpenAPI.** `docs/api/openapi.json` is generated by springdoc from the controllers and request/response records, plus a test-only
 customiser (title, the bearer scheme, `security: []` on exactly the `PublicRoutes`, the shared error responses). springdoc is a **test-scope**
@@ -823,9 +848,9 @@ and an *Account* menu (*Sign out*, *Sign out on all devices*) to signed-in membe
 
 | Route | Screen | API |
 |---|---|---|
-| `/` | this week's sessions grouped by Lisbon day; previous / next week in `?week=` (not before this week, at most 8 weeks ahead); book, cancel | `GET /sessions?weekOf=`, `POST /sessions/{id}/bookings`, `POST .../bookings/{id}/cancellation` |
+| `/` | this week's sessions grouped by Lisbon day, with venue and the member's waitlist place; previous / next week in `?week=` (not before this week, at most 8 weeks ahead); book, cancel | `GET /sessions?weekOf=`, `POST /sessions/{id}/bookings`, `POST .../bookings/{id}/cancellation` |
 | `/me/plan` | subscriptions: plan, type, validity, credits or sessions left, payment status, overdue warning | `GET /me/plan` |
-| `/me/history` | last three months as the API orders them, status per booking, this month's no-shows and the near-the-limit warning | `GET /me/history` |
+| `/me/history` | last three months as the API orders them, group, venue and status per booking, this month's no-shows and the near-the-limit warning | `GET /me/history` |
 
 - **Lisbon time** (`lib/lisbon.ts`). Every instant is formatted with `Intl.DateTimeFormat` and `timeZone: 'Europe/Lisbon'`; calendar
   days are `YYYY-MM-DD` strings moved on UTC dates at midday, so neither the device zone nor a clock change shifts them. "This week"
@@ -840,30 +865,27 @@ and an *Account* menu (*Sign out*, *Sign out on all devices*) to signed-in membe
   focused, because the Book button has turned into Cancel) says confirmed or "number N on the waitlist". A booking, a cancellation
   or a refusal invalidates `sessions`, `plan` and `history`. *Book* is offered whenever the member has no booking, even when
   `bookingOpensAt` is in the future (shown as "Booking opens ..."): the API decides on submit.
-- **Refusals.** The API gives every business refusal the code `BUSINESS_RULE_VIOLATION` (422, or `CONFLICT` 409 for a duplicate) and
-  tells them apart by message only. The sheet shows the API's message verbatim (`ErrorAlert`, with the request id), then
-  `bookingAdvice.ts` adds what to do next for the messages the backend is known to send (overdue, no balance, no valid
-  subscription, level, plan level, inactive, window not open / closed, overlap, duplicate, session not scheduled); an unknown message
-  gets none. The sheet stays open so the member can read it, retry or close it.
-- **Cancelling.** An `alertdialog` whose safe answer (*Keep booking*) has the initial focus. The API does not say beforehand whether a
-  cancellation would be late, so the text is generic ("close to the start (6 hours by default) counts as a used session"; a waitlist
-  place is "always free"), and the outcome after the call (`late`, `creditRefunded`, `promotedCount`) is shown as the API reports it.
-- **Backend gaps that limit the screens** (to be fixed in the API, then these workarounds go away):
-  1. `GET /sessions` has no `myBookingId`, and no upcoming booking can be found elsewhere (`/me/history` lists sessions up to now).
-     Cancelling therefore needs the id returned by a booking made *since the page was opened*; it is kept in the query cache
-     (`bookingMemory.ts`: memory only, cleared on sign-out, lost on reload). After a reload a card shows the status and says
-     cancelling "isn't available for this booking in the app yet".
-  2. No `venue` on a session, no waitlist `position` for the member's own waitlisted booking (only in the booking response), no
-     free-cancellation deadline (`freeCancellationUntil`), and no group name in the history entries.
-  3. `docs/api/openapi.json` publishes the roster's `EntryView` (bookingId, memberId, memberName, status) for the history entries,
-     because two nested records share the schema name; the real wire shape has `sessionId`, `trainingGroupId`, `startsAt`,
-     `endsAt`, `bookingId`, `status`. `features/history/entries.ts` reads and validates that shape from `unknown`, the only place
-     the client does not use the generated type.
-  4. Booking refusals share one error code; the reason is only in the message text.
-- **Sign-out and calls in flight.** `useAuth().epoch()` counts user changes (sign-in, sign-out, session end). A booking or
-  cancellation compares it before and after its call and writes the booking-id cache only if it is unchanged, so an answer that
-  arrives after sign-out cannot leave the previous user's ids in the next user's cache. The "sign out on all devices" error
-  shows only while signed in, is reset on every user change and on a new attempt, and the menu item is disabled while it runs.
+- **Refusals.** Every refusal of a booking or of a cancellation carries a stable `reason` next to the code (`BUSINESS_RULE_VIOLATION`
+  422, or `CONFLICT` 409 for `DUPLICATE_BOOKING`); `toApiError` reads it into `ApiError.reason` (typed as the contract's enum). The
+  sheet shows the API's message verbatim (`ErrorAlert`, with the request id), then `bookingAdvice.ts` adds what to do next, keyed on
+  the reason and never on the message text. Its table is a `Record<RefusalReason, Advice>`, so a reason added to the contract breaks
+  the type check until it is handled; a reason the client does not know (a newer backend) or none at all gets no advice and the
+  member sees the API's message alone. The sheet stays open so the member can read it, retry or close it.
+- **Cancelling.** An `alertdialog` whose safe answer (*Keep booking*) has the initial focus. `GET /sessions` gives each line the
+  member's own `myBookingId`, so Cancel works after a reload and from any device; the client keeps no booking ids. The dialog compares
+  the moment it opened with the line's `freeCancellationUntil` (an instant; the deadline itself is still free) and says "Cancelling now
+  is free. You can cancel for free until Tue 14 Jul, 14:30." or "Cancelling now counts as a used session (late). Free cancellation
+  ended ..." with the deadline in Lisbon time; a waitlisted booking is always free; a missing or unreadable deadline claims nothing.
+  This is information only (the API is the authority, and its clock may differ): the outcome after the call (`late`,
+  `creditRefunded`, `promotedCount`) is shown as the API reports it, and a refusal (`CANCELLATION_CLOSED`) is shown in the dialog.
+- **What a card and a history entry show.** The session card shows the venue (`venueName`, left out when the API leaves it out) and,
+  for a waitlisted booking, "You're number N on the waitlist" (`waitlistPosition`). History entries (`HistoryEntryView`) show the
+  group name and venue. The generated types are used as they are; `toSession` and `toEntry` only read the optional fields into a
+  type where ids and dates are not missing.
+- **Sign-out and calls in flight.** Signing out or changing user cancels and clears every cached query, and a mutation only
+  invalidates queries, so an answer that arrives after sign-out leaves nothing of the previous user behind. The "sign out on all
+  devices" error shows only while signed in, is reset on every user change and on a new attempt, and the menu item is disabled while
+  it runs.
 - **Reading responses.** The generated types make every field optional, so `toSession`, `toPlan` and `toEntry` read each response
   once into a type with nothing missing: a row with an unreadable date (`lib/dates.ts`) is dropped like any bad row, a payload that
   is not a list is empty (`Array.isArray`), and the status and type words (the API's text) are looked up in a `Map`, so an unknown

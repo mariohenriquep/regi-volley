@@ -328,6 +328,29 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
     }
 
     @Test
+    void myBookingIdOnTheSessionListIsTheCallersOwnAndNeverAnotherMembersOrAnotherAssociations() throws Exception {
+        // Arrange - the member of each world holds that world's booking; the other member of world A holds none
+        seed();
+        String path = "/api/v1/sessions?weekOf=2026-10-14";
+        String line = "$[?(@.sessionId == '" + a.sessionId() + "')]";
+
+        // Act
+        String owner = body(expect(200, HttpMethod.GET, path, a.member().token(), null));
+        String bystander = body(expect(200, HttpMethod.GET, path, a.spare().token(), null));
+        String otherAssociation = body(expect(200, HttpMethod.GET, path, b.member().token(), null));
+
+        // Assert
+        assertThat(com.jayway.jsonpath.JsonPath.<java.util.List<Object>>read(owner, line + ".myBookingId")).containsExactly(a.bookingId());
+        assertThat(com.jayway.jsonpath.JsonPath.<java.util.List<Object>>read(owner, line + ".venueName")).containsExactly("Pavilion");
+        assertThat(com.jayway.jsonpath.JsonPath.<java.util.List<Object>>read(owner, line + ".freeCancellationUntil")).hasSize(1);
+        assertThat(com.jayway.jsonpath.JsonPath.<java.util.List<Object>>read(bystander, line + ".myBookingId")).isEmpty();
+        assertThat(bystander).doesNotContain(a.bookingId()).doesNotContain("myBookingStatus").doesNotContain("waitlistPosition");
+        assertThat(otherAssociation).doesNotContain(a.bookingId()).doesNotContain(a.sessionId());
+        assertThat(com.jayway.jsonpath.JsonPath.<java.util.List<Object>>read(otherAssociation, line + ".myBookingId")).isEmpty();
+        assertThat(otherAssociation).contains(b.bookingId());
+    }
+
+    @Test
     void aCoachIsNeitherAnAdministratorNorTheCoachOfAnySessionAndForeignIdsGetThemWhatNonExistentOnesDo() throws Exception {
         // Arrange - the second member is a coach, of no group
         seed();

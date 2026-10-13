@@ -61,8 +61,11 @@ public final class BookingWebMapper {
 
     private static BookableSessionResponse toResponse(BookableSession session) {
         return new BookableSessionResponse(session.sessionId().value(), session.trainingGroupId().value(), session.groupName(),
-                session.startsAt(), session.endsAt(), session.bookingOpensAt(), session.capacity(), session.freeSeats(),
-                session.waitlistSize(), session.myBookingStatus().map(BookingStatus::name).orElse(null));
+                session.venueName().orElse(null), session.startsAt(), session.endsAt(), session.bookingOpensAt(),
+                session.freeCancellationUntil(), session.capacity(), session.freeSeats(), session.waitlistSize(),
+                session.myBookingStatus().map(BookingStatus::name).orElse(null),
+                session.myBookingId().map(BookingId::value).orElse(null),
+                session.myWaitlistPosition().isPresent() ? session.myWaitlistPosition().getAsInt() : null);
     }
 
     public static MemberHistoryResponse toResponse(MemberHistory history) {
@@ -70,8 +73,9 @@ public final class BookingWebMapper {
                 history.noShowsThisMonth(), history.noShowLimit(), history.nearLimit());
     }
 
-    private static MemberHistoryResponse.EntryView toResponse(HistoryEntry entry) {
-        return new MemberHistoryResponse.EntryView(entry.sessionId().value(), entry.trainingGroupId().value(), entry.startsAt(),
-                entry.endsAt(), entry.bookingId().value(), entry.status().name());
+    private static MemberHistoryResponse.HistoryEntryView toResponse(HistoryEntry entry) {
+        return new MemberHistoryResponse.HistoryEntryView(entry.sessionId().value(), entry.trainingGroupId().value(),
+                entry.trainingGroupName().orElse(null), entry.venueName().orElse(null), entry.startsAt(), entry.endsAt(),
+                entry.bookingId().value(), entry.status().name());
     }
 }
