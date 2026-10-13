@@ -40,6 +40,14 @@ taps** from the home screen on a phone. All UI text is in **English**.
 - TypeScript `strict`, ESLint + Prettier clean, no `any` without a comment explaining why.
 - Small, composable components; feature folders; TanStack Query for server state, minimal client state.
 
+## Shared local environment
+The user runs their own backend (often from IntelliJ on :8080), Vite on :5173 and the
+`docker compose` containers (Postgres, Mailpit). **Never stop, restart or remove anything you did
+not start yourself** — no `docker compose down/stop`, no killing processes on ports you didn't
+open. Run your own API/Vite on free ports (e.g. :8081 / :5174 via `SERVER_PORT`, `WEB_PORT`,
+`API_PROXY_TARGET`) and stop only those. If the containers are down, you may start them
+(`docker compose up -d`) and must leave them running.
+
 ## Verify before declaring done
 From `frontend/`: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` all green; run the
 relevant Playwright specs. Report honestly what you could not run.
