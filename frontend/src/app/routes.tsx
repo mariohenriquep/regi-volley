@@ -23,7 +23,7 @@ export const routes: RouteObject[] = [
       {
         errorElement: <RouteError />,
         children: [
-          // The member's screens: the week (home), the plan and the history.
+          // The signed-in screens: the week (home), the plan, the history and, for staff, the coaching section.
           {
             element: <RequireAuth />,
             children: [
@@ -31,6 +31,19 @@ export const routes: RouteObject[] = [
                 index: true,
                 lazy: async () => ({
                   Component: (await import('@/features/sessions/SessionsPage')).SessionsPage,
+                }),
+              },
+              {
+                path: 'coaching',
+                lazy: async () => ({
+                  Component: (await import('@/features/coaching/CoachingPage')).CoachingPage,
+                }),
+              },
+              {
+                path: 'coaching/sessions/:sessionId',
+                lazy: async () => ({
+                  Component: (await import('@/features/coaching/SessionRosterPage'))
+                    .SessionRosterPage,
                 }),
               },
               {

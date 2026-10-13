@@ -9,7 +9,6 @@ import com.regivolley.api.domain.model.entity.Session;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
 import com.regivolley.api.domain.model.valueobject.BookingPolicy;
 import com.regivolley.api.domain.model.valueobject.LevelRank;
-import com.regivolley.api.domain.model.valueobject.ScheduleZone;
 import com.regivolley.api.domain.model.valueobject.SessionStatus;
 import com.regivolley.api.domain.model.valueobject.TrainingGroupId;
 import com.regivolley.api.domain.model.valueobject.VenueId;
@@ -21,10 +20,7 @@ import com.regivolley.api.domain.repository.VenueRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -68,17 +64,13 @@ public class ListBookableSessionsService implements ListBookableSessionsUseCase 
         Association association = Lookups.association(associations, associationId);
         LevelRank level = association.rankOf(member.levelId());
 
-        LocalDate monday = Optional.ofNullable(query.dayInWeek())
-                .orElseGet(() -> clock.instant().atZone(ScheduleZone.LISBON.zoneId()).toLocalDate())
-                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-        Instant from = monday.atStartOfDay(ScheduleZone.LISBON.zoneId()).toInstant();
-        Instant to = monday.plusWeeks(1).atStartOfDay(ScheduleZone.LISBON.zoneId()).toInstant();
+        LisbonWeek week = LisbonWeek.containing(query.dayInWeek(), clock);
 
         Instant now = clock.instant();
         Map<TrainingGroupId, TrainingGroup> groupsById = groups.findAllByAssociation(associationId).stream()
                 .collect(Collectors.toMap(TrainingGroup::id, Function.identity()));
         Map<VenueId, String> venueNames = Names.ofVenues(venues, associationId);
-        return sessions.findStartingBetween(associationId, from, to).stream()
+        return sessions.findStartingBetween(associationId, week.from(), week.toExclusive()).stream()
                 .filter(session -> session.status() == SessionStatus.SCHEDULED && session.startsAt().isAfter(now))
                 .filter(session -> canBook(level, association, groupsById.get(session.trainingGroupId())))
                 .map(session -> line(session, groupsById.get(session.trainingGroupId()), venueNames, association, member))

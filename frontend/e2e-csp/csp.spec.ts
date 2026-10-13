@@ -2,7 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 /**
  * The production build under the documented Content-Security-Policy (`style-src 'self'`, no inline styles or scripts) with the
- * API mocked: the Book dialog, the Cancel dialog and the Account menu must open, work and close without one violation.
+ * API mocked: the Book dialog, the Cancel dialog and the Account menu must open, work and close without one violation, and so
+ * must the coaching screens (cancel-session and seats dialogs, the roster with its attendance toggles).
  * Radix modals add a `<style>` element for the scroll lock unless told otherwise, which this policy would block.
  */
 const HOUR = 3_600_000;
@@ -39,6 +40,10 @@ async function mockApi(page: Page) {
       route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
     if (pathname.endsWith('/auth/refresh')) {
       return json({ accessToken: 'test-csp-token-fixture', tokenType: 'Bearer', expiresIn: 600 });
+    }
+    // A member: the shell asks the coaching list whether to show the Coaching section, and is refused
+    if (pathname.endsWith('/coaching/sessions')) {
+      return json({ code: 'NOT_ALLOWED', message: 'Not allowed', requestId: 'req-csp' }, 403);
     }
     if (pathname.endsWith('/sessions')) return json([session()]);
     if (pathname.endsWith('/me/plan')) {
@@ -120,6 +125,93 @@ test('the dialogs and the account menu raise no Content-Security-Policy violatio
   // Assert: the policy was in force, and nothing was blocked
   const response = await page.request.get('/');
   expect(response.headers()['content-security-policy']).toContain("style-src 'self'");
+  expect(await page.evaluate(() => window.__violations)).toEqual([]);
+  expect(consoleErrors.filter((text) => /content security policy/i.test(text))).toEqual([]);
+});
+
+test('the coaching dialogs and the roster raise no Content-Security-Policy violation', async ({
+  page,
+}) => {
+  // Arrange: a coach whose session has started, and every violation the browser reports
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  await page.addInitScript(() => {
+    window.__violations = [];
+    document.addEventListener('securitypolicyviolation', (event) => {
+      window.__violations.push(`${event.violatedDirective} blocked ${event.blockedURI}`);
+    });
+  });
+  const startsAt = new Date(Math.ceil((Date.now() - 2 * HOUR) / HOUR) * HOUR);
+  const endsAt = new Date(startsAt.getTime() + 1.5 * HOUR);
+  const line = {
+    sessionId: SESSION_ID,
+    trainingGroupId: '55555555-5555-5555-5555-555555555555',
+    groupName: 'CSP coaching',
+    venueName: 'CSP Pavilion',
+    coachId: '22222222-2222-2222-2222-222222222222',
+    startsAt: startsAt.toISOString(),
+    endsAt: endsAt.toISOString(),
+    status: 'SCHEDULED',
+    capacity: 12,
+    confirmedCount: 1,
+    waitlistCount: 0,
+    attendedCount: 0,
+    noShowCount: 0,
+    unmarkedCount: 1,
+    canMarkAttendance: true,
+    canCancel: true,
+    canChangeCapacity: true,
+  };
+  await page.route('**/api/v1/**', async (route) => {
+    const { pathname } = new URL(route.request().url());
+    const method = route.request().method();
+    const json = (body: unknown, status = 200) =>
+      route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (pathname.endsWith('/auth/refresh')) {
+      return json({ accessToken: 'test-csp-token-fixture', tokenType: 'Bearer', expiresIn: 600 });
+    }
+    if (pathname.endsWith('/coaching/sessions')) return json([line]);
+    if (pathname.endsWith('/roster')) {
+      return json({
+        sessionId: SESSION_ID,
+        startsAt: line.startsAt,
+        endsAt: line.endsAt,
+        status: 'SCHEDULED',
+        capacity: 12,
+        seats: [{ bookingId: BOOKING_ID, memberName: 'Ana Silva', status: 'CONFIRMED' }],
+        waitlist: [],
+      });
+    }
+    if (method === 'PUT' && pathname.endsWith('/attendance')) {
+      return json({ session: {}, warnedCount: 0 });
+    }
+    return json({ code: 'NOT_FOUND', message: 'Not found' }, 404);
+  });
+
+  // Act: the week, the cancel dialog (open, keep), the seats dialog (open, Escape), the roster and the attendance form
+  await page.goto('/coaching');
+  const card = page.getByRole('article', { name: 'CSP coaching' });
+  await expect(card).toBeVisible();
+  await card.getByRole('button', { name: /^Cancel session/ }).tap();
+  const cancel = page.getByRole('dialog', { name: 'Cancel this session?' });
+  await expect(cancel).toContainText('1 member will be notified and their credit refunded.');
+  await expect(page.locator('body')).toHaveCSS('overflow', 'hidden');
+  await cancel.getByLabel('Reason').fill('Court flooded');
+  await cancel.getByRole('button', { name: 'Keep session' }).tap();
+  await expect(cancel).toBeHidden();
+  await card.getByRole('button', { name: /^Change seats/ }).tap();
+  await expect(page.getByRole('dialog', { name: 'Change the seats' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await card.getByRole('link', { name: /^Mark attendance/ }).tap();
+  await expect(page.getByRole('heading', { level: 1, name: 'Roster' })).toBeVisible();
+  await page.getByRole('radio', { name: 'Attended' }).check({ force: true });
+  await page.getByRole('button', { name: 'Save attendance (1)' }).tap();
+  await expect(page.getByText('Attendance saved: 1 attended, 0 no-show.')).toBeVisible();
+
+  // Assert: the policy was in force, and nothing was blocked
   expect(await page.evaluate(() => window.__violations)).toEqual([]);
   expect(consoleErrors.filter((text) => /content security policy/i.test(text))).toEqual([]);
 });

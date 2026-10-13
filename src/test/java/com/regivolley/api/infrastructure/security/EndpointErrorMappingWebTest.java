@@ -74,6 +74,7 @@ class EndpointErrorMappingWebTest extends AbstractSecuredWebTest {
                 endpoint("GET /api/v1/me/plan", "/api/v1/me/plan", null, t -> t.myPlanUseCase),
                 endpoint("GET /api/v1/me/history", "/api/v1/me/history", null, t -> t.memberHistoryUseCase),
                 endpoint("GET /api/v1/sessions", "/api/v1/sessions", null, t -> t.listBookableSessionsUseCase),
+                endpoint("GET /api/v1/coaching/sessions", "/api/v1/coaching/sessions", null, t -> t.listCoachingSessionsUseCase),
                 endpoint("POST /api/v1/sessions/{sessionId}/bookings", "/api/v1/sessions/" + ID + "/bookings", null, t -> t.bookSessionUseCase),
                 endpoint("POST /api/v1/sessions/{sessionId}/bookings/{bookingId}/cancellation", "/api/v1/sessions/" + ID + "/bookings/" + OTHER_ID + "/cancellation", null, t -> t.cancelBookingUseCase),
                 endpoint("POST /api/v1/sessions/{sessionId}/cancellation", "/api/v1/sessions/" + ID + "/cancellation", "{\"reason\":\"Closed\"}", t -> t.cancelSessionUseCase),

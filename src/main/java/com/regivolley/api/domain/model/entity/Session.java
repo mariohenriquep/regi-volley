@@ -295,7 +295,7 @@ public final class Session implements AggregateRoot {
             throw new CancellationReasonRequiredException();
         }
         requireTransitionTo(SessionStatus.CANCELLED);
-        if (bookings.stream().anyMatch(b -> b.status() == BookingStatus.ATTENDED || b.status() == BookingStatus.NO_SHOW)) {
+        if (hasAttendanceMarked()) {
             throw new AttendanceAlreadyMarkedException();
         }
         List<Booking> updated = bookings.stream()
@@ -368,6 +368,42 @@ public final class Session implements AggregateRoot {
             }
         }
         return OptionalInt.empty();
+    }
+
+    /** Seat holders marked ATTENDED (US-17). */
+    public int attendedCount() {
+        return countWith(BookingStatus.ATTENDED);
+    }
+
+    /** Seat holders marked NO_SHOW (US-17). */
+    public int noShowCount() {
+        return countWith(BookingStatus.NO_SHOW);
+    }
+
+    /** Seat holders whose attendance is not marked yet: the CONFIRMED bookings. Only meaningful once the session has started. */
+    public int unmarkedCount() {
+        return confirmedCount();
+    }
+
+    /**
+     * Whether attendance can still be marked now (US-17): the session is not CANCELLED, it has started and someone holds a seat
+     * without a mark. A COMPLETED session still accepts marks, as {@link #markAttended} does.
+     */
+    public boolean acceptsAttendance(Clock clock) {
+        return status != SessionStatus.CANCELLED && !clock.instant().isBefore(startsAt) && unmarkedCount() > 0;
+    }
+
+    /**
+     * Whether {@link #cancel} would be accepted (RN-04, RN-05): the session is SCHEDULED and no attendance was marked yet. The
+     * domain does not stop a cancellation at the start; it stops it once the first mark is made.
+     */
+    public boolean canBeCancelled() {
+        return ALLOWED_TRANSITIONS.get(status).contains(SessionStatus.CANCELLED) && !hasAttendanceMarked();
+    }
+
+    /** Whether {@link #changeCapacity} would be accepted by status and time (US-12): the session is SCHEDULED and has not started. */
+    public boolean acceptsCapacityChange(Clock clock) {
+        return status == SessionStatus.SCHEDULED && clock.instant().isBefore(startsAt);
     }
 
     /** Every booking cancelled because the whole session was cancelled (RN-04): everyone to notify, waitlisted included. */
@@ -447,6 +483,14 @@ public final class Session implements AggregateRoot {
 
     private Booking findExistingBooking(BookingId bookingId) {
         return findBooking(bookingId).orElseThrow(() -> new BookingNotFoundException(bookingId));
+    }
+
+    private boolean hasAttendanceMarked() {
+        return attendedCount() > 0 || noShowCount() > 0;
+    }
+
+    private int countWith(BookingStatus wanted) {
+        return (int) bookings.stream().filter(b -> b.status() == wanted).count();
     }
 
     private void requireScheduled() {
