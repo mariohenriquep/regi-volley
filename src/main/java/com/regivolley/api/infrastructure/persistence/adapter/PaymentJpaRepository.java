@@ -3,6 +3,7 @@ package com.regivolley.api.infrastructure.persistence.adapter;
 import com.regivolley.api.infrastructure.persistence.entity.PaymentJpaEntity;
 import org.springframework.data.repository.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,4 +17,6 @@ interface PaymentJpaRepository extends Repository<PaymentJpaEntity, UUID> {
     Optional<PaymentJpaEntity> findByIdAndAssociationId(UUID id, UUID associationId);
 
     List<PaymentJpaEntity> findByAssociationIdAndSubscriptionIdOrderByRecordedAtAscIdAsc(UUID associationId, UUID subscriptionId);
+
+    List<PaymentJpaEntity> findByAssociationIdAndSubscriptionIdInOrderByRecordedAtAscIdAsc(UUID associationId, Collection<UUID> subscriptionIds);
 }

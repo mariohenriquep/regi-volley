@@ -14,6 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,6 +49,18 @@ public class PaymentRepositoryAdapter implements PaymentRepository {
     public List<Payment> findBySubscription(AssociationId associationId, SubscriptionId subscriptionId) {
         return payments.findByAssociationIdAndSubscriptionIdOrderByRecordedAtAscIdAsc(
                         associationId.value(), subscriptionId.value()).stream()
+                .map(PaymentPersistenceMapper::toDomain)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Payment> findBySubscriptions(AssociationId associationId, Collection<SubscriptionId> subscriptionIds) {
+        if (subscriptionIds.isEmpty()) {
+            return List.of();
+        }
+        return payments.findByAssociationIdAndSubscriptionIdInOrderByRecordedAtAscIdAsc(
+                        associationId.value(), subscriptionIds.stream().map(SubscriptionId::value).toList()).stream()
                 .map(PaymentPersistenceMapper::toDomain)
                 .toList();
     }

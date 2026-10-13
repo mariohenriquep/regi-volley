@@ -5,10 +5,12 @@ import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.MemberId;
+import com.regivolley.api.domain.model.valueobject.MemberStatus;
 import com.regivolley.api.domain.repository.MemberRepository;
 import com.regivolley.api.infrastructure.persistence.entity.MemberJpaEntity;
 import com.regivolley.api.infrastructure.persistence.mapper.MemberPersistenceMapper;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import com.regivolley.api.domain.exception.MemberModifiedConcurrentlyException;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Component;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 /** {@link MemberRepository} on Spring Data JPA. Nothing here logs a name, email or phone. */
@@ -47,6 +50,20 @@ public class MemberRepositoryAdapter implements MemberRepository {
         }
         return members.findByAssociationIdAndIdIn(associationId.value(), ids.stream().map(MemberId::value).toList())
                 .stream().map(MemberPersistenceMapper::toDomain).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Member> search(AssociationId associationId, Optional<MemberStatus> status, Optional<String> text, int limit) {
+        return members.search(associationId.value(), status.map(MemberStatus::name).orElse(null),
+                        text.map(MemberRepositoryAdapter::likePattern).orElse(null), PageRequest.of(0, limit))
+                .stream().map(MemberPersistenceMapper::toDomain).toList();
+    }
+
+    /** A lower-cased "contains" pattern in which {@code \}, {@code %} and {@code _} stand for themselves. */
+    private static String likePattern(String text) {
+        String escaped = text.toLowerCase(Locale.ROOT).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+        return "%" + escaped + "%";
     }
 
     @Override

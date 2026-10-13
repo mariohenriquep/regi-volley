@@ -17,6 +17,9 @@ public interface PlanRepository {
     /** The plans of this association among these ids (unknown or foreign ids are simply absent), in no particular order. */
     List<Plan> findByIds(AssociationId associationId, Collection<PlanId> ids);
 
+    /** All plans of the association, by name (case-insensitive, then id). */
+    List<Plan> findAllByAssociation(AssociationId associationId);
+
     /**
      * Inserts a new plan or updates an existing one, and returns it as stored, with its new version (each
      * save moves it forward by one); keep working with the returned instance.

@@ -4,6 +4,8 @@ import com.regivolley.api.application.command.Actor;
 import com.regivolley.api.application.command.ArchiveTrainingGroupCommand;
 import com.regivolley.api.application.command.CreateTrainingGroupCommand;
 import com.regivolley.api.application.command.EditTrainingGroupCommand;
+import com.regivolley.api.application.command.ListTrainingGroupsQuery;
+import com.regivolley.api.application.result.TrainingGroupListEntry;
 import com.regivolley.api.domain.model.entity.TrainingGroup;
 import com.regivolley.api.domain.model.valueobject.LevelId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
@@ -13,6 +15,8 @@ import com.regivolley.api.domain.model.valueobject.WeeklySchedule;
 import com.regivolley.api.domain.model.valueobject.WeeklySlot;
 import com.regivolley.api.infrastructure.web.dto.CreateTrainingGroupRequest;
 import com.regivolley.api.infrastructure.web.dto.EditTrainingGroupRequest;
+import com.regivolley.api.infrastructure.web.dto.NamedRefView;
+import com.regivolley.api.infrastructure.web.dto.TrainingGroupEntryResponse;
 import com.regivolley.api.infrastructure.web.dto.TrainingGroupResponse;
 import com.regivolley.api.infrastructure.web.dto.WeeklySlotRequest;
 
@@ -40,6 +44,24 @@ public final class TrainingGroupWebMapper {
 
     public static ArchiveTrainingGroupCommand archiveCommand(Actor actor, UUID groupId) {
         return new ArchiveTrainingGroupCommand(actor, TrainingGroupId.of(groupId));
+    }
+
+    public static ListTrainingGroupsQuery listQuery(Actor actor, boolean includeArchived) {
+        return new ListTrainingGroupsQuery(actor, includeArchived);
+    }
+
+    public static List<TrainingGroupEntryResponse> toEntryResponses(List<TrainingGroupListEntry> entries) {
+        return entries.stream().map(TrainingGroupWebMapper::toResponse).toList();
+    }
+
+    private static TrainingGroupEntryResponse toResponse(TrainingGroupListEntry entry) {
+        TrainingGroup group = entry.group();
+        return new TrainingGroupEntryResponse(group.id().value(), group.name(),
+                entry.acceptedLevels().stream().map(level -> new NamedRefView(level.id().value(), level.name())).toList(),
+                new NamedRefView(group.venueId().value(), entry.venueName().orElse(null)),
+                group.schedule().slots().stream().map(slot -> new TrainingGroupEntryResponse.GroupEntrySlotView(slot.dayOfWeek().name(),
+                        slot.startTime().toString(), (int) slot.duration().toMinutes())).toList(),
+                group.defaultCapacity(), new NamedRefView(group.coachId().value(), entry.coachName().orElse(null)), group.status().name());
     }
 
     public static TrainingGroupResponse toResponse(TrainingGroup group) {

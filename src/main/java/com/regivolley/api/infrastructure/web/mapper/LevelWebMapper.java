@@ -3,6 +3,7 @@ package com.regivolley.api.infrastructure.web.mapper;
 import com.regivolley.api.application.command.Actor;
 import com.regivolley.api.application.command.AddLevelCommand;
 import com.regivolley.api.application.command.ChangeEntryLevelCommand;
+import com.regivolley.api.application.command.ListLevelsQuery;
 import com.regivolley.api.application.command.RenameLevelCommand;
 import com.regivolley.api.application.command.ReorderLevelsCommand;
 import com.regivolley.api.domain.model.entity.Association;
@@ -36,6 +37,10 @@ public final class LevelWebMapper {
 
     public static ChangeEntryLevelCommand entryLevelCommand(Actor actor, LevelIdRequest body) {
         return new ChangeEntryLevelCommand(actor, LevelId.of(body.levelId()));
+    }
+
+    public static ListLevelsQuery listQuery(Actor actor) {
+        return new ListLevelsQuery(actor);
     }
 
     public static LevelsResponse toResponse(Association association) {

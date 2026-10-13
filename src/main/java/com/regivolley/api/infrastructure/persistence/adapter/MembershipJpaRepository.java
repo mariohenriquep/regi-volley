@@ -7,6 +7,7 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -21,6 +22,9 @@ interface MembershipJpaRepository extends Repository<MembershipJpaEntity, UUID> 
     Optional<MembershipJpaEntity> findByUserIdAndAssociationId(UUID userId, UUID associationId);
 
     Optional<MembershipJpaEntity> findByAssociationIdAndMemberId(UUID associationId, UUID memberId);
+
+    @Query("select m.memberId from MembershipJpaEntity m where m.associationId = :associationId and m.status = 'CONFIRMED' and m.memberId in :memberIds")
+    List<UUID> findConfirmedMemberIds(@Param("associationId") UUID associationId, @Param("memberIds") Collection<UUID> memberIds);
 
     Optional<MembershipJpaEntity> findByUserIdAndAssociationIdAndMemberId(UUID userId, UUID associationId, UUID memberId);
 

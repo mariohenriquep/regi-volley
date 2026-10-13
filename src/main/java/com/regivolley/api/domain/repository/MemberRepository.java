@@ -6,6 +6,7 @@ import com.regivolley.api.domain.model.entity.Member;
 import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.EmailAddress;
 import com.regivolley.api.domain.model.valueobject.MemberId;
+import com.regivolley.api.domain.model.valueobject.MemberStatus;
 
 import java.util.Collection;
 import java.util.List;
@@ -34,6 +35,17 @@ public interface MemberRepository {
      * serialises it against other removals of an administrator.
      */
     List<MemberId> findActiveAdminIds(AssociationId associationId);
+
+    /** How many members one listing returns at most (the NFR size of an association). */
+    int MAX_LISTED = 300;
+
+    /**
+     * The association's members who have not been anonymised, by name (case-insensitive, then id), at most {@code limit}: what an
+     * administrator's member list is built from. Optionally only those in {@code status}, and only those whose name or email
+     * contains {@code text}, ignoring case (the text is matched literally: {@code %} and {@code _} are ordinary characters). Roles
+     * and level history come with them.
+     */
+    List<Member> search(AssociationId associationId, Optional<MemberStatus> status, Optional<String> text, int limit);
 
     /** The member of this association with that email; the same email in another association is another person. */
     Optional<Member> findByEmail(AssociationId associationId, EmailAddress email);

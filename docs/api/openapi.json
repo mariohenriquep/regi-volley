@@ -487,6 +487,21 @@
         "required" : [ "email" ],
         "type" : "object"
       },
+      "GroupEntrySlotView" : {
+        "properties" : {
+          "dayOfWeek" : {
+            "type" : "string"
+          },
+          "durationMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "startTime" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "GroupSlotView" : {
         "properties" : {
           "dayOfWeek" : {
@@ -635,6 +650,36 @@
         },
         "type" : "object"
       },
+      "LevelChangeView" : {
+        "properties" : {
+          "changedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "changedBy" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "changedByName" : {
+            "type" : "string"
+          },
+          "fromLevelId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "fromLevelName" : {
+            "type" : "string"
+          },
+          "toLevelId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "toLevelName" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "LevelIdRequest" : {
         "properties" : {
           "levelId" : {
@@ -756,6 +801,66 @@
         },
         "type" : "object"
       },
+      "MemberDetailResponse" : {
+        "properties" : {
+          "accountActivated" : {
+            "type" : "boolean"
+          },
+          "anonymised" : {
+            "type" : "boolean"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "joinedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "levelChanges" : {
+            "items" : {
+              "$ref" : "#/components/schemas/LevelChangeView"
+            },
+            "type" : "array"
+          },
+          "levelId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "levelName" : {
+            "type" : "string"
+          },
+          "memberId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "phone" : {
+            "type" : "string"
+          },
+          "roles" : {
+            "items" : {
+              "enum" : [ "MEMBER", "COACH", "ADMIN" ],
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "subscriptions" : {
+            "items" : {
+              "$ref" : "#/components/schemas/MemberSubscriptionView"
+            },
+            "type" : "array"
+          },
+          "subscriptionsTruncated" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
       "MemberHistoryResponse" : {
         "properties" : {
           "entries" : {
@@ -774,6 +879,62 @@
           "noShowsThisMonth" : {
             "format" : "int32",
             "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "MemberListEntryResponse" : {
+        "properties" : {
+          "accountActivated" : {
+            "type" : "boolean"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "joinedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "levelId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "levelName" : {
+            "type" : "string"
+          },
+          "memberId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "phone" : {
+            "type" : "string"
+          },
+          "roles" : {
+            "items" : {
+              "enum" : [ "MEMBER", "COACH", "ADMIN" ],
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "MemberListResponse" : {
+        "properties" : {
+          "members" : {
+            "items" : {
+              "$ref" : "#/components/schemas/MemberListEntryResponse"
+            },
+            "type" : "array"
+          },
+          "truncated" : {
+            "type" : "boolean"
           }
         },
         "type" : "object"
@@ -813,6 +974,56 @@
         },
         "type" : "object"
       },
+      "MemberSubscriptionView" : {
+        "properties" : {
+          "creditsLeft" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "creditsUsed" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "endDate" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "outstandingCents" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paidCents" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paymentStatus" : {
+            "type" : "string"
+          },
+          "planId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "planName" : {
+            "type" : "string"
+          },
+          "priceCents" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "startDate" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "subscriptionId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "MyPlanResponse" : {
         "properties" : {
           "asOf" : {
@@ -824,6 +1035,53 @@
               "$ref" : "#/components/schemas/SubscriptionView"
             },
             "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
+      "NamedRefView" : {
+        "properties" : {
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "PaymentLineView" : {
+        "properties" : {
+          "amountCents" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "method" : {
+            "type" : "string"
+          },
+          "paidOn" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "recordedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "recordedBy" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "recordedByName" : {
+            "type" : "string"
+          },
+          "reversalOf" : {
+            "format" : "uuid",
+            "type" : "string"
           }
         },
         "type" : "object"
@@ -890,6 +1148,43 @@
           },
           "reversal" : {
             "$ref" : "#/components/schemas/PaymentResponse"
+          }
+        },
+        "type" : "object"
+      },
+      "PlanEntryResponse" : {
+        "properties" : {
+          "allowedLevels" : {
+            "items" : {
+              "$ref" : "#/components/schemas/NamedRefView"
+            },
+            "type" : "array"
+          },
+          "credits" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "priceCents" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "sessionsPerWeek" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "validityDays" : {
+            "format" : "int32",
+            "type" : "integer"
           }
         },
         "type" : "object"
@@ -1337,6 +1632,36 @@
         },
         "type" : "object"
       },
+      "SubscriptionPaymentsResponse" : {
+        "properties" : {
+          "outstandingCents" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paidCents" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "paymentStatus" : {
+            "type" : "string"
+          },
+          "payments" : {
+            "items" : {
+              "$ref" : "#/components/schemas/PaymentLineView"
+            },
+            "type" : "array"
+          },
+          "priceCents" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "subscriptionId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "SubscriptionResponse" : {
         "properties" : {
           "creditsUsed" : {
@@ -1406,6 +1731,43 @@
         },
         "type" : "object"
       },
+      "TrainingGroupEntryResponse" : {
+        "properties" : {
+          "acceptedLevels" : {
+            "items" : {
+              "$ref" : "#/components/schemas/NamedRefView"
+            },
+            "type" : "array"
+          },
+          "capacity" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "coach" : {
+            "$ref" : "#/components/schemas/NamedRefView"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "schedule" : {
+            "items" : {
+              "$ref" : "#/components/schemas/GroupEntrySlotView"
+            },
+            "type" : "array"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "venue" : {
+            "$ref" : "#/components/schemas/NamedRefView"
+          }
+        },
+        "type" : "object"
+      },
       "TrainingGroupResponse" : {
         "properties" : {
           "acceptedLevelIds" : {
@@ -1441,6 +1803,28 @@
           },
           "venueId" : {
             "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "VenueEntryResponse" : {
+        "properties" : {
+          "address" : {
+            "type" : "string"
+          },
+          "courts" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "inUseByActiveGroup" : {
+            "type" : "boolean"
+          },
+          "name" : {
             "type" : "string"
           }
         },
@@ -1995,6 +2379,40 @@
       }
     },
     "/api/v1/levels" : {
+      "get" : {
+        "operationId" : "levelList",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/LevelsResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "level-controller" ]
+      },
       "post" : {
         "operationId" : "levelAdd",
         "requestBody" : {
@@ -2317,6 +2735,103 @@
           "bearerAuth" : [ ]
         } ],
         "tags" : [ "member-self-controller" ]
+      }
+    },
+    "/api/v1/members" : {
+      "get" : {
+        "operationId" : "memberAdminList",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "enum" : [ "ACTIVE", "INACTIVE" ],
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "q",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MemberListResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "member-admin-controller" ]
+      }
+    },
+    "/api/v1/members/{memberId}" : {
+      "get" : {
+        "operationId" : "memberAdminDetail",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "memberId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/MemberDetailResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "member-admin-controller" ]
       }
     },
     "/api/v1/members/{memberId}/activation-links" : {
@@ -2711,6 +3226,43 @@
       }
     },
     "/api/v1/plans" : {
+      "get" : {
+        "operationId" : "planList",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/PlanEntryResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "plan-controller" ]
+      },
       "post" : {
         "operationId" : "planCreate",
         "requestBody" : {
@@ -3515,6 +4067,49 @@
       }
     },
     "/api/v1/subscriptions/{subscriptionId}/payments" : {
+      "get" : {
+        "operationId" : "subscriptionPayments",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "subscriptionId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SubscriptionPaymentsResponse"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "subscription-controller" ]
+      },
       "post" : {
         "operationId" : "subscriptionPay",
         "parameters" : [ {
@@ -3576,6 +4171,52 @@
       }
     },
     "/api/v1/training-groups" : {
+      "get" : {
+        "operationId" : "trainingGroupList",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "includeArchived",
+          "required" : false,
+          "schema" : {
+            "default" : false,
+            "type" : "boolean"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/TrainingGroupEntryResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "training-group-controller" ]
+      },
       "post" : {
         "operationId" : "trainingGroupCreate",
         "requestBody" : {
@@ -3740,6 +4381,43 @@
       }
     },
     "/api/v1/venues" : {
+      "get" : {
+        "operationId" : "venueList",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/VenueEntryResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "venue-controller" ]
+      },
       "post" : {
         "operationId" : "venueCreate",
         "requestBody" : {

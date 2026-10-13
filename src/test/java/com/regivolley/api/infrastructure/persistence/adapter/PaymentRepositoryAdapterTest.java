@@ -134,7 +134,7 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
         // (the port's method names)
 
         // Assert
-        assertThat(methods).containsExactlyInAnyOrder("findById", "findBySubscription", "add");
+        assertThat(methods).containsExactlyInAnyOrder("findById", "findBySubscription", "findBySubscriptions", "add");
     }
 
     @Test
@@ -263,5 +263,48 @@ class PaymentRepositoryAdapterTest extends AbstractPostgresIntegrationTest {
 
         // Assert
         assertThat(ex.getMessage()).contains("append-only");
+    }
+
+    @Test
+    void findBySubscriptionsReturnsTheRequestedSubscriptionsPaymentsOldestFirstInOneQuery() {
+        // Arrange
+        Association association = newAssociation();
+        Subscription first = newSubscription(association);
+        Subscription second = newSubscription(association);
+        Subscription unrequested = newSubscription(association);
+        Payment late = PaymentFactory.reconstitute(PaymentId.generate(), association.id(), first.id(), Money.ofCents(200), PAID_ON,
+                PaymentMethod.CASH, ADMIN, Fixtures.NOW.plusSeconds(20), null);
+        Payment early = pay(first, 100);
+        Payment middle = PaymentFactory.reconstitute(PaymentId.generate(), association.id(), second.id(), Money.ofCents(300), PAID_ON,
+                PaymentMethod.TRANSFER, ADMIN, Fixtures.NOW.plusSeconds(10), null);
+        payments.add(late);
+        payments.add(early);
+        payments.add(middle);
+        payments.add(pay(unrequested, 400));
+        flushAndClear();
+
+        // Act
+        var found = payments.findBySubscriptions(association.id(), java.util.List.of(first.id(), second.id()));
+
+        // Assert
+        assertThat(found).extracting(Payment::id).containsExactly(early.id(), middle.id(), late.id());
+        assertThat(payments.findBySubscriptions(association.id(), java.util.List.of())).isEmpty();
+    }
+
+    @Test
+    void findBySubscriptionsNeverReturnsAnotherAssociationsPayments() {
+        // Arrange
+        Association a = newAssociation();
+        Association b = newAssociation();
+        Subscription subscription = newSubscription(a);
+        payments.add(pay(subscription, 4500));
+        flushAndClear();
+
+        // Act
+        var asB = payments.findBySubscriptions(b.id(), java.util.List.of(subscription.id()));
+
+        // Assert
+        assertThat(asB).isEmpty();
+        assertThat(payments.findBySubscriptions(a.id(), java.util.List.of(subscription.id()))).hasSize(1);
     }
 }
