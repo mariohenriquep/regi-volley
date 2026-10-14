@@ -219,3 +219,116 @@ test('the coaching dialogs and the roster raise no Content-Security-Policy viola
   expect(await page.evaluate(() => window.__violations)).toEqual([]);
   expect(consoleErrors.filter((text) => /content security policy/i.test(text))).toEqual([]);
 });
+
+test('the admin dialogs, the member screens and the level picker raise no Content-Security-Policy violation', async ({
+  page,
+}) => {
+  // Arrange: an administrator, one pending request, one member who has not activated, and every violation the browser reports
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  await page.addInitScript(() => {
+    window.__violations = [];
+    document.addEventListener('securitypolicyviolation', (event) => {
+      window.__violations.push(`${event.violatedDirective} blocked ${event.blockedURI}`);
+    });
+  });
+  const requestId = 'b0000000-0000-0000-0000-000000000001';
+  const memberId = 'c0000000-0000-0000-0000-000000000001';
+  const beginner = 'd0000000-0000-0000-0000-000000000001';
+  const intermediate = 'd0000000-0000-0000-0000-000000000002';
+  const member = {
+    memberId,
+    name: 'CSP Member',
+    email: 'csp-member@example.com',
+    phone: '+351 910 000 000',
+    levelId: beginner,
+    levelName: 'Beginner',
+    roles: ['MEMBER'],
+    status: 'ACTIVE',
+    anonymised: false,
+    accountActivated: false,
+    joinedAt: new Date(Date.now() - 30 * HOUR).toISOString(),
+    levelChanges: [],
+    subscriptions: [],
+    subscriptionsTruncated: false,
+  };
+  await page.route('**/api/v1/**', async (route) => {
+    const { pathname } = new URL(route.request().url());
+    const method = route.request().method();
+    const json = (body: unknown, status = 200) =>
+      route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (pathname.endsWith('/auth/refresh')) {
+      return json({ accessToken: 'test-csp-token-fixture', tokenType: 'Bearer', expiresIn: 600 });
+    }
+    if (pathname.endsWith('/api/v1/me')) {
+      return json({ memberId, associationId: SESSION_ID, roles: ['MEMBER', 'ADMIN'] });
+    }
+    if (pathname.endsWith('/api/v1/join-requests')) {
+      return json([
+        {
+          id: requestId,
+          name: 'CSP Visitor',
+          email: 'csp-visitor@example.com',
+          phone: '+351 910 000 001',
+          status: 'PENDING',
+          requestedAt: new Date(Date.now() - HOUR).toISOString(),
+        },
+      ]);
+    }
+    if (pathname.endsWith('/api/v1/members')) return json({ members: [member], truncated: false });
+    if (pathname.endsWith(`/api/v1/members/${memberId}`) && method === 'GET') return json(member);
+    if (pathname.endsWith('/api/v1/levels')) {
+      return json({
+        entryLevelId: beginner,
+        levels: [
+          { id: beginner, name: 'Beginner', rank: 1 },
+          { id: intermediate, name: 'Intermediate', rank: 2 },
+        ],
+      });
+    }
+    if (pathname.endsWith('/activation-links')) return json({ status: 'RECEIVED' }, 202);
+    return json({ code: 'NOT_FOUND', message: 'Not found' }, 404);
+  });
+
+  // Act: the Admin home, the join requests (approve and reject dialogs: open, close), the member list and the member
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { level: 1, name: 'Admin' })).toBeVisible();
+  await page.getByRole('link', { name: /^Join requests/ }).tap();
+  const card = page.getByRole('article', { name: 'CSP Visitor' });
+  await expect(card).toBeVisible();
+  await card.getByRole('button', { name: /^Approve/ }).tap();
+  const approve = page.getByRole('alertdialog', { name: 'Approve CSP Visitor?' });
+  await expect(approve).toContainText('emails them an activation link');
+  await expect(page.locator('body')).toHaveCSS('overflow', 'hidden');
+  await approve.getByRole('button', { name: 'Not now' }).tap();
+  await expect(approve).toBeHidden();
+  await card.getByRole('button', { name: /^Reject/ }).tap();
+  const reject = page.getByRole('dialog', { name: 'Reject CSP Visitor?' });
+  await reject.getByLabel('Reason (optional)').fill('Not this season');
+  await reject.getByRole('button', { name: 'Not now' }).tap();
+  await expect(reject).toBeHidden();
+
+  await page.goto('/admin/members?q=csp');
+  await expect(page.getByLabel('Search members')).toHaveValue('csp');
+  await page.getByRole('link', { name: 'CSP Member' }).tap();
+  await expect(page.getByRole('heading', { level: 1, name: 'CSP Member' })).toBeVisible();
+  await page.getByLabel('New level').selectOption(intermediate);
+  await page.getByRole('button', { name: 'Make administrator' }).tap();
+  const admin = page.getByRole('alertdialog', { name: 'Make CSP Member an administrator?' });
+  await expect(admin).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(admin).toBeHidden();
+  await page.getByRole('button', { name: 'Deactivate member' }).tap();
+  const deactivate = page.getByRole('alertdialog', { name: 'Deactivate CSP Member?' });
+  await expect(deactivate).toContainText('future bookings will be cancelled');
+  await deactivate.getByRole('button', { name: 'Keep active' }).tap();
+  await expect(deactivate).toBeHidden();
+  await page.getByRole('button', { name: 'Resend activation link' }).tap();
+  await expect(page.getByText(/a new activation link is on its way/)).toBeVisible();
+
+  // Assert: the policy was in force, and nothing was blocked
+  expect(await page.evaluate(() => window.__violations)).toEqual([]);
+  expect(consoleErrors.filter((text) => /content security policy/i.test(text))).toEqual([]);
+});

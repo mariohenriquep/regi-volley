@@ -14,12 +14,17 @@ export interface Me {
 
 export const meKey = ['me'] as const;
 
-/** The roles of a `GET /me` answer, once each, in the order the API gave them. Anything unreadable is no role. */
-export function toMe(raw: components['schemas']['MeResponse']): Me {
-  const roles = Array.isArray(raw.roles)
-    ? raw.roles.filter((role): role is Role => KNOWN_ROLES.has(role))
+/** The role words of an answer, once each, in the order the API gave them. Anything unreadable is no role. */
+export function toRoles(raw: unknown): Role[] {
+  const roles = Array.isArray(raw)
+    ? raw.filter((role): role is Role => typeof role === 'string' && KNOWN_ROLES.has(role))
     : [];
-  return { roles: [...new Set(roles)] };
+  return [...new Set(roles)];
+}
+
+/** The roles of a `GET /me` answer. */
+export function toMe(raw: components['schemas']['MeResponse']): Me {
+  return { roles: toRoles(raw.roles) };
 }
 
 /**

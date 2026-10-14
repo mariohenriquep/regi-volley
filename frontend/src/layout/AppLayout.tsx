@@ -4,12 +4,14 @@ import {
   CalendarDaysIcon,
   ClipboardCheckIcon,
   HistoryIcon,
+  ShieldCheckIcon,
   TicketIcon,
   UserRoundIcon,
 } from 'lucide-react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { useAuth } from '@/auth/context';
 import { ErrorAlert } from '@/components/ErrorAlert';
+import { useIsAdmin } from '@/features/admin/useIsAdmin';
 import { useIsStaff } from '@/features/coaching/useIsStaff';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,12 +39,28 @@ const COACHING = {
   end: false,
 } as const;
 
+/** Only for administrators: shown when `GET /me` lists ADMIN (see `useIsAdmin`). */
+const ADMIN = {
+  to: '/admin',
+  label: 'Admin',
+  icon: ShieldCheckIcon,
+  end: false,
+} as const;
+
+/** Tailwind needs the whole class name in the source, so each bar size is spelled out. */
+const BAR_COLUMNS: Record<number, string> = {
+  3: 'grid-cols-3',
+  4: 'grid-cols-4',
+  5: 'grid-cols-5',
+};
+
 export function AppLayout() {
   const { status, logout, logoutAll } = useAuth();
   const signOutEverywhere = useMutation({ mutationFn: logoutAll });
   const signedIn = status === 'authenticated';
   const { settled, staff } = useIsStaff();
-  const sections = staff ? [...SECTIONS, COACHING] : SECTIONS;
+  const { admin } = useIsAdmin();
+  const sections = [...SECTIONS, ...(staff ? [COACHING] : []), ...(admin ? [ADMIN] : [])];
   const { reset: clearSignOutError } = signOutEverywhere;
   // A failure belongs to the session it happened in: forget it when the user changes (sign-out, sign-in, session end).
   useEffect(() => {
@@ -113,7 +131,7 @@ export function AppLayout() {
           aria-label="Sections"
           className={cn(
             'fixed inset-x-0 bottom-0 z-40 grid border-t bg-background pb-[env(safe-area-inset-bottom)]',
-            staff ? 'grid-cols-4' : 'grid-cols-3',
+            BAR_COLUMNS[sections.length],
           )}
         >
           {sections.map(({ to, label, icon: Icon, end }) => (

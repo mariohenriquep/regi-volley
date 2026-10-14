@@ -1,6 +1,12 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
-import { emailedToken } from './mailpit';
-import { seedCoaching, seedMemberWithSessions, type SeededCoaching } from './seed';
+import { emailedToken, emailedTokens } from './mailpit';
+import {
+  seedAdmin,
+  seedCoaching,
+  seedMemberWithSessions,
+  type SeededAdmin,
+  type SeededCoaching,
+} from './seed';
 
 const PASSWORD = 'correct horse battery staple 42';
 const NEW_PASSWORD = 'a different long passphrase 43';
@@ -63,8 +69,9 @@ async function activateAndSignIn(
 // Registration is limited to 3 an hour per address, so one registration serves the whole journey: the founder
 // created and activated in the first test is the member who forgets the password in the second.
 test.describe.configure({ mode: 'serial' });
-let founder = { email: '', password: PASSWORD, shortName: '' };
+let founder = { email: '', password: PASSWORD, shortName: '', visitorEmail: '' };
 let coaching: SeededCoaching;
+let admin: SeededAdmin;
 
 test('a founder registers through the UI, activates by the emailed link and signs in; a visitor finds the page and asks to join', async ({
   page,
@@ -73,7 +80,8 @@ test('a founder registers through the UI, activates by the emailed link and sign
   const suffix = unique();
   const shortName = `e2e-${suffix}`;
   const founderEmail = `founder-${suffix}@example.com`;
-  founder = { email: founderEmail, password: PASSWORD, shortName };
+  const visitorEmail = `visitor-${suffix}@example.com`;
+  founder = { email: founderEmail, password: PASSWORD, shortName, visitorEmail };
 
   // Register an association through the form
   await page.goto('/');
@@ -128,7 +136,7 @@ test('a founder registers through the UI, activates by the emailed link and sign
   await page.getByRole('link', { name: 'Want to try it?' }).click();
   await expect(page.getByRole('heading', { name: 'Request to join' })).toBeVisible();
   await page.getByLabel('Name', { exact: true }).fill('Rita Visitor');
-  await page.getByLabel('Email').fill(`visitor-${suffix}@example.com`);
+  await page.getByLabel('Email').fill(visitorEmail);
   await page.getByLabel('Phone').fill('961234567');
   await page.getByRole('checkbox', { name: /I agree/ }).click();
   await page.getByRole('button', { name: 'Send request' }).click();
@@ -261,9 +269,10 @@ test.describe('a member on a phone', () => {
     await expect(page.getByText('No-show', { exact: true })).toBeVisible();
     await expect(page.getByText(/\d of 3 no-shows this month/)).toBeVisible();
 
-    // The coach journey's data, made with the founder's login of the seed (sign-in is limited per address). It books two
-    // sessions, so it comes after the credit checks above; the sign-out below ends that login.
+    // The coach and administrator journeys' data, made with the founder's login of the seed (sign-in is limited per address).
+    // The coach's data books two sessions, so it comes after the credit checks above; the sign-out below ends that login.
     coaching = await seedCoaching(request, headers, suffix, shortName);
+    admin = await seedAdmin(request, headers, suffix, shortName);
 
     // Sign out everywhere is in the account menu
     await page.getByRole('button', { name: 'Account' }).tap();
@@ -374,6 +383,112 @@ test.describe('a coach on a phone', () => {
     ]);
     await page.goto('/coaching');
     await expect(page.getByText('Coaching is for coaches and administrators.')).toBeVisible();
+  });
+});
+
+test.describe('an administrator on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('approves a join request, then changes the new member’s level and roles, resends the activation link and deactivates them', async ({
+    page,
+    request,
+  }) => {
+    // Arrange: a second administrator activates her account; the visitor of the first test is still waiting (see seed.ts)
+    const visitorEmail = founder.visitorEmail;
+    await activateAndSignIn(page, request, admin.adminEmail, PASSWORD);
+
+    // Act: the section is in the bar for an administrator, and the home links the two screens
+    await page
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('link', { name: 'Admin' })
+      .tap();
+    await expect(page.getByRole('heading', { level: 1, name: 'Admin' })).toBeVisible();
+    await page.getByRole('link', { name: /^Join requests/ }).tap();
+
+    // The request lists what the visitor sent; approving asks first and says what happens
+    const request1 = page.getByRole('article', { name: 'Rita Visitor' });
+    await expect(request1).toContainText(visitorEmail);
+    await expect(request1).toContainText('961234567');
+    await request1.getByRole('button', { name: /^Approve/ }).tap();
+    const approve = page.getByRole('alertdialog', { name: 'Approve Rita Visitor?' });
+    await expect(approve).toContainText('creates the member at the entry level');
+    await approve.getByRole('button', { name: 'Approve request' }).tap();
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Rita Visitor is now a member' }),
+    ).toBeVisible();
+    await expect(page.getByText('No requests are waiting')).toBeVisible();
+    const firstLink = (await emailedTokens(request, visitorEmail, '/activate'))[0] ?? '';
+    expect(firstLink).not.toBe('');
+
+    // The new member is found by searching (the search is in the address) and opened
+    await page.getByRole('link', { name: 'Back to Admin' }).tap();
+    await page.getByRole('link', { name: /^Members/ }).tap();
+    await page.getByLabel('Search members').fill('rita');
+    await expect(page).toHaveURL(/\/admin\/members\?q=rita$/);
+    const row = page.getByRole('article', { name: 'Rita Visitor' });
+    await expect(row).toContainText('Not activated');
+    await expect(row).toContainText('Beginner');
+    await expect(page.getByRole('article')).toHaveCount(1);
+    await row.getByRole('link', { name: 'Rita Visitor' }).tap();
+    await expect(page.getByRole('heading', { level: 1, name: 'Rita Visitor' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Contact' })).toContainText(visitorEmail);
+    await expect(page.getByRole('region', { name: 'Account' })).toContainText('Not activated yet');
+
+    // The level: a member starts at the entry level; the change is in the history with who made it
+    await expect(page.getByRole('region', { name: 'Level' })).toContainText('Beginner');
+    await page.getByLabel('New level').selectOption({ label: 'Intermediate' });
+    await page.getByRole('button', { name: 'Change level' }).tap();
+    await expect(page.getByRole('status')).toContainText('Rita Visitor is now Intermediate.');
+    const history = page.getByRole('list', { name: 'Level history' });
+    await expect(history).toContainText('Beginner → Intermediate');
+    await expect(history).toContainText('Ada Admin');
+
+    // Roles: grant COACH, then take it away again
+    await page.getByRole('button', { name: 'Make coach' }).tap();
+    await expect(page.getByRole('status')).toContainText('Rita Visitor can now coach.');
+    await expect(page.getByRole('button', { name: 'Remove coach role' })).toBeVisible();
+    await page.getByRole('button', { name: 'Remove coach role' }).tap();
+    await expect(page.getByRole('status')).toContainText(
+      'The coach role was removed from Rita Visitor.',
+    );
+    await expect(page.getByRole('button', { name: 'Make coach' })).toBeVisible();
+
+    // The administrator role asks first; the API keeps the last administrator (there are two here, so only the question is checked)
+    await page.getByRole('button', { name: 'Make administrator' }).tap();
+    const makeAdmin = page.getByRole('alertdialog', {
+      name: 'Make Rita Visitor an administrator?',
+    });
+    await expect(makeAdmin).toBeVisible();
+    await makeAdmin.getByRole('button', { name: 'Not now' }).tap();
+    await expect(makeAdmin).toBeHidden();
+
+    // A new activation link is mailed to the account's address and replaces the first
+    await page.getByRole('button', { name: 'Resend activation link' }).tap();
+    await expect(page.getByRole('status')).toContainText('a new activation link is on its way');
+    await expect
+      .poll(async () => (await emailedTokens(request, visitorEmail, '/activate')).length, {
+        message: 'a second activation link in Mailpit',
+        timeout: 20_000,
+      })
+      .toBe(2);
+    expect((await emailedTokens(request, visitorEmail, '/activate'))[0]).not.toBe(firstLink);
+
+    // Deactivating asks first and says what it does; the member is inactive afterwards and nothing more can be sent
+    await page.getByRole('button', { name: 'Deactivate member' }).tap();
+    const deactivate = page.getByRole('alertdialog', { name: 'Deactivate Rita Visitor?' });
+    await expect(deactivate).toContainText('future bookings will be cancelled');
+    await deactivate.getByRole('button', { name: 'Deactivate' }).tap();
+    await expect(page.getByRole('status')).toContainText('Rita Visitor was deactivated.');
+    await expect(page.getByText('Inactive', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Deactivate member' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Resend activation link' })).toHaveCount(0);
+
+    // Assert: the list filters by status
+    await page.getByRole('link', { name: 'Back to Members' }).tap();
+    await page.getByLabel('Status').selectOption('INACTIVE');
+    await expect(page).toHaveURL(/status=INACTIVE/);
+    await expect(page.getByRole('article', { name: 'Rita Visitor' })).toContainText('Inactive');
+    await expect(page.getByRole('article', { name: 'Ada Admin' })).toHaveCount(0);
   });
 });
 

@@ -738,7 +738,7 @@ or a version.
 | `src/api/` | `schema.gen.ts` (generated, never edited), `errors.ts` (`ApiError`, `toApiError`, `unwrap`) |
 | `src/auth/` | `session.ts` (tokens, refresh, the authenticated client), `AuthProvider` + `useAuth`, route guards |
 | `src/app/` | providers, the `QueryClient`, the route table |
-| `src/features/` | feature folders: `association/` (public page, join, register), `account/` (activate and reset password, forgot password), `sessions/` (the week, book, cancel), `plan/` (My plan, the credit note), `history/` and `coaching/` (the staff's week, the roster and attendance, cancel a session, change the seats) |
+| `src/features/` | feature folders: `association/` (public page, join, register), `account/` (activate and reset password, forgot password), `sessions/` (the week, book, cancel), `plan/` (My plan, the credit note), `history/` and `coaching/` (the staff's week, the roster and attendance, cancel a session, change the seats), `admin/` (the administrator's screens: `joinRequests/`, `members/`; setup and payments follow) |
 | `src/pages/`, `src/layout/`, `src/components/` | the F1 screens (login, 404, privacy, the account-link loader), the shell (header, account menu, bottom bar), shared components (`QueryState`, `ErrorAlert`); `components/ui/` holds the shadcn/ui sources, `components/form/` the form kit (see *Screens*) |
 | `src/pwa/` | the service-worker update store, its "reload" notice and the registration glue |
 | `src/lib/` | small helpers (`fragment.ts`, `email.ts`, `privacy.ts`, `usePageTitle.ts`, `utils.ts`) |
@@ -955,6 +955,26 @@ and an *Account* menu (*Sign out*, *Sign out on all devices*) to signed-in membe
   the entry, the coaching list is not requested for it, the bar appears only after `/me` settles, a failure and an unknown role leave three
   entries, and a revoked role disappears when the page is back in front. The roster tests serve the roster alone and fail if the week list is asked for. `e2e-csp` also drives the coaching dialogs and the roster under the CSP.
 
+**Admin screens** (F5a, issue #49). Behind `RequireAuth`, for administrators; the shell shows *Admin* in the bar (a fifth entry, after *Coaching*) only when `GET /me` lists ADMIN (`useIsAdmin`, same rules as *Coaching*: display only, the bar waits for `/me`, a revoked role disappears when the page is back in front). Setup (F5b) and payments (F5c) will add links to the home and routes under `/admin`.
+
+| Route | Screen | API |
+|---|---|---|
+| `/admin` | the section's home: a link to each admin screen; a member who types the address gets "Administration is for administrators." | `GET /me` only |
+| `/admin/join-requests` | pending requests oldest first (name, email, phone, when asked, in Lisbon time); *Approve*, *Reject*; a note when the API's cap of 100 is reached | `GET /join-requests`, `POST /join-requests/{id}/approval`, `.../rejection` |
+| `/admin/members` | search (`?q=`, debounced) and status filter (`?status=`); level, role badges, status, "Not activated"; a notice when `truncated` | `GET /members?status=&q=` |
+| `/admin/members/:memberId` | contact, level (change, history), roles, account activation, subscriptions (read-only), deactivation | `GET /members/{id}`, `GET /levels`, `PUT /members/{id}/level`, `PUT` / `DELETE /members/{id}/roles/{role}`, `POST /members/{id}/deactivation`, `POST /members/{id}/activation-links` |
+
+- **Who sees what.** The lists answer 403 to anyone else and the screens then say "Administration is for administrators." (`forbidden.ts`); nothing is decided from the roles in `/me` except which entry to offer and the home's message.
+- **Confirm before consequences.** *Approve*, *Deactivate member* and giving or taking the administrator role are `alertdialog`s (`ConfirmDialog`: focus on the safe answer, the dialog stays open until the API has answered, so a refusal is read where the question was asked, with its request id). Approval says it "creates the member at the entry level and emails them an activation link"; deactivation says future bookings are cancelled (credits given back, waitlists move up), the member can no longer sign in or book, history is kept and the app cannot reactivate a member yet (no endpoint). *Reject* is a dialog with an optional reason (500 characters, the API's limit): the API stores it with the request and does not put it in the applicant's email, and the dialog says so. Coach is granted and revoked with one tap, no question. MEMBER is every member's role and is not offered (the API would accept granting it and refuses revoking a member's last role with 422).
+- **Last administrator.** Revoking ADMIN from, or deactivating, the last active administrator is a 409 `CONFLICT`: its message ("The association must keep at least one active administrator") is shown verbatim in the dialog, with the reference. Refusals on the admin operations carry no `reason` (only booking refusals do), so there is no advice table: the message is all there is. A role change refused on the page itself (revoking a member's last role, 422) shows in the Roles section.
+- **Outcomes in the API's words.** Approve: "<name> is now a member. An activation link was emailed to them." with a link to the new member (`memberId` of the answer). Deactivate: "N future bookings were cancelled", and when `failedSessionIds` is not empty a warning with the number of sessions and a *Cancel the remaining bookings* button, which repeats the call (the API retries exactly the sessions that failed; the mutation lives in the page body because the section with the first button is gone once the member is inactive). Resend: always "If <name> has not activated yet, a new activation link is on its way." (the 202 is uniform on purpose, P7); a 429 shows the wait. *Resend* is offered only to an active member whose `accountActivated` is false (an inactive member gets nothing from the API).
+- **Search in the address.** `?q=` and `?status=` hold the list's state, so reload, back and shared links agree; typing is written to the address (`replace`, no history entry per key) after a 300 ms pause, which is also when the API is asked (the previous list stays on screen meanwhile, `keepPreviousData`). A status the client does not know is "all". Opening a member passes the list's query string in navigation state and *Back to Members* returns to it; only a string starting with `?` is taken from that state.
+- **Level.** A native `<select>` (the platform picker; accessible and best on a phone) of `GET /levels` in the API's order with the entry level marked; *Change level* is enabled for a different choice and sends only `{levelId}`. "The new level applies to bookings made from now on" is the API's rule (RN-20), shown, not enforced. The history is shown newest first with who changed it (Lisbon time).
+- **Anonymised members** (RGPD erasure) are read-only: no contact, level form, roles, account or deactivation; the level history and subscriptions stay. The list never contains them (the API leaves them out).
+- **Money.** Subscriptions show "€paid of €price paid" from cents (`lib/money.ts`); the API names no currency and the product serves Portuguese associations, so euros are assumed.
+- **After an action** the member, the list and the pending requests are read again (also after a refusal); a role change also reads `/me` (it may be one's own); a deactivation also refreshes the booking screens it changes (`coaching`, `roster`, `sessions`, `plan`, `history`).
+- **Testing.** MSW tests per screen (navigation by role, lists, search and filter in the address, approve / reject, level, roles including the last-administrator refusal, deactivation including the partial failure, resend, anonymised, empty / error / 403 states); `e2e-csp` opens the approve, reject, administrator and deactivate dialogs and the level picker under the CSP; the E2E journey is in *Testing*.
+
 **Same origin.**
 - In development the Vite proxy forwards `/api` to `http://localhost:8080` with `changeOrigin: false`. The API then sees
   `Host: localhost:5173`, so the request is same-origin: Spring's CORS filter is not involved, and the cookie guard accepts
@@ -984,7 +1004,7 @@ and an *Account* menu (*Sign out*, *Sign out on all devices*) to signed-in membe
 `dangerouslySetInnerHTML`.
 **CSP verified against the dialogs.** `npm run e2e:csp` (`playwright.csp.config.ts`, `e2e-csp/`) serves the production build with the
 exact header below (`e2e-csp/server.mjs` reads it from this document), mocks the API with `page.route` (no backend, so it can run
-in CI) and drives the Book dialog, the Cancel dialog and the Account menu on a phone profile, failing on any
+in CI) and drives the Book dialog, the Cancel dialog, the coaching and admin dialogs and the Account menu on a phone profile, failing on any
 `securitypolicyviolation` or CSP console error. It found one: Radix modals lock the page scroll through `react-remove-scroll`,
 which injects a `<style>` element that `style-src 'self'` blocks. The policy was not loosened (a nonce needs a server-made header
 per response): `vite.config.ts` aliases `react-style-singleton` to `src/shims/react-style-singleton.ts`, which injects nothing,
@@ -1023,7 +1043,9 @@ positioning) is not an attribute and raises nothing.
   sessions are inserted with SQL, see the README: they have no HTTP route); a coach (activated from the emailed link) finds a session
   that started an hour ago, marks one attended and one no-show and sees the counts change, raises the seats of a full session and
   sees the waitlisted member move up (and a number below the confirmed refused on the field), cancels a session ahead with a
-  required reason, and a player sees no *Coaching*. It runs locally only for now; registration is limited to 3 an hour per address, and the journey
+  required reason, and a player sees no *Coaching*; an administrator (made by `seedAdmin`, so the founder's limited sign-ins are not spent
+  again) approves the visitor's pending join request, finds the new member by searching, changes their level, grants and revokes COACH,
+  resends the activation link (a second, different link in Mailpit) and deactivates them. It runs locally only for now; registration is limited to 3 an hour per address, and the journey
   registers once.
 - **CI:** the `frontend` job runs `npm ci --ignore-scripts`, `npm audit --omit=dev --audit-level=high`, `api:check`, lint, format
   check, typecheck, unit tests and build. The `sast` job adds Semgrep's `p/typescript` and `p/react` rule sets.
