@@ -3,12 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { expect, type APIRequestContext } from '@playwright/test';
 
 /**
- * Test data for the member journey. The admin screens do not exist yet (F5), so everything the API exposes is created
- * through the REST API as the founder (venue, group, plan, role, subscription, payment). Sessions are the exception:
+ * Test data for the journeys. The setup and payment screens do not exist yet (F5b, F5c), so everything the API exposes is
+ * created through the REST API as the founder (venue, group, plan, role, subscription, payment). Sessions are the exception:
  * `GenerateSessions` runs from the scheduler and has no HTTP route (docs/architecture.md section 14), and a dev-only
  * endpoint was rejected, so the sessions (and a past, attended one for the history) are inserted with SQL into the dev
  * Postgres of `docker compose` (container `regi-volley-postgres`; credentials from docker-compose.yml). Only ids and
- * timestamps made here go into the statements. Remove the SQL when a generation route or the admin screens exist.
+ * timestamps made here go into the statements. Remove the SQL when a generation route exists.
  */
 const POSTGRES_CONTAINER = process.env.E2E_POSTGRES_CONTAINER ?? 'regi-volley-postgres';
 
@@ -308,4 +308,26 @@ export async function seedCoaching(
     ...names,
     startsAt: { marking: hour - HOUR, cancelling: hour + 40 * HOUR, seats: hour + 64 * HOUR },
   };
+}
+
+export interface SeededAdmin {
+  adminEmail: string;
+}
+
+/**
+ * Data for the administrator's journey: a second administrator, so that the founder's sign-in (limited to 5 per 15 minutes per
+ * address, and the journey is at the limit) is not needed again. She joins through the public page, the founder approves her and
+ * grants ADMIN. The request she will approve is the visitor's of the first test, which is still pending.
+ */
+export async function seedAdmin(
+  request: APIRequestContext,
+  headers: Headers,
+  suffix: string,
+  shortName: string,
+): Promise<SeededAdmin> {
+  const adminEmail = `admin2-${suffix}@example.com`;
+  const adminId = await addMember(request, headers, shortName, 'Ada Admin', adminEmail);
+  const role = await request.put(`/api/v1/members/${adminId}/roles/ADMIN`, { headers });
+  expect(role.status(), await role.text()).toBe(200);
+  return { adminEmail };
 }

@@ -23,7 +23,7 @@ export const routes: RouteObject[] = [
       {
         errorElement: <RouteError />,
         children: [
-          // The signed-in screens: the week (home), the plan, the history and, for staff, the coaching section.
+          // The signed-in screens: the week (home), the plan, the history and, for staff, the coaching section and, for administrators, the admin section.
           {
             element: <RequireAuth />,
             children: [
@@ -44,6 +44,32 @@ export const routes: RouteObject[] = [
                 lazy: async () => ({
                   Component: (await import('@/features/coaching/SessionRosterPage'))
                     .SessionRosterPage,
+                }),
+              },
+              {
+                path: 'admin',
+                lazy: async () => ({
+                  Component: (await import('@/features/admin/AdminPage')).AdminPage,
+                }),
+              },
+              {
+                path: 'admin/join-requests',
+                lazy: async () => ({
+                  Component: (await import('@/features/admin/joinRequests/JoinRequestsPage'))
+                    .JoinRequestsPage,
+                }),
+              },
+              {
+                path: 'admin/members',
+                lazy: async () => ({
+                  Component: (await import('@/features/admin/members/MembersPage')).MembersPage,
+                }),
+              },
+              {
+                path: 'admin/members/:memberId',
+                lazy: async () => ({
+                  Component: (await import('@/features/admin/members/MemberDetailPage'))
+                    .MemberDetailPage,
                 }),
               },
               {

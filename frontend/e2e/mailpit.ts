@@ -44,3 +44,27 @@ export async function emailedToken(
     .toBeTruthy();
   return token ?? '';
 }
+
+/**
+ * Every token of the links of `path` mailed to `address`, newest first. Unlike {@link emailedToken} it does not wait: use it
+ * after one mail is known to exist, to see whether another arrived (a resent activation link).
+ */
+export async function emailedTokens(
+  request: APIRequestContext,
+  address: string,
+  path: LinkPath,
+): Promise<string[]> {
+  const pattern = new RegExp(`${path}#token=([^\\s"<>]+)`);
+  const response = await request.get(`${MAILPIT}/api/v1/search`, {
+    params: { query: `to:"${address}"` },
+  });
+  const { messages } = (await response.json()) as { messages: Summary[] };
+  const tokens: string[] = [];
+  for (const { ID } of messages) {
+    const message = await request.get(`${MAILPIT}/api/v1/message/${ID}`);
+    const { Text } = (await message.json()) as { Text: string };
+    const match = pattern.exec(Text);
+    if (match?.[1]) tokens.push(decodeURIComponent(match[1]));
+  }
+  return tokens;
+}

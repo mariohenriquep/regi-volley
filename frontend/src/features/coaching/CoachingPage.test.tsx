@@ -60,9 +60,12 @@ describe('the Coaching section in the navigation', () => {
       .getAllByRole('link')
       .map((link) => link.textContent);
 
-  it.each([['COACH' as const], ['ADMIN' as const]])(
+  it.each([
+    ['COACH' as const, ['Sessions', 'My plan', 'History', 'Coaching']],
+    ['ADMIN' as const, ['Sessions', 'My plan', 'History', 'Coaching', 'Admin']],
+  ])(
     'is offered to a member holding %s, from the roles in /me, without asking the coaching list',
-    async (role) => {
+    async (role, expectedSections) => {
       // Arrange
       const { seen, record } = recorder();
       server.use(
@@ -85,7 +88,7 @@ describe('the Coaching section in the navigation', () => {
         'href',
         '/coaching',
       );
-      expect(sections()).toEqual(['Sessions', 'My plan', 'History', 'Coaching']);
+      expect(sections()).toEqual(expectedSections);
       expect(seen).toHaveLength(0);
     },
   );

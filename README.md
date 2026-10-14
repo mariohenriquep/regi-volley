@@ -68,7 +68,7 @@ From `frontend/`:
 | `npm run api:generate` | regenerates `src/api/schema.gen.ts` from `docs/api/openapi.json`; commit it with the contract |
 | `npm run api:check` | fails when the generated client is stale (CI runs it) |
 | `npm run e2e` | the Playwright journeys against the real backend (below) |
-| `npm run e2e:csp` | builds, serves `dist/` with the documented Content-Security-Policy and checks the dialogs, the coaching screens and the account menu raise no violation (API mocked; no backend needed) |
+| `npm run e2e:csp` | builds, serves `dist/` with the documented Content-Security-Policy and checks the dialogs, the coaching and admin screens and the account menu raise no violation (API mocked; no backend needed) |
 
 **Trying the app without curl.** With the three commands above running, open <http://localhost:5173>:
 
@@ -77,9 +77,13 @@ From `frontend/`:
 | Register an association | `/register` | fill the form (levels: first = entry level) and submit; the activation mail lands in Mailpit (<http://localhost:8025>) |
 | Activate your account | `/activate#token=...` | open the link from the mail, choose a password, then sign in |
 | Sign in / sign out | `/login` | the founder's email and password; sign out is in the *Account* menu of the header (with *Sign out on all devices*) |
-| Sessions (home) | `/` | this week's sessions by day (Lisbon time), seats, waitlist and your own status; venue and your waitlist place; *Book* then *Confirm booking*; *Cancel* (it says whether cancelling now is free, from the API's deadline); previous/next week. Needs a group with sessions and a paid plan (no admin screens yet: see the E2E note below) |
+| Sessions (home) | `/` | this week's sessions by day (Lisbon time), seats, waitlist and your own status; venue and your waitlist place; *Book* then *Confirm booking*; *Cancel* (it says whether cancelling now is free, from the API's deadline); previous/next week. Needs a group with sessions and a paid plan (the setup and payment screens do not exist yet: see the E2E note below) |
 | Coaching (coaches and administrators) | `/coaching` | the staff's week by day: status, "N of M confirmed", waitlist, attended / no-show / still to mark; *Mark attendance* or *Roster*, *Change seats*, *Cancel session* as the API allows (the entry is shown only when `GET /me` lists COACH or ADMIN); previous/next week, past weeks included |
 | Roster and attendance | `/coaching/sessions/<id>` | seats and waitlist in order; *Attended* / *No-show* per person (or *Mark everyone as attended*) and one *Save attendance*; change the seats (shows who moved up) and cancel the session with a reason |
+| Admin (administrators) | `/admin` | the home of the section, with a link to each admin screen (the entry is shown only when `GET /me` lists ADMIN; setup and payments join it later) |
+| Join requests | `/admin/join-requests` | the pending requests, oldest first (name, email, phone, when asked); *Approve* (creates the member at the entry level and emails an activation link) and *Reject* (optional reason) both ask first |
+| Members | `/admin/members` | search by name or email (`?q=`, written to the address once typing pauses) and filter by status (`?status=`); level, role badges, status and a "Not activated" badge per member; a notice when the API cut the list |
+| One member | `/admin/members/<id>` | contact, level and who changed it before, roles, whether the account is activated, subscriptions (read-only); change the level, give or take the coach and administrator roles, *Resend activation link*, *Deactivate member* (asks first); an erased (anonymised) member is read-only |
 | My plan | `/me/plan` | your subscriptions: plan, validity, credits or sessions left, payment status and the overdue warning |
 | History | `/me/history` | your last three months, newest first (group and venue), and this month's no-shows with the near-the-limit warning |
 | Forgot password | `/forgot-password` | request a link (the answer is the same for any address), open it from Mailpit, choose a new password |
@@ -102,7 +106,7 @@ books and cancels again, checks *My plan*, then checks *History* and signs out e
 inserted with SQL**: the generation has no HTTP route (it is the scheduler's, `docs/architecture.md` section 14) and a dev-only
 endpoint was rejected. The SQL goes through `docker exec regi-volley-postgres psql` (credentials from `docker-compose.yml`;
 `E2E_POSTGRES_CONTAINER` overrides the container name) and only inserts rows with ids and timestamps the test made. Replace it
-when a generation route or the admin screens (F5) exist.
+when a generation route exists.
 
 To run the journey beside the usual dev servers, give it its own ports: start the API with `SERVER_PORT=8081
 WEB_ORIGIN=http://localhost:5174` (plus the SMTP variables) and run `WEB_PORT=5174 API_PROXY_TARGET=http://localhost:8081 npm run e2e`.
@@ -111,8 +115,12 @@ session that started an hour ago (one attended, one no-show; the counts change),
 member moves up; a number below the confirmed is refused on the field), cancels a session ahead with a reason, and a player signs in
 and finds no *Coaching*. Its data is in `seedCoaching` (`e2e/seed.ts`): the coach and the player join through the public page, and
 the started session and the single-seat session are SQL, like the others.
-Registration is limited to 3 per hour per address, a join request to 5 per hour per IP (a run files 4) and sign-in to 5 per 15
-minutes, and one run uses each once, so a second run within the hour gets 429: restart the API (the limiter is in memory).
+A sixth step runs the administrator journey on a phone: a second administrator (made by `seedAdmin`: she joins, the founder approves her
+and grants ADMIN, so the founder does not sign in again) opens *Admin*, approves the pending request of the visitor of the first step,
+finds the new member by searching, changes their level (the history shows who), grants and revokes COACH, resends the activation link
+(Mailpit gets a second, different link) and deactivates them; the list then filters by *Inactive*.
+Registration is limited to 3 per hour per address, a join request to 5 per hour per IP (a run files 5) and sign-in to 5 per 15
+minutes per address, and one run uses each once, so a second run within the hour gets 429: restart the API (the limiter is in memory).
 
 **Production** is same-origin too (threat model D-7b): one reverse proxy serves `frontend/dist` (with `index.html` as the
 fallback for unknown paths) and forwards `/api` to the API, and `WEB_ORIGIN` is set to that origin. Deployment comes with
