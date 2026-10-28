@@ -44,6 +44,12 @@ public class PlanRepositoryAdapter implements PlanRepository {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<Plan> findAllByAssociation(AssociationId associationId) {
+        return plans.findAllByAssociation(associationId.value()).stream().map(PlanPersistenceMapper::toDomain).toList();
+    }
+
+    @Override
     @Transactional
     public Plan save(Plan plan) {
         return WriteSupport.translatingConflicts(() -> PlanPersistenceMapper.toDomain(

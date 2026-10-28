@@ -19,11 +19,14 @@ import com.regivolley.api.domain.model.valueobject.MemberId;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 
 
@@ -118,6 +121,13 @@ final class InMemoryCredentialStores {
         @Override
         public Optional<Membership> findByMember(AssociationId associationId, MemberId memberId) {
             return byId.values().stream().filter(m -> m.associationId().equals(associationId) && m.memberId().equals(memberId)).findFirst();
+        }
+
+        @Override
+        public Set<MemberId> findConfirmedMemberIds(AssociationId associationId, Collection<MemberId> memberIds) {
+            return byId.values().stream()
+                    .filter(m -> m.associationId().equals(associationId) && m.isConfirmed() && memberIds.contains(m.memberId()))
+                    .map(Membership::memberId).collect(Collectors.toSet());
         }
 
         @Override

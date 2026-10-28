@@ -5,6 +5,7 @@ import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.PaymentId;
 import com.regivolley.api.domain.model.valueobject.SubscriptionId;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,6 +19,12 @@ public interface PaymentRepository {
 
     /** Every payment and reversal of the subscription, oldest first (recorded_at, then id). */
     List<Payment> findBySubscription(AssociationId associationId, SubscriptionId subscriptionId);
+
+    /**
+     * Every payment and reversal of these subscriptions (unknown or foreign ids are simply absent), oldest first (recorded_at, then id):
+     * one query for a list of subscriptions instead of one each.
+     */
+    List<Payment> findBySubscriptions(AssociationId associationId, Collection<SubscriptionId> subscriptionIds);
 
     /**
      * Stores a new payment (or reversal) and returns it. An id that already exists is an error, never an overwrite;

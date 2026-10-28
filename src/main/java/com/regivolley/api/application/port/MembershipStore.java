@@ -5,8 +5,10 @@ import com.regivolley.api.domain.model.valueobject.AssociationId;
 import com.regivolley.api.domain.model.valueobject.MemberId;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -23,6 +25,12 @@ public interface MembershipStore {
     Optional<Membership> findByUserAndAssociation(UUID userId, AssociationId associationId);
 
     Optional<Membership> findByMember(AssociationId associationId, MemberId memberId);
+
+    /**
+     * Which of these members of the association have a CONFIRMED membership, i.e. have activated their account (the others are
+     * PENDING or have no membership); one query for a whole list. Another association's member is simply absent.
+     */
+    Set<MemberId> findConfirmedMemberIds(AssociationId associationId, Collection<MemberId> memberIds);
 
     Membership insert(Membership membership);
 

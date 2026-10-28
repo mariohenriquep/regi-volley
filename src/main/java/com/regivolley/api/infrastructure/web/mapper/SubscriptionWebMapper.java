@@ -2,6 +2,7 @@ package com.regivolley.api.infrastructure.web.mapper;
 
 import com.regivolley.api.application.command.Actor;
 import com.regivolley.api.application.command.AssignPlanCommand;
+import com.regivolley.api.application.command.ListSubscriptionPaymentsQuery;
 import com.regivolley.api.application.command.ListSubscriptionsByPaymentStatusQuery;
 import com.regivolley.api.application.command.MarkSubscriptionOverdueCommand;
 import com.regivolley.api.application.command.MyPlanQuery;
@@ -9,9 +10,11 @@ import com.regivolley.api.application.command.RecordPaymentCommand;
 import com.regivolley.api.application.command.ReversePaymentCommand;
 import com.regivolley.api.application.result.MyPlan;
 import com.regivolley.api.application.result.MySubscription;
+import com.regivolley.api.application.result.PaymentLine;
 import com.regivolley.api.application.result.PaymentRecorded;
 import com.regivolley.api.application.result.PaymentReversed;
 import com.regivolley.api.application.result.SubscriptionPaymentEntry;
+import com.regivolley.api.application.result.SubscriptionPayments;
 import com.regivolley.api.domain.model.entity.Payment;
 import com.regivolley.api.domain.model.entity.Subscription;
 import com.regivolley.api.domain.model.valueobject.MemberId;
@@ -30,6 +33,7 @@ import com.regivolley.api.infrastructure.web.dto.PaymentStatusName;
 import com.regivolley.api.infrastructure.web.dto.PaymentReversedResponse;
 import com.regivolley.api.infrastructure.web.dto.RecordPaymentRequest;
 import com.regivolley.api.infrastructure.web.dto.SubscriptionPaymentEntryResponse;
+import com.regivolley.api.infrastructure.web.dto.SubscriptionPaymentsResponse;
 import com.regivolley.api.infrastructure.web.dto.SubscriptionResponse;
 
 import java.time.LocalDate;
@@ -62,6 +66,24 @@ public final class SubscriptionWebMapper {
     public static ListSubscriptionsByPaymentStatusQuery listQuery(Actor actor, PaymentStatusName status, LocalDate endingFrom,
                                                                   LocalDate endingTo) {
         return new ListSubscriptionsByPaymentStatusQuery(actor, toDomain(status), endingFrom, endingTo);
+    }
+
+    public static ListSubscriptionPaymentsQuery paymentsQuery(Actor actor, UUID subscriptionId) {
+        return new ListSubscriptionPaymentsQuery(actor, SubscriptionId.of(subscriptionId));
+    }
+
+    public static SubscriptionPaymentsResponse toResponse(SubscriptionPayments payments) {
+        Subscription subscription = payments.subscription();
+        return new SubscriptionPaymentsResponse(subscription.id().value(), subscription.paymentStatus().name(),
+                subscription.price().cents(), payments.paid().cents(), payments.outstanding().cents(),
+                payments.payments().stream().map(SubscriptionWebMapper::toView).toList());
+    }
+
+    private static SubscriptionPaymentsResponse.PaymentLineView toView(PaymentLine line) {
+        Payment payment = line.payment();
+        return new SubscriptionPaymentsResponse.PaymentLineView(payment.id().value(), payment.amount().cents(), payment.paidOn(),
+                payment.method().name(), payment.recordedBy().value(), line.recordedByName().orElse(null), payment.recordedAt(),
+                payment.reversalOf().map(PaymentId::value).orElse(null));
     }
 
     public static MyPlanQuery myPlanQuery(Actor actor) {

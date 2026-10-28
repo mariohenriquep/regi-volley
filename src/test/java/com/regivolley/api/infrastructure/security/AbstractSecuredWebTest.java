@@ -21,11 +21,18 @@ import com.regivolley.api.application.usecase.EditPlanUseCase;
 import com.regivolley.api.application.usecase.EditTrainingGroupUseCase;
 import com.regivolley.api.application.usecase.EditVenueUseCase;
 import com.regivolley.api.application.usecase.GetMyRolesUseCase;
+import com.regivolley.api.application.usecase.GetMemberDetailUseCase;
 import com.regivolley.api.application.usecase.GetSessionRosterUseCase;
 import com.regivolley.api.application.usecase.GrantRoleUseCase;
 import com.regivolley.api.application.usecase.ListBookableSessionsUseCase;
 import com.regivolley.api.application.usecase.ListCoachingSessionsUseCase;
+import com.regivolley.api.application.usecase.ListLevelsUseCase;
+import com.regivolley.api.application.usecase.ListMembersUseCase;
+import com.regivolley.api.application.usecase.ListPlansUseCase;
+import com.regivolley.api.application.usecase.ListSubscriptionPaymentsUseCase;
 import com.regivolley.api.application.usecase.ListSubscriptionsByPaymentStatusUseCase;
+import com.regivolley.api.application.usecase.ListTrainingGroupsUseCase;
+import com.regivolley.api.application.usecase.ListVenuesUseCase;
 import com.regivolley.api.application.usecase.MarkAttendanceUseCase;
 import com.regivolley.api.application.usecase.MarkSubscriptionOverdueUseCase;
 import com.regivolley.api.application.usecase.MemberHistoryUseCase;
@@ -183,6 +190,21 @@ public abstract class AbstractSecuredWebTest {
     protected GetPublicAssociationUseCase getPublicAssociationUseCase;
     @MockitoBean
     protected ListPendingJoinRequestsUseCase listPendingJoinRequestsUseCase;
+    // The administrator's read endpoints (issue #49).
+    @MockitoBean
+    protected ListMembersUseCase listMembersUseCase;
+    @MockitoBean
+    protected GetMemberDetailUseCase getMemberDetailUseCase;
+    @MockitoBean
+    protected ListLevelsUseCase listLevelsUseCase;
+    @MockitoBean
+    protected ListVenuesUseCase listVenuesUseCase;
+    @MockitoBean
+    protected ListTrainingGroupsUseCase listTrainingGroupsUseCase;
+    @MockitoBean
+    protected ListPlansUseCase listPlansUseCase;
+    @MockitoBean
+    protected ListSubscriptionPaymentsUseCase listSubscriptionPaymentsUseCase;
 
     protected Association association;
     protected Member member;

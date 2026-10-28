@@ -123,6 +123,7 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
             row("POST /api/v1/join-requests/{requestId}/rejection", Caller.ADMIN, (own, other) -> "/api/v1/join-requests/" + other.rejectableRequestId() + "/rejection",
                     (own, other) -> "{\"reason\":\"no\"}"),
             // members
+            row("GET /api/v1/members/{memberId}", Caller.ADMIN, (own, other) -> "/api/v1/members/" + other.spare().memberId(), (own, other) -> NO_BODY),
             row("PUT /api/v1/members/{memberId}/level", Caller.ADMIN_OR_COACH, "member of another association", (own, other) -> "/api/v1/members/" + other.spare().memberId() + "/level",
                     (own, other) -> "{\"levelId\":\"" + own.secondLevelId() + "\"}", 404),
             row("PUT /api/v1/members/{memberId}/level", Caller.ADMIN_OR_COACH, "level of another association", (own, other) -> "/api/v1/members/" + own.spare().memberId() + "/level",
@@ -136,6 +137,7 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
             row("POST /api/v1/members/{memberId}/subscriptions", Caller.ADMIN, "plan of another association", (own, other) -> "/api/v1/members/" + own.spare().memberId() + "/subscriptions",
                     (own, other) -> "{\"planId\":\"" + other.planId() + "\",\"startDate\":\"2027-06-01\"}", 404),
             // subscriptions and payments
+            row("GET /api/v1/subscriptions/{subscriptionId}/payments", Caller.ADMIN, (own, other) -> "/api/v1/subscriptions/" + other.subscriptionId() + "/payments", (own, other) -> NO_BODY),
             row("POST /api/v1/subscriptions/{subscriptionId}/overdue-marking", Caller.ADMIN, (own, other) -> "/api/v1/subscriptions/" + other.subscriptionId() + "/overdue-marking", (own, other) -> NO_BODY),
             row("POST /api/v1/subscriptions/{subscriptionId}/payments", Caller.ADMIN, (own, other) -> "/api/v1/subscriptions/" + other.subscriptionId() + "/payments",
                     (own, other) -> "{\"amountCents\":100,\"paidOn\":\"2026-10-12\",\"method\":\"CASH\"}"),
@@ -143,7 +145,8 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
 
     /** Routes that take no id and show only the caller's own data: {@link #listsShowOnlyTheCallersOwnData} reads them. */
     private static final Set<String> LISTS = Set.of("GET /api/v1/sessions", "GET /api/v1/coaching/sessions", "GET /api/v1/join-requests", "GET /api/v1/subscriptions",
-            "GET /api/v1/subscriptions/export", "GET /api/v1/me/plan", "GET /api/v1/me/history");
+            "GET /api/v1/subscriptions/export", "GET /api/v1/me/plan", "GET /api/v1/me/history",
+            "GET /api/v1/members", "GET /api/v1/levels", "GET /api/v1/venues", "GET /api/v1/training-groups", "GET /api/v1/plans");
     /** Routes with no id of any other resource to point at (they act on the caller's own association or account). */
     private static final Map<String, String> NO_FOREIGN_ID = Map.of(
             "POST /api/v1/levels", "creates in the caller's association; the name is the only input",
@@ -273,7 +276,8 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
             }
         }
         for (String path : List.of("/api/v1/join-requests", "/api/v1/subscriptions?paymentStatus=PAID", "/api/v1/subscriptions/export?paymentStatus=PAID",
-                "/api/v1/coaching/sessions?weekOf=2026-10-14")) {
+                "/api/v1/coaching/sessions?weekOf=2026-10-14", "/api/v1/members", "/api/v1/members?status=ACTIVE&q=a", "/api/v1/levels", "/api/v1/venues",
+                "/api/v1/training-groups", "/api/v1/training-groups?includeArchived=true", "/api/v1/plans")) {
             MvcResult result = send(HttpMethod.GET, path, a.member().token());
             if (result.getResponse().getStatus() != 403) {
                 failures.add("GET " + path + ": a plain member got " + result.getResponse().getStatus());
@@ -296,18 +300,24 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
         // Arrange
         seed();
         List<String> foreignIds = List.of(b.sessionId(), b.bookingId(), b.groupId(), b.subscriptionId(), b.paymentId(), b.approvableRequestId(),
-                b.rejectableRequestId(), b.member().memberId(), b.spare().memberId(), b.adminId(), b.venueId(), b.planId());
+                b.rejectableRequestId(), b.member().memberId(), b.spare().memberId(), b.adminId(), b.venueId(), b.planId(),
+                b.entryLevelId(), b.secondLevelId(), b.thirdLevelId());
         List<String> failures = new ArrayList<>();
 
         // Act
-        Map<String, MvcResult> answers = Map.of(
-                "GET /api/v1/sessions", send(HttpMethod.GET, "/api/v1/sessions?weekOf=2026-10-14", a.member().token()),
-                "GET /api/v1/coaching/sessions", send(HttpMethod.GET, "/api/v1/coaching/sessions?weekOf=2026-10-14", a.adminToken()),
-                "GET /api/v1/join-requests", send(HttpMethod.GET, "/api/v1/join-requests", a.adminToken()),
-                "GET /api/v1/subscriptions", send(HttpMethod.GET, "/api/v1/subscriptions?paymentStatus=PENDING", a.adminToken()),
-                "GET /api/v1/subscriptions/export", send(HttpMethod.GET, "/api/v1/subscriptions/export?paymentStatus=PENDING", a.adminToken()),
-                "GET /api/v1/me/plan", send(HttpMethod.GET, "/api/v1/me/plan", a.member().token()),
-                "GET /api/v1/me/history", send(HttpMethod.GET, "/api/v1/me/history", a.member().token()));
+        Map<String, MvcResult> answers = Map.ofEntries(
+                list("GET /api/v1/sessions", "/api/v1/sessions?weekOf=2026-10-14", a.member().token()),
+                list("GET /api/v1/coaching/sessions", "/api/v1/coaching/sessions?weekOf=2026-10-14", a.adminToken()),
+                list("GET /api/v1/join-requests", "/api/v1/join-requests", a.adminToken()),
+                list("GET /api/v1/subscriptions", "/api/v1/subscriptions?paymentStatus=PENDING", a.adminToken()),
+                list("GET /api/v1/subscriptions/export", "/api/v1/subscriptions/export?paymentStatus=PENDING", a.adminToken()),
+                list("GET /api/v1/me/plan", "/api/v1/me/plan", a.member().token()),
+                list("GET /api/v1/me/history", "/api/v1/me/history", a.member().token()),
+                list("GET /api/v1/members", "/api/v1/members", a.adminToken()),
+                list("GET /api/v1/levels", "/api/v1/levels", a.adminToken()),
+                list("GET /api/v1/venues", "/api/v1/venues", a.adminToken()),
+                list("GET /api/v1/training-groups", "/api/v1/training-groups?includeArchived=true", a.adminToken()),
+                list("GET /api/v1/plans", "/api/v1/plans", a.adminToken()));
         for (Map.Entry<String, MvcResult> answer : answers.entrySet()) {
             String text = answer.getValue().getResponse().getContentAsString(StandardCharsets.UTF_8);
             if (answer.getValue().getResponse().getStatus() != 200) {
@@ -328,6 +338,16 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
         assertThat(body(answers.get("GET /api/v1/subscriptions"))).contains(a.subscriptionId());
         assertThat(answers.get("GET /api/v1/subscriptions/export").getResponse().getContentAsString(StandardCharsets.UTF_8)).contains(a.subscriptionId());
         assertThat(body(answers.get("GET /api/v1/me/plan"))).contains(a.subscriptionId());
+        assertThat((List<String>) com.jayway.jsonpath.JsonPath.read(body(answers.get("GET /api/v1/members")), "$.members[*].memberId"))
+                .containsExactlyInAnyOrder(a.adminId(), a.member().memberId(), a.spare().memberId());
+        assertThat(body(answers.get("GET /api/v1/levels"))).contains(a.entryLevelId()).contains(a.secondLevelId()).contains(a.thirdLevelId());
+        assertThat(body(answers.get("GET /api/v1/venues"))).contains(a.venueId());
+        assertThat(body(answers.get("GET /api/v1/training-groups"))).contains(a.groupId()).contains(a.venueId());
+        assertThat(body(answers.get("GET /api/v1/plans"))).contains(a.planId());
+    }
+
+    private Map.Entry<String, MvcResult> list(String route, String path, String token) throws Exception {
+        return Map.entry(route, send(HttpMethod.GET, path, token));
     }
 
     @Test
@@ -406,7 +426,8 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
                 failures.add(row + ": a coach's foreign id answered differently from an id that exists nowhere: " + normalised(foreign) + " vs " + normalised(nowhere));
             }
         }
-        for (String path : List.of("/api/v1/join-requests", "/api/v1/subscriptions?paymentStatus=PAID", "/api/v1/subscriptions/export?paymentStatus=PAID")) {
+        for (String path : List.of("/api/v1/join-requests", "/api/v1/subscriptions?paymentStatus=PAID", "/api/v1/subscriptions/export?paymentStatus=PAID",
+                "/api/v1/members", "/api/v1/levels", "/api/v1/venues", "/api/v1/training-groups", "/api/v1/plans")) {
             if (send(HttpMethod.GET, path, coach).getResponse().getStatus() != 403) {
                 failures.add("GET " + path + ": a coach is not an administrator");
             }
