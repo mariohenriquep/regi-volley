@@ -1,4 +1,4 @@
-import type { RouteObject } from 'react-router';
+import { redirect, type RouteObject } from 'react-router';
 import { PublicOnly, RequireAuth } from '@/auth/guards';
 import { Loading } from '@/components/Loading';
 import { AppLayout } from '@/layout/AppLayout';
@@ -70,6 +70,32 @@ export const routes: RouteObject[] = [
                 lazy: async () => ({
                   Component: (await import('@/features/admin/members/MemberDetailPage'))
                     .MemberDetailPage,
+                }),
+              },
+              // No page of its own: the setup screens are linked from the Admin home.
+              { path: 'admin/setup', loader: () => redirect('/admin') },
+              {
+                path: 'admin/setup/levels',
+                lazy: async () => ({
+                  Component: (await import('@/features/admin/setup/levels/LevelsPage')).LevelsPage,
+                }),
+              },
+              {
+                path: 'admin/setup/venues',
+                lazy: async () => ({
+                  Component: (await import('@/features/admin/setup/venues/VenuesPage')).VenuesPage,
+                }),
+              },
+              {
+                path: 'admin/setup/plans',
+                lazy: async () => ({
+                  Component: (await import('@/features/admin/setup/plans/PlansPage')).PlansPage,
+                }),
+              },
+              {
+                path: 'admin/setup/groups',
+                lazy: async () => ({
+                  Component: (await import('@/features/admin/setup/groups/GroupsPage')).GroupsPage,
                 }),
               },
               {

@@ -66,6 +66,12 @@ async function activateAndSignIn(
   await expect(page.getByRole('heading', { level: 1, name: 'Sessions' })).toBeVisible();
 }
 
+async function signInActivated(page: Page, email: string) {
+  await page.goto('/login');
+  await signIn(page, email, PASSWORD);
+  await expect(page.getByRole('heading', { level: 1, name: 'Sessions' })).toBeVisible();
+}
+
 // Registration is limited to 3 an hour per address, so one registration serves the whole journey: the founder
 // created and activated in the first test is the member who forgets the password in the second.
 test.describe.configure({ mode: 'serial' });
@@ -489,6 +495,179 @@ test.describe('an administrator on a phone', () => {
     await expect(page).toHaveURL(/status=INACTIVE/);
     await expect(page.getByRole('article', { name: 'Rita Visitor' })).toContainText('Inactive');
     await expect(page.getByRole('article', { name: 'Ada Admin' })).toHaveCount(0);
+  });
+});
+
+test.describe('an administrator setting the association up on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('adds a level, venues, a group with two slots and a coach and a pack plan, edits the plan price, archives the group and deletes a venue', async ({
+    page,
+  }) => {
+    // Arrange: the second administrator signs in again; Rui Coach (made by seedCoaching) holds the coach role
+    const tag = unique();
+    const level = `E2E Level ${tag}`;
+    const renamed = `E2E Pro ${tag}`;
+    const annex = `E2E Annex ${tag}`;
+    const spare = `E2E Spare ${tag}`;
+    const group = `E2E Setup Group ${tag}`;
+    const plan = `E2E Pack 20 ${tag}`;
+    await signInActivated(page, admin.adminEmail);
+    await page
+      .getByRole('navigation', { name: 'Sections' })
+      .getByRole('link', { name: 'Admin' })
+      .tap();
+
+    // Levels: add (it is the highest), move it up, rename it
+    await page.getByRole('link', { name: /^Levels/ }).tap();
+    await page.getByLabel('New level name').fill(level);
+    await page.getByRole('button', { name: 'Add level' }).tap();
+    await expect(page.getByRole('status').filter({ hasText: `${level} was added` })).toBeVisible();
+    const levels = page.getByRole('list', { name: 'Levels' }).getByRole('listitem');
+    await expect(levels.last()).toContainText(level);
+    const count = await levels.count();
+    await page.getByRole('button', { name: `Move ${level} up` }).tap();
+    await expect(levels.nth(count - 2)).toContainText(level);
+    await page.getByRole('button', { name: `Rename ${level}` }).tap();
+    const rename = page.getByRole('dialog', { name: `Rename ${level}` });
+    await rename.getByLabel('Level name').fill(renamed);
+    await rename.getByRole('button', { name: 'Save name' }).tap();
+    await expect(
+      page.getByRole('status').filter({ hasText: `is now called ${renamed}` }),
+    ).toBeVisible();
+    await expect(levels.nth(count - 2)).toContainText(renamed);
+
+    // Venues: two are added; a blank form is refused in the browser
+    await page.goto('/admin/setup/venues');
+    for (const name of [annex, spare]) {
+      await page.getByRole('button', { name: 'Add venue' }).tap();
+      const venue = page.getByRole('dialog', { name: 'Add a venue' });
+      await venue.getByRole('button', { name: 'Add venue' }).tap();
+      await expect(venue.getByLabel('Courts')).toHaveAccessibleDescription(
+        'Enter the number of courts',
+      );
+      await venue.getByLabel('Name').fill(name);
+      await venue.getByLabel('Address').fill('Rua do Teste 1, Lisbon');
+      await venue.getByLabel('Courts').fill('2');
+      await venue.getByRole('button', { name: 'Add venue' }).tap();
+      await expect(page.getByRole('status').filter({ hasText: `${name} was added` })).toBeVisible();
+    }
+
+    // Groups: two slots that overlap are refused by the API and shown; moving the second one saves the group
+    await page.goto('/admin/setup/groups');
+    await page.getByRole('button', { name: 'Add group' }).tap();
+    const form = page.getByRole('dialog', { name: 'Add a training group' });
+    await form.getByLabel('Name').fill(group);
+    await form.getByRole('checkbox', { name: renamed }).tap();
+    await form.getByLabel('Venue').selectOption({ label: annex });
+    await form.getByLabel('Coach', { exact: true }).selectOption({ label: 'Rui Coach' });
+    await form.getByLabel('Seats').fill('12');
+    const first = form.getByRole('group', { name: 'Slot 1' });
+    await first.getByLabel('Day').selectOption('MONDAY');
+    await first.getByLabel('Start time (Lisbon)').fill('19:00');
+    await first.getByLabel('Length (minutes)').fill('60');
+    await form.getByRole('button', { name: 'Add slot' }).tap();
+    const second = form.getByRole('group', { name: 'Slot 2' });
+    await second.getByLabel('Day').selectOption('MONDAY');
+    await second.getByLabel('Start time (Lisbon)').fill('19:30');
+    await second.getByLabel('Length (minutes)').fill('60');
+    await form.getByRole('button', { name: 'Add group' }).tap();
+    await expect(form.getByRole('alert')).toContainText('overlap');
+    await second.getByLabel('Day').selectOption('WEDNESDAY');
+    await form.getByRole('button', { name: 'Add group' }).tap();
+    await expect(
+      page
+        .getByRole('status')
+        .filter({ hasText: 'Sessions for this group appear after the next daily generation.' }),
+    ).toBeVisible();
+    const card = page.getByRole('article', { name: group });
+    await expect(card).toContainText(renamed);
+    await expect(card).toContainText(annex);
+    await expect(card).toContainText('Rui Coach');
+    await expect(card).toContainText('12 seats');
+    await expect(card).toContainText('Monday 19:00, 60 min');
+    await expect(card).toContainText('Wednesday 19:30, 60 min');
+
+    // Plans: a pack, then a cheaper price; the sheet says existing subscriptions keep theirs
+    await page.goto('/admin/setup/plans');
+    await page.getByRole('button', { name: 'Add plan' }).tap();
+    const add = page.getByRole('dialog', { name: 'Add a plan' });
+    await add.getByLabel('Name').fill(plan);
+    await add.getByLabel('Type').selectOption({ label: 'Pack of sessions' });
+    await add.getByLabel('Credits').fill('20');
+    await add.getByLabel('Valid for (days)').fill('120');
+    await add.getByLabel('Price (€)').fill('89.90');
+    await add.getByRole('button', { name: 'Add plan' }).tap();
+    const planCard = page.getByRole('article', { name: plan });
+    await expect(planCard).toContainText('€89.90');
+    await expect(planCard).toContainText('20 credits, valid for 120 days');
+    await expect(planCard).toContainText('All levels');
+    await planCard.getByRole('button', { name: /^Edit/ }).tap();
+    const edit = page.getByRole('dialog', { name: `Edit ${plan}` });
+    await expect(edit).toContainText('keep the price and terms they bought');
+    await edit.getByLabel('Price (€)').fill('79.90');
+    await edit.getByRole('button', { name: 'Save plan' }).tap();
+    await expect(planCard).toContainText('€79.90');
+
+    // Venues again: the one the group uses cannot be deleted; a stale list lets the API's refusal be read
+    await page.goto('/admin/setup/venues');
+    const used = page.getByRole('article', { name: annex });
+    await expect(used.getByRole('button', { name: /^Delete/ })).toBeDisabled();
+    await expect(used).toContainText('An active training group uses this venue');
+    await page.route('**/api/v1/venues', async (route) => {
+      const response = await route.fetch();
+      const venues = (await response.json()) as { inUseByActiveGroup?: boolean }[];
+      await route.fulfill({
+        response,
+        json: venues.map((venue) => ({ ...venue, inUseByActiveGroup: false })),
+      });
+    });
+    await page.reload();
+    await page
+      .getByRole('article', { name: annex })
+      .getByRole('button', { name: /^Delete/ })
+      .tap();
+    const refused = page.getByRole('alertdialog', { name: `Delete ${annex}?` });
+    await refused.getByRole('button', { name: 'Delete venue' }).tap();
+    await expect(refused).toContainText('used by an active training group');
+    await refused.getByRole('button', { name: 'Not now' }).tap();
+    await page.unroute('**/api/v1/venues');
+
+    // The spare venue is deleted after the question
+    await page.reload();
+    await page
+      .getByRole('article', { name: spare })
+      .getByRole('button', { name: /^Delete/ })
+      .tap();
+    await page
+      .getByRole('alertdialog', { name: `Delete ${spare}?` })
+      .getByRole('button', { name: 'Delete venue' })
+      .tap();
+    await expect(
+      page.getByRole('status').filter({ hasText: `${spare} was deleted` }),
+    ).toBeVisible();
+    await expect(page.getByRole('article', { name: spare })).toHaveCount(0);
+
+    // Archive the group: it asks first, leaves the active list and shows up with the archived toggle; its venue is free again
+    await page.goto('/admin/setup/groups');
+    await page
+      .getByRole('article', { name: group })
+      .getByRole('button', { name: /^Archive/ })
+      .tap();
+    const archive = page.getByRole('alertdialog', { name: `Archive ${group}?` });
+    await expect(archive).toContainText('Sessions that already exist are not changed or cancelled');
+    await archive.getByRole('button', { name: 'Archive group' }).tap();
+    await expect(
+      page.getByRole('status').filter({ hasText: `${group} was archived` }),
+    ).toBeVisible();
+    await expect(page.getByRole('article', { name: group })).toHaveCount(0);
+    await page.getByRole('checkbox', { name: 'Show archived groups' }).tap();
+    await expect(page).toHaveURL(/archived=1/);
+    await expect(page.getByRole('article', { name: group })).toContainText('Archived');
+    await page.goto('/admin/setup/venues');
+    await expect(
+      page.getByRole('article', { name: annex }).getByRole('button', { name: /^Delete/ }),
+    ).toBeEnabled();
   });
 });
 

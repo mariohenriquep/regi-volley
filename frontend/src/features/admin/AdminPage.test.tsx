@@ -111,6 +111,14 @@ describe('the Admin home', () => {
       'href',
       '/admin/members',
     );
+    for (const [name, href] of [
+      [/^Levels/, '/admin/setup/levels'],
+      [/^Venues/, '/admin/setup/venues'],
+      [/^Training groups/, '/admin/setup/groups'],
+      [/^Plans/, '/admin/setup/plans'],
+    ] as const) {
+      expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);
+    }
     expect(seen.filter(({ path }) => path !== '/api/v1/me')).toEqual([]);
   });
 
