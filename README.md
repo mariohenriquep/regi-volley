@@ -68,7 +68,7 @@ From `frontend/`:
 | `npm run api:generate` | regenerates `src/api/schema.gen.ts` from `docs/api/openapi.json`; commit it with the contract |
 | `npm run api:check` | fails when the generated client is stale (CI runs it) |
 | `npm run e2e` | the Playwright journeys against the real backend (below) |
-| `npm run e2e:csp` | builds, serves `dist/` with the documented Content-Security-Policy and checks the dialogs and the account menu raise no violation (API mocked; no backend needed) |
+| `npm run e2e:csp` | builds, serves `dist/` with the documented Content-Security-Policy and checks the dialogs, the coaching screens and the account menu raise no violation (API mocked; no backend needed) |
 
 **Trying the app without curl.** With the three commands above running, open <http://localhost:5173>:
 
@@ -78,6 +78,8 @@ From `frontend/`:
 | Activate your account | `/activate#token=...` | open the link from the mail, choose a password, then sign in |
 | Sign in / sign out | `/login` | the founder's email and password; sign out is in the *Account* menu of the header (with *Sign out on all devices*) |
 | Sessions (home) | `/` | this week's sessions by day (Lisbon time), seats, waitlist and your own status; venue and your waitlist place; *Book* then *Confirm booking*; *Cancel* (it says whether cancelling now is free, from the API's deadline); previous/next week. Needs a group with sessions and a paid plan (no admin screens yet: see the E2E note below) |
+| Coaching (coaches and administrators) | `/coaching` | the staff's week by day: status, "N of M confirmed", waitlist, attended / no-show / still to mark; *Mark attendance* or *Roster*, *Change seats*, *Cancel session* as the API allows (the entry is hidden for members); previous/next week, past weeks included |
+| Roster and attendance | `/coaching/sessions/<id>` | seats and waitlist in order; *Attended* / *No-show* per person (or *Mark everyone as attended*) and one *Save attendance*; change the seats (shows who moved up) and cancel the session with a reason |
 | My plan | `/me/plan` | your subscriptions: plan, validity, credits or sessions left, payment status and the overdue warning |
 | History | `/me/history` | your last three months, newest first (group and venue), and this month's no-shows with the near-the-limit warning |
 | Forgot password | `/forgot-password` | request a link (the answer is the same for any address), open it from Mailpit, choose a new password |
@@ -104,8 +106,13 @@ when a generation route or the admin screens (F5) exist.
 
 To run the journey beside the usual dev servers, give it its own ports: start the API with `SERVER_PORT=8081
 WEB_ORIGIN=http://localhost:5174` (plus the SMTP variables) and run `WEB_PORT=5174 API_PROXY_TARGET=http://localhost:8081 npm run e2e`.
-Registration is limited to 3 per hour per address and one run registers once, so a fourth run within the hour gets 429: restart
-the API (the limiter is in memory).
+A fifth step runs the coach journey on a phone: a coach (activated from the emailed link) opens *Coaching*, marks attendance of a
+session that started an hour ago (one attended, one no-show; the counts change), raises the seats of a full session (the waitlisted
+member moves up; a number below the confirmed is refused on the field), cancels a session ahead with a reason, and a player signs in
+and finds no *Coaching*. Its data is in `seedCoaching` (`e2e/seed.ts`): the coach and the player join through the public page, and
+the started session and the single-seat session are SQL, like the others.
+Registration is limited to 3 per hour per address, a join request to 5 per hour per IP (a run files 4) and sign-in to 5 per 15
+minutes, and one run uses each once, so a second run within the hour gets 429: restart the API (the limiter is in memory).
 
 **Production** is same-origin too (threat model D-7b): one reverse proxy serves `frontend/dist` (with `index.html` as the
 fallback for unknown paths) and forwards `/api` to the API, and `WEB_ORIGIN` is set to that origin. Deployment comes with
@@ -188,6 +195,7 @@ path, query or body value, and another association's id answers like one that do
 | Visitor (no token) | `GET /public/associations/{shortName}` (public page), `POST /public/associations` (register an association), `POST /public/associations/{shortName}/join-requests` (always `202 RECEIVED`) |
 | Credentials | `POST /auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/activate`, `/auth/password-reset-requests`, `/auth/password-resets` (public); `POST /auth/logout-all`, `GET /me` |
 | Member | `GET /sessions?weekOf=` (each line: venue, seats, waitlist, the free-cancellation deadline and, for you only, `myBookingStatus`, `myBookingId` and your `waitlistPosition`), `POST /sessions/{id}/bookings`, `POST /sessions/{id}/bookings/{bookingId}/cancellation`, `GET /me/plan`, `GET /me/history` (each entry with its group and venue name) |
+| Coach / admin | `GET /coaching/sessions?weekOf=` (the staff's week: a coach sees the sessions they coach, an administrator all of them, cancelled ones too; each line with the group and venue name, status, `capacity`, `confirmedCount`, `waitlistCount`, `attendedCount`, `noShowCount`, `unmarkedCount` and the `canMarkAttendance` / `canCancel` / `canChangeCapacity` flags) |
 | Coach / admin of a session | `GET /sessions/{id}/roster` (who is in the session, with the booking ids and display names only), `POST /sessions/{id}/cancellation`, `PUT /sessions/{id}/capacity`, `PUT /sessions/{id}/attendance` |
 | Administrator | `/levels`, `/venues`, `/training-groups`, `/plans`, `/join-requests` (list, approve, reject), `/members/{id}` (level, roles, deactivation, subscriptions, `activation-links`: re-send an activation link, always `202 RECEIVED`), `/subscriptions` (list by payment status, CSV export, overdue-marking, payments), `/payments/{id}/reversal` |
 

@@ -60,3 +60,54 @@ export function historyEntry(overrides: Partial<Schemas['HistoryEntryView']> = {
     ...overrides,
   } satisfies Schemas['HistoryEntryView'];
 }
+
+export const COACHING_URL = '/api/v1/coaching/sessions';
+
+/** A coach's line for Thursday 16 July 2026, 20:30-22:00 in Lisbon: not started, 8 of 12 seats taken, every action open. */
+export function coaching(overrides: Partial<Schemas['CoachingSessionResponse']> = {}) {
+  return {
+    sessionId: SESSION_ID,
+    trainingGroupId: '55555555-5555-5555-5555-555555555555',
+    groupName: 'Thursday evening',
+    venueName: 'Pavilhão Central',
+    coachId: '22222222-2222-2222-2222-222222222222',
+    startsAt: '2026-07-16T19:30:00Z',
+    endsAt: '2026-07-16T21:00:00Z',
+    status: 'SCHEDULED',
+    capacity: 12,
+    confirmedCount: 8,
+    waitlistCount: 2,
+    attendedCount: 0,
+    noShowCount: 0,
+    unmarkedCount: 8,
+    canMarkAttendance: false,
+    canCancel: true,
+    canChangeCapacity: true,
+    ...overrides,
+  } satisfies Schemas['CoachingSessionResponse'];
+}
+
+export function rosterEntry(overrides: Partial<Schemas['RosterEntryView']> = {}) {
+  return {
+    bookingId: BOOKING_ID,
+    memberId: '77777777-7777-7777-7777-777777777777',
+    memberName: 'Ana Silva',
+    status: 'CONFIRMED',
+    ...overrides,
+  } satisfies Schemas['RosterEntryView'];
+}
+
+export function rosterOf(overrides: Partial<Schemas['SessionRosterResponse']> = {}) {
+  return {
+    sessionId: SESSION_ID,
+    trainingGroupId: '55555555-5555-5555-5555-555555555555',
+    coachId: '22222222-2222-2222-2222-222222222222',
+    startsAt: '2026-07-16T19:30:00Z',
+    endsAt: '2026-07-16T21:00:00Z',
+    capacity: 12,
+    status: 'SCHEDULED',
+    seats: [rosterEntry()],
+    waitlist: [],
+    ...overrides,
+  } satisfies Schemas['SessionRosterResponse'];
+}

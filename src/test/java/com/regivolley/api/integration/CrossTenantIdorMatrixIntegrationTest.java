@@ -142,7 +142,7 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
             row("POST /api/v1/payments/{paymentId}/reversal", Caller.ADMIN, (own, other) -> "/api/v1/payments/" + other.paymentId() + "/reversal", (own, other) -> NO_BODY));
 
     /** Routes that take no id and show only the caller's own data: {@link #listsShowOnlyTheCallersOwnData} reads them. */
-    private static final Set<String> LISTS = Set.of("GET /api/v1/sessions", "GET /api/v1/join-requests", "GET /api/v1/subscriptions",
+    private static final Set<String> LISTS = Set.of("GET /api/v1/sessions", "GET /api/v1/coaching/sessions", "GET /api/v1/join-requests", "GET /api/v1/subscriptions",
             "GET /api/v1/subscriptions/export", "GET /api/v1/me/plan", "GET /api/v1/me/history");
     /** Routes with no id of any other resource to point at (they act on the caller's own association or account). */
     private static final Map<String, String> NO_FOREIGN_ID = Map.of(
@@ -272,7 +272,8 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
                 failures.add(row + ": a plain member got " + result.getResponse().getStatus() + " - " + body(result));
             }
         }
-        for (String path : List.of("/api/v1/join-requests", "/api/v1/subscriptions?paymentStatus=PAID", "/api/v1/subscriptions/export?paymentStatus=PAID")) {
+        for (String path : List.of("/api/v1/join-requests", "/api/v1/subscriptions?paymentStatus=PAID", "/api/v1/subscriptions/export?paymentStatus=PAID",
+                "/api/v1/coaching/sessions?weekOf=2026-10-14")) {
             MvcResult result = send(HttpMethod.GET, path, a.member().token());
             if (result.getResponse().getStatus() != 403) {
                 failures.add("GET " + path + ": a plain member got " + result.getResponse().getStatus());
@@ -301,6 +302,7 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
         // Act
         Map<String, MvcResult> answers = Map.of(
                 "GET /api/v1/sessions", send(HttpMethod.GET, "/api/v1/sessions?weekOf=2026-10-14", a.member().token()),
+                "GET /api/v1/coaching/sessions", send(HttpMethod.GET, "/api/v1/coaching/sessions?weekOf=2026-10-14", a.adminToken()),
                 "GET /api/v1/join-requests", send(HttpMethod.GET, "/api/v1/join-requests", a.adminToken()),
                 "GET /api/v1/subscriptions", send(HttpMethod.GET, "/api/v1/subscriptions?paymentStatus=PENDING", a.adminToken()),
                 "GET /api/v1/subscriptions/export", send(HttpMethod.GET, "/api/v1/subscriptions/export?paymentStatus=PENDING", a.adminToken()),
@@ -321,10 +323,34 @@ class CrossTenantIdorMatrixIntegrationTest extends AbstractApiIntegrationTest {
         // Assert
         assertThat(failures).isEmpty();
         assertThat(body(answers.get("GET /api/v1/sessions"))).contains(a.sessionId());
+        assertThat(body(answers.get("GET /api/v1/coaching/sessions"))).contains(a.sessionId()).contains(a.groupId()).contains("Pavilion");
         assertThat(body(answers.get("GET /api/v1/join-requests"))).contains(a.approvableRequestId()).contains(a.rejectableRequestId());
         assertThat(body(answers.get("GET /api/v1/subscriptions"))).contains(a.subscriptionId());
         assertThat(answers.get("GET /api/v1/subscriptions/export").getResponse().getContentAsString(StandardCharsets.UTF_8)).contains(a.subscriptionId());
         assertThat(body(answers.get("GET /api/v1/me/plan"))).contains(a.subscriptionId());
+    }
+
+    @Test
+    void theStaffWeekShowsACoachOfNoGroupNothingAndEachAssociationsAdministratorOnlyTheirOwnSessions() throws Exception {
+        // Arrange - the second member of each world is a coach, of no group
+        seed();
+        String path = "/api/v1/coaching/sessions?weekOf=2026-10-14";
+        String before = fingerprint(a) + "|" + fingerprint(b);
+
+        // Act
+        MvcResult ownCoachOfNoGroup = expect(200, HttpMethod.GET, path, a.spare().token(), null);
+        MvcResult otherCoachOfNoGroup = expect(200, HttpMethod.GET, path, b.spare().token(), null);
+        MvcResult administratorA = expect(200, HttpMethod.GET, path, a.adminToken(), null);
+        MvcResult administratorB = expect(200, HttpMethod.GET, path, b.adminToken(), null);
+
+        // Assert - a coach of another group sees none of these sessions, and nobody sees the other association's
+        assertThat(body(ownCoachOfNoGroup)).isEqualTo("[]");
+        assertThat(body(otherCoachOfNoGroup)).isEqualTo("[]");
+        assertThat((List<String>) read(administratorA, "$[*].sessionId")).containsExactly(a.sessionId());
+        assertThat((List<String>) read(administratorB, "$[*].sessionId")).containsExactly(b.sessionId());
+        assertThat(body(administratorA)).doesNotContain(b.sessionId()).doesNotContain(b.groupId()).doesNotContain(b.adminId());
+        assertThat(body(administratorB)).doesNotContain(a.sessionId()).doesNotContain(a.groupId()).doesNotContain(a.adminId());
+        assertThat(fingerprint(a) + "|" + fingerprint(b)).as("a read changes nothing").isEqualTo(before);
     }
 
     @Test

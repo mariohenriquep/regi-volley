@@ -23,6 +23,7 @@ import com.regivolley.api.application.usecase.EditVenueUseCase;
 import com.regivolley.api.application.usecase.GetSessionRosterUseCase;
 import com.regivolley.api.application.usecase.GrantRoleUseCase;
 import com.regivolley.api.application.usecase.ListBookableSessionsUseCase;
+import com.regivolley.api.application.usecase.ListCoachingSessionsUseCase;
 import com.regivolley.api.application.usecase.ListSubscriptionsByPaymentStatusUseCase;
 import com.regivolley.api.application.usecase.MarkAttendanceUseCase;
 import com.regivolley.api.application.usecase.MarkSubscriptionOverdueUseCase;
@@ -141,6 +142,8 @@ public abstract class AbstractSecuredWebTest {
     protected GrantRoleUseCase grantRoleUseCase;
     @MockitoBean
     protected ListBookableSessionsUseCase listBookableSessionsUseCase;
+    @MockitoBean
+    protected ListCoachingSessionsUseCase listCoachingSessionsUseCase;
     @MockitoBean
     protected ListSubscriptionsByPaymentStatusUseCase listSubscriptionsByPaymentStatusUseCase;
     @MockitoBean

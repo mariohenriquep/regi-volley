@@ -85,7 +85,7 @@ never appears in `domain/`.
 | Exceptions the application raises for its own refusals (`InvalidCredentialsException`, `InvalidRefreshTokenException`, `InvalidLinkException`, `RateLimitExceededException`, `ServiceBusyException`, `AccountAlreadyExistsException`, `LinkAlreadyIssuedException`) | `application.exception` |
 | Use case input records | `application.command` |
 | Use case output records | `application.result` |
-| REST controllers, one per resource (`PublicAssociationController`, `SessionController`, `LevelController`, `VenueController`, `TrainingGroupController`, `PlanController`, `JoinRequestController`, `MemberAdminController`, `MemberSelfController`, `SubscriptionController`, `PaymentController`, plus `AuthController` and `MeController`) | `infrastructure.web.controller` |
+| REST controllers, one per resource (`PublicAssociationController`, `SessionController`, `LevelController`, `VenueController`, `TrainingGroupController`, `PlanController`, `JoinRequestController`, `MemberAdminController`, `MemberSelfController`, `SubscriptionController`, `PaymentController`, `CoachingController`, plus `AuthController` and `MeController`) | `infrastructure.web.controller` |
 | Request/response DTOs, error shape (records: `*Request` in, `*Response` out, nested `*View` records inside a response; `MemberRoleName`, `PaymentStatusName`, `PlanTypeName`, `PaymentMethodName`, `AttendanceMarkName` are the wire spellings of the enums a client names, each mapped to the domain's by an exhaustive `switch`; `PlausibleDate` bounds a client's dates) | `infrastructure.web.dto` |
 | `@RestControllerAdvice` exception mapping (`*ExceptionHandler`) | `infrastructure.web.exception` |
 | Domain ↔ DTO translation (`*WebMapper`: request → command, result → response; the only place a path UUID becomes a typed id, so controllers name no domain type) and the CSV rendering of the payment list (`SubscriptionCsvWebMapper`) | `infrastructure.web.mapper` |
@@ -649,6 +649,7 @@ errors are the one `ApiError` body (section 11). Lists return a JSON array.
 | `POST /auth/logout-all`, `GET /me` | token | credentials, caller's ids |
 | `GET /me/plan`, `GET /me/history` | token | `MyPlan` (US-23), `MemberHistory` (US-18): each entry `sessionId`, `trainingGroupId`, `trainingGroupName`, `venueName` (both left out if not found), `startsAt`, `endsAt`, `bookingId`, `status` |
 | `GET /sessions?weekOf=YYYY-MM-DD` | token | `ListBookableSessions` (US-13): per line `sessionId`, `trainingGroupId`, `groupName`, `venueName` (left out if the venue cannot be found), `startsAt`, `endsAt`, `bookingOpensAt`, `freeCancellationUntil` (the last instant cancelling a CONFIRMED booking is free, from the association's `BookingPolicy` via `Session.freeCancellationDeadline`; information only, the API decides on submit; a waitlisted booking is always free), `capacity`, `freeSeats`, `waitlistSize` and, only when the *caller* has a live booking there, `myBookingStatus`, `myBookingId` (to cancel with) and, while waitlisted, `waitlistPosition` (1-based, from `Session.waitlistPosition`, the FIFO queue). Nothing about anyone else's booking |
+| `GET /coaching/sessions?weekOf=YYYY-MM-DD` | coach (own sessions), admin (all) | `ListCoachingSessions` (US-11, US-12, US-17; issue #48): the staff's week, any Lisbon day of the week as for `GET /sessions` (same `@PlausibleDate` bounds, this week when absent). An active member holding COACH sees the sessions whose coach is them, an active ADMIN every session of the association (`Permissions.isStaffOf`), anyone else - a plain member, a coach whose COACH role was revoked - gets 403 (a deactivated member never gets this far: the principal check answers 401, and the use case refuses an inactive one too). Every status is listed (SCHEDULED, COMPLETED, CANCELLED), in start order. Per line `sessionId`, `trainingGroupId`, `groupName` and `venueName` (each left out if not found), `coachId`, `startsAt`, `endsAt`, `status`, `capacity`, the counts `confirmedCount` (seat holders: CONFIRMED, ATTENDED, NO_SHOW), `waitlistCount`, `attendedCount`, `noShowCount`, `unmarkedCount` (seat holders not marked yet), all read from the `Session` aggregate, and the action flags `canMarkAttendance` (`Session.acceptsAttendance`: not cancelled, started, someone unmarked), `canCancel` (`Session.canBeCancelled`: SCHEDULED and no mark made yet - the domain does not stop a cancellation at the start) and `canChangeCapacity` (`Session.acceptsCapacityChange`: SCHEDULED and not started). The flags are the "action flags" the screens use in place of hypermedia links: information only, the operations decide again on submit. No person is named |
 | `POST /sessions/{sessionId}/bookings` | token | `BookSession` (US-14): `201`, `CONFIRMED` or `WAITLISTED` with the place |
 | `POST /sessions/{sessionId}/bookings/{bookingId}/cancellation` | token | `CancelBooking` (US-15, US-16): late / credit refunded / how many moved up; the booking stays in the history as `CANCELLED`, so it is not a `DELETE` |
 | `POST /sessions/{sessionId}/cancellation` | coach of the session, admin | `CancelSession` (US-12) |
@@ -728,7 +729,7 @@ or a version.
 | `src/api/` | `schema.gen.ts` (generated, never edited), `errors.ts` (`ApiError`, `toApiError`, `unwrap`) |
 | `src/auth/` | `session.ts` (tokens, refresh, the authenticated client), `AuthProvider` + `useAuth`, route guards |
 | `src/app/` | providers, the `QueryClient`, the route table |
-| `src/features/` | feature folders: `association/` (public page, join, register), `account/` (activate and reset password, forgot password), `sessions/` (the week, book, cancel), `plan/` (My plan, the credit note) and `history/` |
+| `src/features/` | feature folders: `association/` (public page, join, register), `account/` (activate and reset password, forgot password), `sessions/` (the week, book, cancel), `plan/` (My plan, the credit note), `history/` and `coaching/` (the staff's week, the roster and attendance, cancel a session, change the seats) |
 | `src/pages/`, `src/layout/`, `src/components/` | the F1 screens (login, 404, privacy, the account-link loader), the shell (header, account menu, bottom bar), shared components (`QueryState`, `ErrorAlert`); `components/ui/` holds the shadcn/ui sources, `components/form/` the form kit (see *Screens*) |
 | `src/pwa/` | the service-worker update store, its "reload" notice and the registration glue |
 | `src/lib/` | small helpers (`fragment.ts`, `email.ts`, `privacy.ts`, `usePageTitle.ts`, `utils.ts`) |
@@ -897,6 +898,48 @@ and an *Account* menu (*Sign out*, *Sign out on all devices*) to signed-in membe
 - **Shared states.** `QueryState` gives My plan and History the same loading skeleton (`role=status` with a name), error with *Try
   again* and data; the week has its own skeleton, empty state ("No sessions this week") and error.
 
+**Coaching screens** (F4, issue #48). Behind `RequireAuth`, for coaches and administrators; the shell shows *Coaching* in the bar
+(a fourth entry) only for them.
+
+| Route | Screen | API |
+|---|---|---|
+| `/coaching` | the staff's week grouped by Lisbon day (a coach sees the sessions they coach, an administrator all of them): group, time, venue, status, "N of M confirmed", waitlist, and "N attended · N no-show · N to mark"; previous / next week in `?week=` (12 weeks back, 8 ahead) | `GET /coaching/sessions?weekOf=` |
+| `/coaching/sessions/:sessionId` | the roster (seats in booking order, then the waitlist in promotion order, names only), the attendance form, *Change seats* and *Cancel session* | `GET /sessions/{id}/roster`, `PUT .../attendance`, `POST .../cancellation`, `PUT .../capacity` |
+
+- **Who sees the section.** `GET /me` carries no roles (only `associationId` and `memberId`), so the shell asks the coaching list for
+  this week (`useIsStaff`): an answer means staff, a 403 (`NOT_ALLOWED`) means a member, and anything else (pending, network, 5xx)
+  keeps the entry hidden. The request is the same query the page opens with (`['coaching', thisMonday]`), so the page finds it cached.
+  It costs one extra request per sign-in for a member (always a 403). This is a display decision, not a boundary: every operation
+  is decided again by the API, and a member who types `/coaching` gets "Coaching is for coaches and administrators." Replace it with
+  the roles in `/me` when the API has them.
+- **The flags decide the buttons.** `canMarkAttendance`, `canCancel` and `canChangeCapacity` come with each line, so the client holds
+  no rule about starts, deadlines or marks: *Mark attendance* (otherwise *Roster*), *Change seats* and *Cancel session* show when
+  the flag is true; a `CANCELLED` line has neither counts nor actions. The attendance line shows when the API allows marking or
+  something is marked, never from a client clock. The flags are information only: each operation answers 403, 409 or 422 on submit and
+  its message is shown as the API wrote it (`ErrorAlert`, with the request id). Refusal `reason`s exist only for bookings, so there
+  is no advice table here.
+- **The detail page needs the flags too.** The roster response has none, so the page reads the Lisbon week of `roster.startsAt` and
+  finds the line in that week's list (a cached query). Until it arrives, or if the line is missing, the roster is read-only.
+- **Attendance.** Each seat holder still `CONFIRMED` gets two big radio buttons (*Attended*, *No-show*) in a fieldset named after the
+  person, so the arrow keys and screen readers work; *Mark everyone as attended* sets all of them in one tap. *Save attendance (N)*
+  sends one `PUT` with exactly the chosen entries (the API applies the batch all or nothing); nothing chosen is "not marked yet" and
+  is left out. A refusal keeps the choices so the coach can retry. The answer is shown as a notice (attended, no-show, and how many
+  members reached the no-show limit and were warned, `warnedCount`) and the roster and the week are read again. Already-marked people
+  show a badge and no toggle.
+- **Cancel session.** A dialog with a required *Reason* (blank is refused in the dialog before anything is sent; at most 500
+  characters, the API's limit), the warning "N members will be notified and their credits refunded" (confirmed plus waitlisted, from
+  the line's counts) and focus on the reason. A refusal stays in the dialog; the outcome is "Session cancelled. N bookings were
+  cancelled and N credits refunded." from `bookingsCancelled` and `creditsRefunded`.
+- **Change seats.** A number input with the current value (1 to 1000, the API's limits) and the explanation that raising it moves
+  people up from the waitlist. A 422 (below the confirmed) is shown on the field, which takes focus; the outcome is "Seats changed to N.
+  M people moved up from the waitlist." from `promotedCount`.
+- **After a staff action** `coaching`, `roster`, `sessions`, `plan` and `history` are invalidated, also after a refusal (the page may
+  be stale): a cancellation refunds credits and a raise promotes members.
+- **Focus.** The dialogs have no Radix trigger: the control that opened one gets focus back on *Keep session* / *Not now*, and the
+  notice (`role=status`, focusable) after an outcome, because the button may be gone. `useStaffActions` holds this for both screens.
+- **Testing.** The shared MSW server answers the coaching list with 403 by default (a member), so every test of a signed-in screen
+  keeps working; a staff test overrides it. `e2e-csp` also drives the coaching dialogs and the roster under the CSP.
+
 **Same origin.**
 - In development the Vite proxy forwards `/api` to `http://localhost:8080` with `changeOrigin: false`. The API then sees
   `Host: localhost:5173`, so the request is same-origin: Spring's CORS filter is not involved, and the cookie guard accepts
@@ -962,7 +1005,10 @@ positioning) is not an attribute and raises nothing.
   password, see the link refused the second time, sign in, reload (refresh cookie through the proxy), sign out; a visitor opens
   the public page and sends a join request; a member requests a reset link from the sign-in page, resets the password from the
   mail and signs in with it; a member on a phone books a session in two taps, cancels it, and checks My plan and History (the
-  sessions are inserted with SQL, see the README: they have no HTTP route). It runs locally only for now; registration is limited to 3 an hour per address, and the journey
+  sessions are inserted with SQL, see the README: they have no HTTP route); a coach (activated from the emailed link) finds a session
+  that started an hour ago, marks one attended and one no-show and sees the counts change, raises the seats of a full session and
+  sees the waitlisted member move up (and a number below the confirmed refused on the field), cancels a session ahead with a
+  required reason, and a player sees no *Coaching*. It runs locally only for now; registration is limited to 3 an hour per address, and the journey
   registers once.
 - **CI:** the `frontend` job runs `npm ci --ignore-scripts`, `npm audit --omit=dev --audit-level=high`, `api:check`, lint, format
   check, typecheck, unit tests and build. The `sast` job adds Semgrep's `p/typescript` and `p/react` rule sets.

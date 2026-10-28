@@ -1,9 +1,16 @@
 import { useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { CalendarDaysIcon, HistoryIcon, TicketIcon, UserRoundIcon } from 'lucide-react';
+import {
+  CalendarDaysIcon,
+  ClipboardCheckIcon,
+  HistoryIcon,
+  TicketIcon,
+  UserRoundIcon,
+} from 'lucide-react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { useAuth } from '@/auth/context';
 import { ErrorAlert } from '@/components/ErrorAlert';
+import { useIsStaff } from '@/features/coaching/useIsStaff';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -22,10 +29,20 @@ const SECTIONS = [
   { to: '/me/history', label: 'History', icon: HistoryIcon, end: false },
 ] as const;
 
+/** Only for coaches and administrators: shown after the API has answered the coaching list (see `useIsStaff`). */
+const COACHING = {
+  to: '/coaching',
+  label: 'Coaching',
+  icon: ClipboardCheckIcon,
+  end: false,
+} as const;
+
 export function AppLayout() {
   const { status, logout, logoutAll } = useAuth();
   const signOutEverywhere = useMutation({ mutationFn: logoutAll });
   const signedIn = status === 'authenticated';
+  const staff = useIsStaff();
+  const sections = staff ? [...SECTIONS, COACHING] : SECTIONS;
   const { reset: clearSignOutError } = signOutEverywhere;
   // A failure belongs to the session it happened in: forget it when the user changes (sign-out, sign-in, session end).
   useEffect(() => {
@@ -94,9 +111,12 @@ export function AppLayout() {
       {signedIn && (
         <nav
           aria-label="Sections"
-          className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-3 border-t bg-background pb-[env(safe-area-inset-bottom)]"
+          className={cn(
+            'fixed inset-x-0 bottom-0 z-40 grid border-t bg-background pb-[env(safe-area-inset-bottom)]',
+            staff ? 'grid-cols-4' : 'grid-cols-3',
+          )}
         >
-          {SECTIONS.map(({ to, label, icon: Icon, end }) => (
+          {sections.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}

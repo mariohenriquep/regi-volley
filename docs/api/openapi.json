@@ -327,6 +327,73 @@
         "required" : [ "capacity" ],
         "type" : "object"
       },
+      "CoachingSessionResponse" : {
+        "properties" : {
+          "attendedCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "canCancel" : {
+            "type" : "boolean"
+          },
+          "canChangeCapacity" : {
+            "type" : "boolean"
+          },
+          "canMarkAttendance" : {
+            "type" : "boolean"
+          },
+          "capacity" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "coachId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "confirmedCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "endsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "groupName" : {
+            "type" : "string"
+          },
+          "noShowCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "sessionId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "startsAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "trainingGroupId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "unmarkedCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "venueName" : {
+            "type" : "string"
+          },
+          "waitlistCount" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "CreateTrainingGroupRequest" : {
         "properties" : {
           "acceptedLevelIds" : {
@@ -1716,6 +1783,54 @@
         },
         "security" : [ ],
         "tags" : [ "auth-controller" ]
+      }
+    },
+    "/api/v1/coaching/sessions" : {
+      "get" : {
+        "operationId" : "coachingWeek",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "weekOf",
+          "required" : false,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/CoachingSessionResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "OK"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthenticated"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "404" : {
+            "$ref" : "#/components/responses/NotFound"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ],
+        "tags" : [ "coaching-controller" ]
       }
     },
     "/api/v1/join-requests" : {

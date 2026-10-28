@@ -1750,6 +1750,182 @@ class SessionTest {
     }
 
     @Nested
+    class AttendanceCounts {
+        @Test
+        void countsSeatHoldersByTheirAttendanceMarkAndLeavesOutTheWaitlistAndCancelled() {
+            // Arrange - 6 people, 4 seats: 0 attended, 1 no-show, 2 still unmarked, 3 cancelled (so 4 moves up), 5 waits
+            List<MemberId> people = members(6);
+            Session session = bookedBy(4, people);
+            session = session.cancelBooking(bookingOf(session, people.get(3)).id(), POLICY, at(OPENS_AT.plusSeconds(60)), EVERYONE).session();
+            session = session.markAttended(bookingOf(session, people.get(0)).id(), at(START));
+            session = session.markNoShow(bookingOf(session, people.get(1)).id(), at(START));
+
+            // Act
+            int attended = session.attendedCount();
+            int noShows = session.noShowCount();
+            int unmarked = session.unmarkedCount();
+
+            // Assert
+            assertThat(attended).isEqualTo(1);
+            assertThat(noShows).isEqualTo(1);
+            assertThat(unmarked).isEqualTo(2);
+            assertThat(session.seatHolders()).hasSize(attended + noShows + unmarked);
+        }
+
+        @Test
+        void areAllZeroForASessionNobodyBooked() {
+            // Arrange
+            Session session = newSession(12);
+
+            // Act
+            int[] counts = {session.attendedCount(), session.noShowCount(), session.unmarkedCount()};
+
+            // Assert
+            assertThat(counts).containsExactly(0, 0, 0);
+        }
+
+        @Test
+        void areAllZeroOnceTheSessionIsCancelled() {
+            // Arrange
+            Session session = bookedBy(2, members(3)).cancel("Venue unavailable");
+
+            // Act
+            int[] counts = {session.attendedCount(), session.noShowCount(), session.unmarkedCount()};
+
+            // Assert
+            assertThat(counts).containsExactly(0, 0, 0);
+        }
+    }
+
+    @Nested
+    class StaffActions {
+        @ParameterizedTest
+        @ValueSource(longs = {0, 1, 3600})
+        void attendanceCanBeMarkedFromTheStartWhileSomeoneIsUnmarked(long secondsAfterStart) {
+            // Arrange
+            Session session = bookedBy(2, members(1));
+
+            // Act
+            boolean can = session.acceptsAttendance(at(START.plusSeconds(secondsAfterStart)));
+
+            // Assert
+            assertThat(can).isTrue();
+        }
+
+        @Test
+        void attendanceCannotBeMarkedBeforeTheStart() {
+            // Arrange
+            Session session = bookedBy(2, members(1));
+
+            // Act
+            boolean can = session.acceptsAttendance(at(START.minusSeconds(1)));
+
+            // Assert
+            assertThat(can).isFalse();
+        }
+
+        @Test
+        void attendanceCannotBeMarkedWhenNobodyHoldsASeatOrEveryoneIsMarked() {
+            // Arrange
+            List<MemberId> people = members(1);
+            Session empty = newSession(2);
+            Session booked = bookedBy(2, people);
+            Session allMarked = booked.markAttended(bookingOf(booked, people.get(0)).id(), at(START));
+
+            // Act
+            boolean emptyCan = empty.acceptsAttendance(at(START));
+            boolean markedCan = allMarked.acceptsAttendance(at(START));
+
+            // Assert
+            assertThat(emptyCan).isFalse();
+            assertThat(markedCan).isFalse();
+        }
+
+        @Test
+        void attendanceCannotBeMarkedInACancelledSession() {
+            // Arrange
+            Session cancelled = bookedBy(2, members(1)).cancel("Venue unavailable");
+
+            // Act
+            boolean can = cancelled.acceptsAttendance(at(START));
+
+            // Assert
+            assertThat(can).isFalse();
+        }
+
+        @Test
+        void attendanceCanStillBeMarkedAfterTheSessionWasCompleted() {
+            // Arrange
+            Session completed = bookedBy(2, members(1)).complete(at(END));
+
+            // Act
+            boolean can = completed.acceptsAttendance(at(END.plusSeconds(60)));
+
+            // Assert
+            assertThat(can).isTrue();
+        }
+
+        @Test
+        void aScheduledSessionCanBeCancelledBeforeAndAfterTheStartUntilAttendanceIsMarked() {
+            // Arrange
+            List<MemberId> people = members(2);
+            Session session = bookedBy(2, people);
+            Session marked = session.markAttended(bookingOf(session, people.get(0)).id(), at(START));
+
+            // Act
+            boolean fresh = session.canBeCancelled();
+            boolean afterMarking = marked.canBeCancelled();
+
+            // Assert - the same rule Session.cancel enforces
+            assertThat(fresh).isTrue();
+            assertThat(afterMarking).isFalse();
+            assertThrows(AttendanceAlreadyMarkedException.class, () -> marked.cancel("Too late"));
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = SessionStatus.class, names = {"COMPLETED", "CANCELLED"})
+        void aSessionThatIsNotScheduledCannotBeCancelled(SessionStatus status) {
+            // Arrange
+            Session session = sessionIn(status);
+
+            // Act
+            boolean can = session.canBeCancelled();
+
+            // Assert
+            assertThat(can).isFalse();
+        }
+
+        @Test
+        void capacityCanBeChangedUntilTheStart() {
+            // Arrange
+            Session session = newSession(2);
+
+            // Act
+            boolean wellBefore = session.acceptsCapacityChange(at(OPENS_AT));
+            boolean lastSecond = session.acceptsCapacityChange(at(START.minusSeconds(1)));
+            boolean atStart = session.acceptsCapacityChange(at(START));
+
+            // Assert
+            assertThat(wellBefore).isTrue();
+            assertThat(lastSecond).isTrue();
+            assertThat(atStart).isFalse();
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = SessionStatus.class, names = {"COMPLETED", "CANCELLED"})
+        void capacityCannotBeChangedOnceTheSessionIsNotScheduled(SessionStatus status) {
+            // Arrange
+            Session session = sessionIn(status);
+
+            // Act
+            boolean can = session.acceptsCapacityChange(at(OPENS_AT));
+
+            // Assert
+            assertThat(can).isFalse();
+        }
+    }
+
+    @Nested
     class PromoteWaitlist {
         @Test
         void promotesEligibleWaitlistedBookingsIntoFreeSeatsInOrder() {

@@ -62,8 +62,10 @@ export function toSessions(raw: unknown): Session[] {
 }
 
 /** The sessions of a response grouped by Lisbon calendar day, in the order the API gave them. */
-export function groupByDay(sessions: readonly Session[]): { day: string; sessions: Session[] }[] {
-  const days = new Map<string, Session[]>();
+export function groupByDay<T extends { startsAt: string }>(
+  sessions: readonly T[],
+): { day: string; sessions: T[] }[] {
+  const days = new Map<string, T[]>();
   for (const session of sessions) {
     const day = lisbonDay(session.startsAt);
     days.set(day, [...(days.get(day) ?? []), session]);
