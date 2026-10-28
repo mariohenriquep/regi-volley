@@ -124,3 +124,116 @@ export function rosterOf(overrides: Partial<Schemas['SessionRosterResponse']> = 
     ...overrides,
   } satisfies Schemas['SessionRosterResponse'];
 }
+
+export const JOIN_REQUESTS_URL = '/api/v1/join-requests';
+export const MEMBERS_URL = '/api/v1/members';
+export const LEVELS_URL = '/api/v1/levels';
+
+export const REQUEST_ID = 'b0000000-0000-0000-0000-000000000001';
+export const MEMBER_ID = 'c0000000-0000-0000-0000-000000000001';
+export const BEGINNER_ID = 'd0000000-0000-0000-0000-000000000001';
+export const INTERMEDIATE_ID = 'd0000000-0000-0000-0000-000000000002';
+
+/** A request waiting for a decision. Contact data is made up (example.com, a number that cannot be dialled). */
+export function joinRequest(overrides: Partial<Schemas['JoinRequestResponse']> = {}) {
+  return {
+    id: REQUEST_ID,
+    name: 'Rita Visitor',
+    email: 'rita@example.com',
+    phone: '+351 910 000 001',
+    policyVersion: '2026-01',
+    status: 'PENDING',
+    requestedAt: '2026-07-13T09:15:00Z',
+    ...overrides,
+  } satisfies Schemas['JoinRequestResponse'];
+}
+
+/** One row of the member list. */
+export function memberEntry(overrides: Partial<Schemas['MemberListEntryResponse']> = {}) {
+  return {
+    memberId: MEMBER_ID,
+    name: 'Ana Silva',
+    email: 'ana@example.com',
+    phone: '+351 910 000 002',
+    levelId: BEGINNER_ID,
+    levelName: 'Beginner',
+    roles: ['MEMBER'],
+    status: 'ACTIVE',
+    accountActivated: true,
+    joinedAt: '2026-06-01T10:00:00Z',
+    ...overrides,
+  } satisfies Schemas['MemberListEntryResponse'];
+}
+
+export function memberList(
+  members: Schemas['MemberListEntryResponse'][] = [memberEntry()],
+  truncated = false,
+) {
+  return { members, truncated } satisfies Schemas['MemberListResponse'];
+}
+
+/** One member in full: contact, level history and the subscription summary. */
+export function memberDetail(overrides: Partial<Schemas['MemberDetailResponse']> = {}) {
+  return {
+    memberId: MEMBER_ID,
+    name: 'Ana Silva',
+    email: 'ana@example.com',
+    phone: '+351 910 000 002',
+    levelId: BEGINNER_ID,
+    levelName: 'Beginner',
+    roles: ['MEMBER'],
+    status: 'ACTIVE',
+    anonymised: false,
+    accountActivated: true,
+    joinedAt: '2026-06-01T10:00:00Z',
+    levelChanges: [],
+    subscriptions: [],
+    subscriptionsTruncated: false,
+    ...overrides,
+  } satisfies Schemas['MemberDetailResponse'];
+}
+
+export function subscriptionSummary(
+  overrides: Partial<Schemas['MemberSubscriptionView']> = {},
+): Schemas['MemberSubscriptionView'] {
+  return {
+    subscriptionId: '66666666-6666-6666-6666-666666666666',
+    planId: '99999999-9999-9999-9999-999999999999',
+    planName: 'Pack of 10',
+    type: 'PACK',
+    startDate: '2026-07-01',
+    endDate: '2026-09-29',
+    priceCents: 5000,
+    paidCents: 5000,
+    outstandingCents: 0,
+    paymentStatus: 'PAID',
+    creditsLeft: 7,
+    creditsUsed: 3,
+    ...overrides,
+  };
+}
+
+export function levelsAnswer() {
+  return {
+    entryLevelId: BEGINNER_ID,
+    levels: [
+      { id: BEGINNER_ID, name: 'Beginner', rank: 1 },
+      { id: INTERMEDIATE_ID, name: 'Intermediate', rank: 2 },
+    ],
+  } satisfies Schemas['LevelsResponse'];
+}
+
+/** The member answer of a role or level change (`MemberResponse`). */
+export function memberAnswer(overrides: Partial<Schemas['MemberResponse']> = {}) {
+  return {
+    id: MEMBER_ID,
+    name: 'Ana Silva',
+    email: 'ana@example.com',
+    phone: '+351 910 000 002',
+    levelId: BEGINNER_ID,
+    roles: ['MEMBER'],
+    status: 'ACTIVE',
+    joinedAt: '2026-06-01T10:00:00Z',
+    ...overrides,
+  } satisfies Schemas['MemberResponse'];
+}
