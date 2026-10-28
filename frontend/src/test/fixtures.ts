@@ -237,3 +237,60 @@ export function memberAnswer(overrides: Partial<Schemas['MemberResponse']> = {})
     ...overrides,
   } satisfies Schemas['MemberResponse'];
 }
+
+export const VENUES_URL = '/api/v1/venues';
+export const GROUPS_URL = '/api/v1/training-groups';
+export const PLANS_URL = '/api/v1/plans';
+
+export const VENUE_ID = 'e0000000-0000-0000-0000-000000000001';
+export const OTHER_VENUE_ID = 'e0000000-0000-0000-0000-000000000002';
+export const GROUP_ID = 'f0000000-0000-0000-0000-000000000001';
+export const COACH_ID = '22222222-2222-2222-2222-222222222223';
+export const PLAN_ID = 'a1000000-0000-0000-0000-000000000001';
+
+/** A row of the venue list. The address is made up. */
+export function venueEntry(overrides: Partial<Schemas['VenueEntryResponse']> = {}) {
+  return {
+    id: VENUE_ID,
+    name: 'Pavilhão Central',
+    address: 'Rua da Bola 1, Lisbon',
+    courts: 2,
+    inUseByActiveGroup: false,
+    ...overrides,
+  } satisfies Schemas['VenueEntryResponse'];
+}
+
+/** A row of the training-group list: Tuesday 20:30 for 90 minutes and Thursday 21:00 for 60, 12 seats. */
+export function groupEntry(overrides: Partial<Schemas['TrainingGroupEntryResponse']> = {}) {
+  return {
+    id: GROUP_ID,
+    name: 'Tuesday evening',
+    status: 'ACTIVE',
+    acceptedLevels: [
+      { id: BEGINNER_ID, name: 'Beginner' },
+      { id: INTERMEDIATE_ID, name: 'Intermediate' },
+    ],
+    venue: { id: VENUE_ID, name: 'Pavilhão Central' },
+    coach: { id: COACH_ID, name: 'Rui Coach' },
+    capacity: 12,
+    schedule: [
+      { dayOfWeek: 'TUESDAY', startTime: '20:30', durationMinutes: 90 },
+      { dayOfWeek: 'THURSDAY', startTime: '21:00', durationMinutes: 60 },
+    ],
+    ...overrides,
+  } satisfies Schemas['TrainingGroupEntryResponse'];
+}
+
+/** A row of the plan list: a pack of 10 credits, valid 90 days, €50.00, for every level. */
+export function planEntry(overrides: Partial<Schemas['PlanEntryResponse']> = {}) {
+  return {
+    id: PLAN_ID,
+    name: 'Pack of 10',
+    type: 'PACK',
+    priceCents: 5000,
+    credits: 10,
+    validityDays: 90,
+    allowedLevels: [],
+    ...overrides,
+  } satisfies Schemas['PlanEntryResponse'];
+}

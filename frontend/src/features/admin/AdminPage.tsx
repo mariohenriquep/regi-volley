@@ -1,4 +1,12 @@
-import { ChevronRightIcon, UserCheckIcon, UsersIcon } from 'lucide-react';
+import {
+  BuildingIcon,
+  CalendarRangeIcon,
+  ChevronRightIcon,
+  LayersIcon,
+  TicketIcon,
+  UserCheckIcon,
+  UsersIcon,
+} from 'lucide-react';
 import type { ComponentType } from 'react';
 import { Link } from 'react-router';
 import { Loading } from '@/components/Loading';
@@ -24,9 +32,33 @@ const SCREENS: {
     hint: 'Search members, change levels and roles, deactivate.',
     icon: UsersIcon,
   },
+  {
+    to: '/admin/setup/levels',
+    title: 'Levels',
+    hint: 'Name and order the levels, choose the entry level.',
+    icon: LayersIcon,
+  },
+  {
+    to: '/admin/setup/venues',
+    title: 'Venues',
+    hint: 'Add the places where your groups play.',
+    icon: BuildingIcon,
+  },
+  {
+    to: '/admin/setup/groups',
+    title: 'Training groups',
+    hint: 'Weekly schedules, levels, seats and coaches.',
+    icon: CalendarRangeIcon,
+  },
+  {
+    to: '/admin/setup/plans',
+    title: 'Plans',
+    hint: 'What members buy: packs, monthly passes, single sessions.',
+    icon: TicketIcon,
+  },
 ];
 
-/** The administrator's home: one link to each admin screen. Setup and payments join the list in the next steps. */
+/** The administrator's home: one link to each admin screen. Payments join the list in the next step. */
 export function AdminPage() {
   usePageTitle('Admin');
   const { settled, admin } = useIsAdmin();

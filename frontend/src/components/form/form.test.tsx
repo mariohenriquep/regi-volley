@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ErrorSummary } from './ErrorSummary';
+import { SelectField } from './SelectField';
 import { TextField } from './TextField';
 
 describe('TextField', () => {
@@ -34,6 +35,42 @@ describe('TextField', () => {
     const input = screen.getByLabelText('Phone');
     expect(input).toBeValid();
     expect(input).toHaveAccessibleDescription('With country code');
+  });
+});
+
+describe('SelectField', () => {
+  it('labels the select, ties its hint and error to it and flags it invalid', () => {
+    // Arrange / Act
+    render(
+      <SelectField
+        id="coach"
+        label="Coach"
+        hint="Active coaches"
+        error="Choose a coach"
+        defaultValue=""
+      >
+        <option value="">Choose a coach</option>
+      </SelectField>,
+    );
+
+    // Assert
+    const select = screen.getByLabelText('Coach');
+    expect(select).toBeInvalid();
+    expect(select).toHaveAccessibleDescription('Active coaches Choose a coach');
+  });
+
+  it('is valid and described by its hint alone when there is no error', () => {
+    // Arrange / Act
+    render(
+      <SelectField id="venue" label="Venue" hint="Where the group plays" defaultValue="">
+        <option value="">Choose a venue</option>
+      </SelectField>,
+    );
+
+    // Assert
+    const select = screen.getByLabelText('Venue');
+    expect(select).toBeValid();
+    expect(select).toHaveAccessibleDescription('Where the group plays');
   });
 });
 

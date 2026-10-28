@@ -332,3 +332,160 @@ test('the admin dialogs, the member screens and the level picker raise no Conten
   expect(await page.evaluate(() => window.__violations)).toEqual([]);
   expect(consoleErrors.filter((text) => /content security policy/i.test(text))).toEqual([]);
 });
+
+test('the setup forms and dialogs (levels, venues, groups, plans) raise no Content-Security-Policy violation', async ({
+  page,
+}) => {
+  // Arrange: an administrator with one of everything, and every violation the browser reports
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  await page.addInitScript(() => {
+    window.__violations = [];
+    document.addEventListener('securitypolicyviolation', (event) => {
+      window.__violations.push(`${event.violatedDirective} blocked ${event.blockedURI}`);
+    });
+  });
+  const adminId = 'c0000000-0000-0000-0000-000000000001';
+  const coachId = 'c0000000-0000-0000-0000-000000000002';
+  const beginner = 'd0000000-0000-0000-0000-000000000001';
+  const intermediate = 'd0000000-0000-0000-0000-000000000002';
+  const venueId = 'e0000000-0000-0000-0000-000000000001';
+  const groupId = 'f0000000-0000-0000-0000-000000000001';
+  const planId = 'a1000000-0000-0000-0000-000000000001';
+  await page.route('**/api/v1/**', async (route) => {
+    const { pathname } = new URL(route.request().url());
+    const json = (body: unknown, status = 200) =>
+      route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (pathname.endsWith('/auth/refresh')) {
+      return json({ accessToken: 'test-csp-token-fixture', tokenType: 'Bearer', expiresIn: 600 });
+    }
+    if (pathname.endsWith('/api/v1/me')) {
+      return json({ memberId: adminId, associationId: SESSION_ID, roles: ['MEMBER', 'ADMIN'] });
+    }
+    if (pathname.endsWith('/api/v1/levels')) {
+      return json({
+        entryLevelId: beginner,
+        levels: [
+          { id: beginner, name: 'Beginner', rank: 0 },
+          { id: intermediate, name: 'Intermediate', rank: 1 },
+        ],
+      });
+    }
+    if (pathname.endsWith('/api/v1/venues')) {
+      return json([
+        {
+          id: venueId,
+          name: 'CSP Pavilion',
+          address: 'Rua CSP 1',
+          courts: 2,
+          inUseByActiveGroup: false,
+        },
+      ]);
+    }
+    if (pathname.endsWith('/api/v1/members')) {
+      return json({
+        members: [
+          {
+            memberId: coachId,
+            name: 'CSP Coach',
+            email: 'csp-coach@example.com',
+            roles: ['MEMBER', 'COACH'],
+            status: 'ACTIVE',
+            accountActivated: true,
+          },
+        ],
+        truncated: false,
+      });
+    }
+    if (pathname.endsWith('/api/v1/training-groups')) {
+      return json([
+        {
+          id: groupId,
+          name: 'CSP evening',
+          status: 'ACTIVE',
+          acceptedLevels: [{ id: beginner, name: 'Beginner' }],
+          venue: { id: venueId, name: 'CSP Pavilion' },
+          coach: { id: coachId, name: 'CSP Coach' },
+          capacity: 12,
+          schedule: [{ dayOfWeek: 'TUESDAY', startTime: '20:30', durationMinutes: 90 }],
+        },
+      ]);
+    }
+    if (pathname.endsWith('/api/v1/plans')) {
+      return json([
+        {
+          id: planId,
+          name: 'CSP pack',
+          type: 'PACK',
+          priceCents: 5000,
+          credits: 10,
+          validityDays: 90,
+          allowedLevels: [],
+        },
+      ]);
+    }
+    return json({ code: 'NOT_FOUND', message: 'Not found' }, 404);
+  });
+
+  // Act: the Admin home links the four screens
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { level: 1, name: 'Admin' })).toBeVisible();
+
+  // Levels: the rename sheet
+  await page.getByRole('link', { name: /^Levels/ }).tap();
+  await page.getByRole('button', { name: 'Rename Intermediate' }).tap();
+  const rename = page.getByRole('dialog', { name: 'Rename Intermediate' });
+  await expect(rename.getByLabel('Level name')).toHaveValue('Intermediate');
+  await expect(page.locator('body')).toHaveCSS('overflow', 'hidden');
+  await rename.getByRole('button', { name: 'Cancel' }).tap();
+  await expect(rename).toBeHidden();
+
+  // Venues: the edit sheet and the delete question
+  await page.goto('/admin/setup/venues');
+  await page.getByRole('button', { name: 'Add venue' }).tap();
+  const venue = page.getByRole('dialog', { name: 'Add a venue' });
+  await venue.getByLabel('Name').fill('CSP Hall');
+  await venue.getByRole('button', { name: 'Cancel' }).tap();
+  await expect(venue).toBeHidden();
+  await page.getByRole('button', { name: /^Delete/ }).tap();
+  const remove = page.getByRole('alertdialog', { name: 'Delete CSP Pavilion?' });
+  await expect(remove).toBeVisible();
+  await remove.getByRole('button', { name: 'Not now' }).tap();
+  await expect(remove).toBeHidden();
+
+  // Groups: the form with its slot rows and pickers, then the archive question
+  await page.goto('/admin/setup/groups');
+  await page.getByRole('button', { name: 'Add group' }).tap();
+  const group = page.getByRole('dialog', { name: 'Add a training group' });
+  await group.getByLabel('Name').fill('CSP open play');
+  await group.getByRole('checkbox', { name: 'Intermediate' }).tap();
+  await group.getByLabel('Venue').selectOption({ label: 'CSP Pavilion' });
+  await group.getByLabel('Coach').selectOption({ label: 'CSP Coach' });
+  await group.getByRole('button', { name: 'Add slot' }).tap();
+  await expect(group.getByRole('group', { name: 'Slot 2' })).toBeVisible();
+  await group.getByRole('button', { name: 'Remove slot 2' }).tap();
+  await expect(group.getByRole('group', { name: 'Slot 2' })).toBeHidden();
+  await group.getByRole('button', { name: 'Cancel' }).tap();
+  await expect(group).toBeHidden();
+  await page.getByRole('button', { name: /^Archive/ }).tap();
+  const archive = page.getByRole('alertdialog', { name: 'Archive CSP evening?' });
+  await expect(archive).toContainText('Sessions that already exist are not changed or cancelled');
+  await archive.getByRole('button', { name: 'Not now' }).tap();
+  await expect(archive).toBeHidden();
+
+  // Plans: the type-specific form
+  await page.goto('/admin/setup/plans');
+  await page.getByRole('button', { name: /^Edit/ }).tap();
+  const plan = page.getByRole('dialog', { name: 'Edit CSP pack' });
+  await expect(plan.getByLabel('Price (€)')).toHaveValue('50.00');
+  await plan.getByLabel('Type').selectOption({ label: 'Single session' });
+  await expect(plan.getByLabel('Credits')).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(plan).toBeHidden();
+
+  // Assert: the policy was in force, and nothing was blocked
+  expect(await page.evaluate(() => window.__violations)).toEqual([]);
+  expect(consoleErrors.filter((text) => /content security policy/i.test(text))).toEqual([]);
+});

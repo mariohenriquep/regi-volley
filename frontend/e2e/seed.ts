@@ -3,8 +3,8 @@ import { execFileSync } from 'node:child_process';
 import { expect, type APIRequestContext } from '@playwright/test';
 
 /**
- * Test data for the journeys. The setup and payment screens do not exist yet (F5b, F5c), so everything the API exposes is
- * created through the REST API as the founder (venue, group, plan, role, subscription, payment). Sessions are the exception:
+ * Test data for the journeys. The setup screens (F5b) have their own journey and the payment screens (F5c) do not exist yet, so the data the other journeys
+ * need is created through the REST API as the founder, which is faster than the forms (venue, group, plan, role, subscription, payment). Sessions are the exception:
  * `GenerateSessions` runs from the scheduler and has no HTTP route (docs/architecture.md section 14), and a dev-only
  * endpoint was rejected, so the sessions (and a past, attended one for the history) are inserted with SQL into the dev
  * Postgres of `docker compose` (container `regi-volley-postgres`; credentials from docker-compose.yml). Only ids and

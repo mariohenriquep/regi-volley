@@ -68,7 +68,7 @@ From `frontend/`:
 | `npm run api:generate` | regenerates `src/api/schema.gen.ts` from `docs/api/openapi.json`; commit it with the contract |
 | `npm run api:check` | fails when the generated client is stale (CI runs it) |
 | `npm run e2e` | the Playwright journeys against the real backend (below) |
-| `npm run e2e:csp` | builds, serves `dist/` with the documented Content-Security-Policy and checks the dialogs, the coaching and admin screens and the account menu raise no violation (API mocked; no backend needed) |
+| `npm run e2e:csp` | builds, serves `dist/` with the documented Content-Security-Policy and checks the dialogs, the coaching, admin and setup screens (their forms and questions) and the account menu raise no violation (API mocked; no backend needed) |
 
 **Trying the app without curl.** With the three commands above running, open <http://localhost:5173>:
 
@@ -77,13 +77,17 @@ From `frontend/`:
 | Register an association | `/register` | fill the form (levels: first = entry level) and submit; the activation mail lands in Mailpit (<http://localhost:8025>) |
 | Activate your account | `/activate#token=...` | open the link from the mail, choose a password, then sign in |
 | Sign in / sign out | `/login` | the founder's email and password; sign out is in the *Account* menu of the header (with *Sign out on all devices*) |
-| Sessions (home) | `/` | this week's sessions by day (Lisbon time), seats, waitlist and your own status; venue and your waitlist place; *Book* then *Confirm booking*; *Cancel* (it says whether cancelling now is free, from the API's deadline); previous/next week. Needs a group with sessions and a paid plan (the setup and payment screens do not exist yet: see the E2E note below) |
+| Sessions (home) | `/` | this week's sessions by day (Lisbon time), seats, waitlist and your own status; venue and your waitlist place; *Book* then *Confirm booking*; *Cancel* (it says whether cancelling now is free, from the API's deadline); previous/next week. Needs a group with sessions and a paid plan (groups, venues and plans have their screens under *Admin*; the payment screens and a route that generates sessions do not exist yet: see the E2E note below) |
 | Coaching (coaches and administrators) | `/coaching` | the staff's week by day: status, "N of M confirmed", waitlist, attended / no-show / still to mark; *Mark attendance* or *Roster*, *Change seats*, *Cancel session* as the API allows (the entry is shown only when `GET /me` lists COACH or ADMIN); previous/next week, past weeks included |
 | Roster and attendance | `/coaching/sessions/<id>` | seats and waitlist in order; *Attended* / *No-show* per person (or *Mark everyone as attended*) and one *Save attendance*; change the seats (shows who moved up) and cancel the session with a reason |
-| Admin (administrators) | `/admin` | the home of the section, with a link to each admin screen (the entry is shown only when `GET /me` lists ADMIN; setup and payments join it later) |
+| Admin (administrators) | `/admin` | the home of the section, with a link to each admin screen (the entry is shown only when `GET /me` lists ADMIN; payments join it later) |
 | Join requests | `/admin/join-requests` | the pending requests, oldest first (name, email, phone, when asked); *Approve* (creates the member at the entry level and emails an activation link) and *Reject* (optional reason) both ask first |
 | Members | `/admin/members` | search by name or email (`?q=`, written to the address once typing pauses) and filter by status (`?status=`); level, role badges, status and a "Not activated" badge per member; a notice when the API cut the list |
 | One member | `/admin/members/<id>` | contact, level and who changed it before, roles, whether the account is activated, subscriptions (read-only); change the level, give or take the coach and administrator roles, *Resend activation link*, *Deactivate member* (asks first); an erased (anonymised) member is read-only |
+| Levels | `/admin/setup/levels` | the levels lowest first with the entry level marked; add (as the highest), rename, move up / down with buttons (the whole order is sent), *Make entry level*; members book their own level and lower ones |
+| Venues | `/admin/setup/venues` | name, address and courts; add, edit; *Delete* asks first and is disabled, with the reason, while an active group uses the venue (the API's refusal is still shown if the list was stale) |
+| Training groups | `/admin/setup/groups` | active groups (or `?archived=1` for all): levels, venue, coach, seats and the weekly schedule in Lisbon time; add / edit with the accepted levels (checkboxes), venue (fixed once chosen), weekly slots (add / remove rows: day, start time, length), seats (a multiple of 6 is a hint, not a rule) and a coach picked from the members holding COACH; *Archive* asks first. Sessions for a saved group appear after the next daily generation |
+| Plans | `/admin/setup/plans` | name, type, terms, price and allowed levels; add / edit with the fields of the type (pack: credits and validity days; N per week: sessions per week; single session: validity days), the price typed in euros and sent as exact cents, allowed levels (none = all). Editing does not change what existing subscriptions paid |
 | My plan | `/me/plan` | your subscriptions: plan, validity, credits or sessions left, payment status and the overdue warning |
 | History | `/me/history` | your last three months, newest first (group and venue), and this month's no-shows with the near-the-limit warning |
 | Forgot password | `/forgot-password` | request a link (the answer is the same for any address), open it from Mailpit, choose a new password |
@@ -119,6 +123,10 @@ A sixth step runs the administrator journey on a phone: a second administrator (
 and grants ADMIN, so the founder does not sign in again) opens *Admin*, approves the pending request of the visitor of the first step,
 finds the new member by searching, changes their level (the history shows who), grants and revokes COACH, resends the activation link
 (Mailpit gets a second, different link) and deactivates them; the list then filters by *Inactive*.
+A seventh step runs the setup journey on a phone: the second administrator adds a level (it is the highest), moves it up and renames it,
+adds two venues, adds a group with two slots and a coach (two overlapping slots are refused by the API and shown; moving one saves the
+group), adds a pack plan and lowers its price, finds the venue of the group not deletable (and the API's refusal when the list is made
+stale), deletes the spare venue, and archives the group, which then shows with the archived toggle.
 Registration is limited to 3 per hour per address, a join request to 5 per hour per IP (a run files 5) and sign-in to 5 per 15
 minutes per address, and one run uses each once, so a second run within the hour gets 429: restart the API (the limiter is in memory).
 
