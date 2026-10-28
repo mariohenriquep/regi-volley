@@ -23,7 +23,8 @@ public final class CoachingWebMapper {
         return sessions.stream().map(CoachingWebMapper::toResponse).toList();
     }
 
-    private static CoachingSessionResponse toResponse(CoachingSession session) {
+    /** One line, as the week list and the roster both show it. */
+    static CoachingSessionResponse toResponse(CoachingSession session) {
         return new CoachingSessionResponse(session.sessionId().value(), session.trainingGroupId().value(),
                 session.groupName().orElse(null), session.venueName().orElse(null), session.coachId().value(), session.startsAt(),
                 session.endsAt(), session.status().name(), session.capacity(), session.confirmedCount(), session.waitlistCount(),

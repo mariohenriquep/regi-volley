@@ -118,4 +118,33 @@ describe('toRoster', () => {
   it('is null for a payload without a session start', () => {
     expect(toRoster({})).toBeNull();
   });
+
+  it('reads the coaching line the roster carries, with its counts and flags', () => {
+    // Arrange
+    const raw = rosterOf({
+      coaching: coaching({ confirmedCount: 3, canMarkAttendance: true, canChangeCapacity: false }),
+    });
+
+    // Act
+    const roster = toRoster(raw);
+
+    // Assert
+    expect(roster?.line).toMatchObject({
+      groupName: 'Thursday evening',
+      confirmedCount: 3,
+      canMarkAttendance: true,
+      canCancel: true,
+      canChangeCapacity: false,
+    });
+  });
+
+  it('has no line when the answer carries none or an unreadable one, so nothing is offered', () => {
+    // Arrange
+    const withoutLine = rosterOf({ coaching: undefined });
+    const unreadable = rosterOf({ coaching: { ...coaching(), startsAt: 'soon' } });
+
+    // Act / Assert
+    expect(toRoster(withoutLine)?.line).toBeNull();
+    expect(toRoster(unreadable)?.line).toBeNull();
+  });
 });

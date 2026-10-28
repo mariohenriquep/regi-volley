@@ -59,19 +59,19 @@ const markable = (overrides: Partial<Line> = {}) =>
     ...overrides,
   });
 
-/** The roster and the staff's week for the session's own Lisbon week (13 July). */
+/** The roster, which carries the session's own coaching line (counts and flags); the week's list is not served at all. */
 function serveSession(roster: Roster = rosterOf({ seats, waitlist }), line: Line = markable()) {
-  const asked: (string | null)[] = [];
   const state = { roster, line };
+  const week = recorder();
   server.use(
     signedIn,
-    http.get(rosterUrl, () => HttpResponse.json(state.roster)),
-    http.get(COACHING_URL, ({ request }) => {
-      asked.push(new URL(request.url).searchParams.get('weekOf'));
-      return HttpResponse.json([state.line]);
+    http.get(rosterUrl, () => HttpResponse.json({ ...state.roster, coaching: state.line })),
+    http.get(COACHING_URL, async ({ request }) => {
+      await week.record(request);
+      return HttpResponse.json([]);
     }),
   );
-  return { asked, state };
+  return { weekRequests: week.seen, state };
 }
 
 const page = `/coaching/sessions/${SESSION_ID}`;
@@ -121,10 +121,9 @@ describe('the roster', () => {
     expect(summary).toHaveTextContent('3 of 12 confirmed');
   });
 
-  it('asks for the staff week of the session itself, not of today, and links back to it', async () => {
+  it('links back to the staff week of the session itself, and never asks for that week’s list', async () => {
     // Arrange: the session is in the week of 6 July, today is in the week of 13 July
-    vi.setSystemTime(new Date('2026-07-16T21:00:00Z'));
-    const { asked } = serveSession(
+    const { weekRequests } = serveSession(
       rosterOf({
         startsAt: '2026-07-08T19:30:00Z',
         endsAt: '2026-07-08T21:00:00Z',
@@ -139,7 +138,53 @@ describe('the roster', () => {
     // Assert
     const back = await screen.findByRole('link', { name: 'Back to Coaching' });
     expect(back).toHaveAttribute('href', '/coaching?week=2026-07-06');
-    expect(asked).toContain('2026-07-06');
+    expect(await screen.findByRole('list', { name: 'Seats' })).toBeInTheDocument();
+    expect(weekRequests).toHaveLength(0);
+  });
+
+  it('takes the flags and counts from the roster itself, in one request', async () => {
+    // Arrange
+    const { weekRequests } = serveSession();
+    const { seen, record } = recorder();
+    server.use(
+      http.get(rosterUrl, async ({ request }) => {
+        await record(request);
+        return HttpResponse.json(rosterOf({ seats, waitlist, coaching: markable() }));
+      }),
+    );
+
+    // Act
+    renderApp(page);
+
+    // Assert
+    expect(
+      await screen.findByRole('button', { name: 'Mark everyone as attended' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Thursday evening' })).toHaveTextContent(
+      '3 of 12 confirmed',
+    );
+    expect(seen).toHaveLength(1);
+    expect(weekRequests).toHaveLength(0);
+  });
+
+  it('shows the roster read-only, with no actions, when the response carries no coaching line', async () => {
+    // Arrange: an older or odd answer
+    server.use(
+      signedIn,
+      http.get(rosterUrl, () =>
+        HttpResponse.json(rosterOf({ seats, waitlist, coaching: undefined })),
+      ),
+    );
+
+    // Act
+    renderApp(page);
+
+    // Assert
+    expect(await screen.findByRole('list', { name: 'Seats' })).toBeInTheDocument();
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Cancel session|Change seats|Mark everyone/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows the roster read-only, with a reason, while the API does not allow marking', async () => {
@@ -229,7 +274,6 @@ describe('marking attendance', () => {
     const served = serveSession();
     const app = renderApp(page);
     await screen.findByRole('list', { name: 'Seats' });
-    // The flags come with the second request
     await screen.findByRole('button', { name: 'Mark everyone as attended' });
     return { ...app, seen, record, ...served };
   }

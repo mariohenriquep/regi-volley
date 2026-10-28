@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import type { components } from '@/api/schema.gen';
-import { tokenResponse } from './handlers';
+import { me, tokenResponse } from './handlers';
 
 type Schemas = components['schemas'];
 
@@ -61,6 +61,18 @@ export function historyEntry(overrides: Partial<Schemas['HistoryEntryView']> = {
   } satisfies Schemas['HistoryEntryView'];
 }
 
+type Role = NonNullable<Schemas['MeResponse']['roles']>[number];
+
+/** `GET /me` as the API answers it for a member holding these roles (a plain member when none are given). */
+export function meAs(...roles: Role[]) {
+  return http.get('/api/v1/me', () =>
+    HttpResponse.json({
+      ...me,
+      roles: roles.length > 0 ? roles : ['MEMBER'],
+    } satisfies Schemas['MeResponse']),
+  );
+}
+
 export const COACHING_URL = '/api/v1/coaching/sessions';
 
 /** A coach's line for Thursday 16 July 2026, 20:30-22:00 in Lisbon: not started, 8 of 12 seats taken, every action open. */
@@ -106,6 +118,7 @@ export function rosterOf(overrides: Partial<Schemas['SessionRosterResponse']> = 
     endsAt: '2026-07-16T21:00:00Z',
     capacity: 12,
     status: 'SCHEDULED',
+    coaching: coaching(),
     seats: [rosterEntry()],
     waitlist: [],
     ...overrides,

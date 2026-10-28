@@ -969,6 +969,7 @@ export interface components {
             associationId?: string;
             /** Format: uuid */
             memberId?: string;
+            roles?: ("MEMBER" | "COACH" | "ADMIN")[];
         };
         MemberDeactivationResponse: {
             /** Format: int32 */
@@ -1152,6 +1153,7 @@ export interface components {
             capacity?: number;
             /** Format: uuid */
             coachId?: string;
+            coaching?: components["schemas"]["CoachingSessionResponse"];
             /** Format: date-time */
             endsAt?: string;
             seats?: components["schemas"]["RosterEntryView"][];

@@ -45,7 +45,6 @@ class EndpointErrorMappingWebTest extends AbstractSecuredWebTest {
 
     /** The routes that are not in this table, and why. */
     private static final Set<String> NOT_COVERED = Set.of(
-            "GET /api/v1/me",                    // reads no use case: the security layer's own probe, tested in TokenAuthenticationTest
             "POST /api/v1/auth/logout-all");     // a credential use case with its own tests in AuthEndpointsWebTest
 
     private record Endpoint(String route, HttpMethod method, String path, String body, Function<EndpointErrorMappingWebTest, UseCase<?, ?>> useCase) {
@@ -71,6 +70,7 @@ class EndpointErrorMappingWebTest extends AbstractSecuredWebTest {
 
     static Stream<Endpoint> endpoints() {
         return Stream.of(
+                endpoint("GET /api/v1/me", "/api/v1/me", null, t -> t.getMyRolesUseCase),
                 endpoint("GET /api/v1/me/plan", "/api/v1/me/plan", null, t -> t.myPlanUseCase),
                 endpoint("GET /api/v1/me/history", "/api/v1/me/history", null, t -> t.memberHistoryUseCase),
                 endpoint("GET /api/v1/sessions", "/api/v1/sessions", null, t -> t.listBookableSessionsUseCase),

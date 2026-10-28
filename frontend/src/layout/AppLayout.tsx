@@ -29,7 +29,7 @@ const SECTIONS = [
   { to: '/me/history', label: 'History', icon: HistoryIcon, end: false },
 ] as const;
 
-/** Only for coaches and administrators: shown after the API has answered the coaching list (see `useIsStaff`). */
+/** Only for coaches and administrators: shown when `GET /me` lists one of those roles (see `useIsStaff`). */
 const COACHING = {
   to: '/coaching',
   label: 'Coaching',
@@ -41,7 +41,7 @@ export function AppLayout() {
   const { status, logout, logoutAll } = useAuth();
   const signOutEverywhere = useMutation({ mutationFn: logoutAll });
   const signedIn = status === 'authenticated';
-  const staff = useIsStaff();
+  const { settled, staff } = useIsStaff();
   const sections = staff ? [...SECTIONS, COACHING] : SECTIONS;
   const { reset: clearSignOutError } = signOutEverywhere;
   // A failure belongs to the session it happened in: forget it when the user changes (sign-out, sign-in, session end).
@@ -108,7 +108,7 @@ export function AppLayout() {
           Privacy policy
         </Link>
       </footer>
-      {signedIn && (
+      {signedIn && settled && (
         <nav
           aria-label="Sections"
           className={cn(

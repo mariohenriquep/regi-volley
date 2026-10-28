@@ -41,9 +41,9 @@ async function mockApi(page: Page) {
     if (pathname.endsWith('/auth/refresh')) {
       return json({ accessToken: 'test-csp-token-fixture', tokenType: 'Bearer', expiresIn: 600 });
     }
-    // A member: the shell asks the coaching list whether to show the Coaching section, and is refused
-    if (pathname.endsWith('/coaching/sessions')) {
-      return json({ code: 'NOT_ALLOWED', message: 'Not allowed', requestId: 'req-csp' }, 403);
+    // A plain member: the shell reads the roles from /me and offers no Coaching section
+    if (pathname.endsWith('/api/v1/me')) {
+      return json({ memberId: BOOKING_ID, associationId: SESSION_ID, roles: ['MEMBER'] });
     }
     if (pathname.endsWith('/sessions')) return json([session()]);
     if (pathname.endsWith('/me/plan')) {
@@ -172,6 +172,9 @@ test('the coaching dialogs and the roster raise no Content-Security-Policy viola
     if (pathname.endsWith('/auth/refresh')) {
       return json({ accessToken: 'test-csp-token-fixture', tokenType: 'Bearer', expiresIn: 600 });
     }
+    if (pathname.endsWith('/api/v1/me')) {
+      return json({ memberId: BOOKING_ID, associationId: SESSION_ID, roles: ['MEMBER', 'COACH'] });
+    }
     if (pathname.endsWith('/coaching/sessions')) return json([line]);
     if (pathname.endsWith('/roster')) {
       return json({
@@ -180,6 +183,7 @@ test('the coaching dialogs and the roster raise no Content-Security-Policy viola
         endsAt: line.endsAt,
         status: 'SCHEDULED',
         capacity: 12,
+        coaching: line,
         seats: [{ bookingId: BOOKING_ID, memberName: 'Ana Silva', status: 'CONFIRMED' }],
         waitlist: [],
       });

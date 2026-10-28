@@ -63,10 +63,6 @@ public class ListCoachingSessionsService implements ListCoachingSessionsUseCase 
     }
 
     private CoachingSession line(Session session, Optional<TrainingGroup> group, Map<VenueId, String> venueNames) {
-        return new CoachingSession(session.id(), session.trainingGroupId(), group.map(TrainingGroup::name),
-                group.map(TrainingGroup::venueId).map(venueNames::get), session.coachId(), session.startsAt(), session.endsAt(),
-                session.status(), session.capacity(), session.seatHolders().size(), session.waitlist().size(),
-                session.attendedCount(), session.noShowCount(), session.unmarkedCount(),
-                session.acceptsAttendance(clock), session.canBeCancelled(), session.acceptsCapacityChange(clock));
+        return CoachingLines.of(session, group, group.map(TrainingGroup::venueId).map(venueNames::get), clock);
     }
 }

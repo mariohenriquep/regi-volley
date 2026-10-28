@@ -54,6 +54,7 @@ public final class SessionWebMapper {
     public static SessionRosterResponse toResponse(SessionRoster roster) {
         return new SessionRosterResponse(roster.sessionId().value(), roster.trainingGroupId().value(), roster.coachId().value(),
                 roster.startsAt(), roster.endsAt(), roster.capacity(), roster.status().name(),
+                CoachingWebMapper.toResponse(roster.coaching()),
                 roster.seats().stream().map(SessionWebMapper::toResponse).toList(),
                 roster.waitlist().stream().map(SessionWebMapper::toResponse).toList());
     }

@@ -66,4 +66,13 @@ public final class MemberWebMapper {
             case ADMIN -> MemberRole.ADMIN;
         };
     }
+
+    /** The wire spelling of a role; a new value on either side stops the build here. */
+    static MemberRoleName toWire(MemberRole role) {
+        return switch (role) {
+            case MEMBER -> MemberRoleName.MEMBER;
+            case COACH -> MemberRoleName.COACH;
+            case ADMIN -> MemberRoleName.ADMIN;
+        };
+    }
 }
