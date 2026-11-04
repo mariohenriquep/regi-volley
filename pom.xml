@@ -19,7 +19,7 @@
 
     <properties>
         <java.version>21</java.version>
-        <jacoco.version>0.8.15</jacoco.version>
+        <jacoco.version>0.8.16</jacoco.version>
         <!-- Line/branch coverage floor enforced by `mvn verify`. Same floor as
              task-manager-api (NFR "Qualidade"); raise it as the TDD suite grows, don't lower it
              to make a red build pass. -->
